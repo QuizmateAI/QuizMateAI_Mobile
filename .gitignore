@@ -72,3 +72,20 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+# React Native / Metro cache
+.bundle/
+.metro-cache/
+
+# Environment variables
+.env
+.env.local
+.env.*
+
+# Logs
+*.log
+
+# VSCode
+.vscode/
+
+# Temporary
+*.tmp
