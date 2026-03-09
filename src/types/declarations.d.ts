@@ -11,3 +11,7 @@ declare module 'react-native-vector-icons/MaterialCommunityIcons' {
 
   export default class Icon extends Component<IconProps> {}
 }
+
+declare module '@env' {
+  export const API_URL: string;
+}

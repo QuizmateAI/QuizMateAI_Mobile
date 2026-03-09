@@ -29,7 +29,9 @@ export default function SubscriptionScreen({navigation}: any) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    PaymentAPI.getPurchasablePlans()
+    PaymentAPI.getPurchasablePlans(
+      planType === 'group' ? 'GROUP' : 'INDIVIDUAL',
+    )
       .then(res => setPlans(res.data || []))
       .catch(() => {
         // ──── MOCK DATA for UI testing ────
@@ -96,7 +98,7 @@ export default function SubscriptionScreen({navigation}: any) {
         // ──── END MOCK ────
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [planType]);
 
   const filteredPlans = plans.filter(
     (p: any) => p.type?.toLowerCase() === planType,

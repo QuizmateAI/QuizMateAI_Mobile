@@ -1,10 +1,11 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {API_URL} from '@env';
 
 const TOKEN_KEY = '@quizmate_token';
 
 const api = axios.create({
-  baseURL: 'https://api.quizmateai.io.vn',
+  baseURL: API_URL,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',

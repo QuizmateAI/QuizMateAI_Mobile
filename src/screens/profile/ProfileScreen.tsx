@@ -94,7 +94,7 @@ export default function ProfileScreen({navigation}: any) {
       setUploadingAvatar(true);
 
       const formData = new FormData();
-      formData.append('avatar', {
+      formData.append('file', {
         uri: asset.uri,
         type: asset.type || 'image/jpeg',
         name: asset.fileName || 'avatar.jpg',
@@ -102,7 +102,7 @@ export default function ProfileScreen({navigation}: any) {
 
       try {
         const res = await ProfileAPI.uploadAvatar(formData);
-        const newUrl = res.data?.avatarUrl || res.data?.url || asset.uri;
+        const newUrl = res.data?.avatarUrl || asset.uri;
         setProfile((prev: any) => ({...prev, avatarUrl: newUrl}));
         if (user) {
           await updateUser({...user, avatarUrl: newUrl});
