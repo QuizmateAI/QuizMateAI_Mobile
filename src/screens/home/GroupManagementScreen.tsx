@@ -25,7 +25,6 @@ import FloatingInput from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import ActionSheet from '../../components/ui/ActionSheet';
 import GroupAPI from '../../api/GroupAPI';
-import api from '../../api/api';
 
 const TABS = [
   {key: 'dashboard', label: 'Dashboard'},
@@ -80,18 +79,19 @@ export default function GroupManagementScreen({navigation, route}: any) {
 
   const fetchData = useCallback(async () => {
     try {
-      const memRes = await GroupAPI.getMembers(groupId);
+      const [memRes, joinedRes] = await Promise.all([
+        GroupAPI.getMembers(groupId),
+        GroupAPI.getJoined(),
+      ]);
       setMembers(memRes.data || []);
-      // Try to get group info if we have an endpoint
-      try {
-        const grRes = await api.get(`/group/${groupId}`);
-        setGroup(grRes.data);
-        setEditGroupName(grRes.data?.groupName || title || '');
-        setEditDescription(grRes.data?.description || '');
-      } catch {
-        setGroup({groupName: title, groupId});
-        setEditGroupName(title || '');
-      }
+      const selectedGroup = (joinedRes.data || []).find(
+        (g: any) => (g.groupId || g.id) === groupId,
+      );
+      setGroup(selectedGroup || {groupName: title, groupId});
+      setEditGroupName(
+        selectedGroup?.groupName || selectedGroup?.name || title || '',
+      );
+      setEditDescription(selectedGroup?.description || '');
     } catch {
       // ──── MOCK DATA for UI testing ────
       setGroup({groupId, groupName: title || 'SEP490 Capstone Team', description: 'Capstone project collaboration', topicName: 'Software Engineering'});
@@ -248,35 +248,13 @@ export default function GroupManagementScreen({navigation, route}: any) {
       showToast('Group name is required', 'error');
       return;
     }
-    setSaving(true);
-    try {
-      await api.put(`/group/${groupId}`, {
-        groupName: editGroupName.trim(),
-        description: editDescription.trim(),
-      });
-      showToast('Group updated!', 'success');
-      setIsEditing(false);
-      fetchData();
-    } catch {
-      showToast('Failed to update group', 'error');
-    } finally {
-      setSaving(false);
-    }
+    showToast('Backend chưa hỗ trợ cập nhật thông tin group', 'info');
   };
 
   // ──── Settings: Delete ────
   const handleDeleteGroup = async () => {
-    setDeleting(true);
-    try {
-      await api.delete(`/group/${groupId}`);
-      showToast('Group deleted', 'success');
-      navigation.popToTop();
-    } catch {
-      showToast('Failed to delete group', 'error');
-    } finally {
-      setDeleting(false);
-      setDeleteDialogVisible(false);
-    }
+    showToast('Backend chưa hỗ trợ xóa group', 'info');
+    setDeleteDialogVisible(false);
   };
 
   // ──── Role badge ────

@@ -17,6 +17,40 @@ import Button from '../../components/ui/Button';
 import FloatingInput from '../../components/ui/Input';
 import AuthAPI from '../../api/AuthAPI';
 
+const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const validateUsername = (username: string): {isValid: boolean; message?: string} => {
+  if (!username.trim()) {
+    return {isValid: false, message: 'Username is required'};
+  }
+  if (username.length < 3 || username.length > 50) {
+    return {isValid: false, message: 'Username must be between 3 and 50 characters'};
+  }
+  const usernameRegex = /^(?=.*[a-zA-Z])(?=.*\d)[a-zA-Z0-9._@-]+$/;
+  if (!usernameRegex.test(username)) {
+    return {isValid: false, message: 'Username must contain both letters and numbers, and can include . _ @ -'};
+  }
+  return {isValid: true};
+};
+
+const validatePassword = (password: string): {isValid: boolean; message?: string} => {
+  if (!password.trim()) {
+    return {isValid: false, message: 'Password is required'};
+  }
+  if (password.length < 9) {
+    return {isValid: false, message: 'Password must be at least 9 characters long'};
+  }
+  const hasLetter = /[a-zA-Z]/.test(password);
+  const hasNumber = /\d/.test(password);
+  if (!hasLetter || !hasNumber) {
+    return {isValid: false, message: 'Password must contain both letters and numbers'};
+  }
+  return {isValid: true};
+};
+
 type Step = 'info' | 'otp';
 
 export default function RegisterScreen({navigation}: any) {
@@ -33,22 +67,93 @@ export default function RegisterScreen({navigation}: any) {
   const [showPassword, setShowPassword] = useState(false);
 
   const handleRegister = async () => {
-    if (!fullName || !username || !email || !password) {
-      showToast('Please fill in all fields', 'warning');
+  console.log("=== REGISTER BUTTON CLICKED ===");
+
+  if (!fullName.trim()) {
+    showToast('Full name is required', 'warning');
+    return;
+  }
+
+  const usernameValidation = validateUsername(username);
+  if (!usernameValidation.isValid) {
+    showToast(usernameValidation.message || 'Invalid username', 'error');
+    return;
+  }
+
+  if (!validateEmail(email)) {
+    showToast('Please enter a valid email address', 'error');
+    return;
+  }
+
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.isValid) {
+    showToast(passwordValidation.message || 'Invalid password', 'error');
+    return;
+  }
+
+  if (!confirmPassword.trim()) {
+    showToast('Please confirm your password', 'warning');
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match', 'error');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    console.log("CHECKING USERNAME AVAILABILITY:", username);
+    const checkUsernameRes = await AuthAPI.checkUsername(username);
+    console.log("CHECK USERNAME RESPONSE:", checkUsernameRes);
+
+    if (!checkUsernameRes.data.data) {
+      showToast('Username is already in use', 'error');
       return;
     }
-    if (password !== confirmPassword) {
-      showToast('Passwords do not match', 'error');
+
+    console.log("CHECKING EMAIL AVAILABILITY:", email);
+    const checkRes = await AuthAPI.checkEmail(email);
+    console.log("CHECK EMAIL RESPONSE:", checkRes);
+
+    if (!checkRes.data.data) {
+      showToast('Email is already in use', 'error');
       return;
     }
+
+    console.log("CALLING SEND OTP API:", email);
+
+    const otpRes = await AuthAPI.sendOtp(email);
+
+    console.log("OTP SENT SUCCESS:", otpRes);
+
+    setStep('otp');
+    showToast('OTP sent to your email', 'success');
+
+  } catch (error: any) {
+    console.log("SEND OTP ERROR:", error);
+    console.log("ERROR RESPONSE:", error?.response);
+    console.log("ERROR DATA:", error?.response?.data);
+
+    showToast(
+      error?.response?.data?.message || 'Failed to send OTP',
+      'error'
+    );
+  } finally {
+    console.log("SEND OTP PROCESS FINISHED");
+    setLoading(false);
+  }
+};
+
+  const handleResendOtp = async () => {
     setLoading(true);
     try {
-      await AuthAPI.register({fullName, username, email, password});
+      console.log("RESENDING OTP TO:", email);
       await AuthAPI.sendOtp(email);
-      setStep('otp');
-      showToast('OTP sent to your email', 'success');
+      showToast('OTP resent to your email', 'success');
     } catch (error: any) {
-      showToast(error?.response?.data?.message || 'Registration failed', 'error');
+      showToast(error?.response?.data?.message || 'Failed to resend OTP', 'error');
     } finally {
       setLoading(false);
     }
@@ -61,11 +166,39 @@ export default function RegisterScreen({navigation}: any) {
     }
     setLoading(true);
     try {
-      await AuthAPI.verifyOtp(email, otp);
-      showToast('Account created successfully!', 'success');
-      navigation.navigate('Login');
+      console.log("CALLING VERIFY OTP API:", email, otp);
+      const verifyRes = await AuthAPI.verifyOtp(email, otp);
+      console.log("VERIFY OTP RESPONSE:", verifyRes);
+
+      if (verifyRes.data.message === "Xác thực thành công") {
+        console.log("OTP VERIFIED SUCCESS");
+
+        console.log("CALLING REGISTER API", {
+          fullName,
+          username,
+          email,
+          password,
+        });
+
+        const registerRes = await AuthAPI.register({
+          fullName,
+          username,
+          email,
+          password,
+          confirmPassword,
+        });
+
+        console.log("REGISTER SUCCESS:", registerRes);
+
+        showToast('Account created successfully!', 'success');
+        navigation.navigate('Login');
+      } else {
+        console.log("OTP VERIFICATION FAILED:", verifyRes.data.message);
+        showToast(verifyRes.data.message || 'Invalid OTP', 'error');
+      }
     } catch (error: any) {
-      showToast(error?.response?.data?.message || 'Invalid OTP', 'error');
+      console.log("VERIFY OTP OR REGISTER ERROR:", error);
+      showToast(error?.response?.data?.message || 'Verification failed', 'error');
     } finally {
       setLoading(false);
     }
@@ -157,6 +290,14 @@ export default function RegisterScreen({navigation}: any) {
                 style={styles.btn}
               />
               <TouchableOpacity
+                onPress={handleResendOtp}
+                style={styles.resendBtn}
+                disabled={loading}>
+                <Text style={[styles.resendText, {color: Colors.primary}]}>
+                  Resend OTP
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => setStep('info')}
                 style={styles.backBtn}>
                 <Text style={[styles.backText, {color: Colors.primary}]}>
@@ -225,6 +366,8 @@ const styles = StyleSheet.create({
   btn: {marginTop: Spacing.sm},
   backBtn: {alignSelf: 'center', marginTop: Spacing.base},
   backText: {fontSize: 14, fontWeight: '500'},
+  resendBtn: {alignSelf: 'center', marginTop: Spacing.sm},
+  resendText: {fontSize: 14, fontWeight: '500'},
   signInRow: {
     flexDirection: 'row',
     justifyContent: 'center',

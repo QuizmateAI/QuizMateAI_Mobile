@@ -90,7 +90,7 @@ export default function PaymentScreen({navigation, route}: any) {
         selectedMethod === 'momo'
           ? PaymentAPI.createMomoPayment
           : PaymentAPI.createVnpayPayment;
-      const res = await api(planId);
+      const res = await api(planId, selectedGroupId || undefined);
       const payUrl = res.data?.payUrl || res.data?.url;
       if (payUrl) {
         await Linking.openURL(payUrl);

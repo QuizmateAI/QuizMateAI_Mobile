@@ -17,6 +17,23 @@ import {Spacing} from '../../theme/spacing';
 import Button from '../../components/ui/Button';
 import FloatingInput from '../../components/ui/Input';
 import AuthAPI from '../../api/AuthAPI';
+
+const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const validatePassword = (password: string): {isValid: boolean; message?: string} => {
+  if (password.length < 9) {
+    return {isValid: false, message: 'Password must be at least 9 characters long'};
+  }
+  const hasLetter = /[a-zA-Z]/.test(password);
+  const hasNumber = /\d/.test(password);
+  if (!hasLetter || !hasNumber) {
+    return {isValid: false, message: 'Password must contain both letters and numbers'};
+  }
+  return {isValid: true};
+};
 type Step = 'email' | 'otp' | 'reset';
 
 export default function ForgotPasswordScreen({navigation}: any) {
@@ -32,6 +49,10 @@ export default function ForgotPasswordScreen({navigation}: any) {
   const handleSendOtp = async () => {
     if (!email.trim()) {
       showToast('Please enter your email', 'warning');
+      return;
+    }
+    if (!validateEmail(email)) {
+      showToast('Please enter a valid email address', 'error');
       return;
     }
     setLoading(true);
@@ -53,8 +74,12 @@ export default function ForgotPasswordScreen({navigation}: any) {
     }
     setLoading(true);
     try {
-      await AuthAPI.verifyOtp(email, otp);
-      setStep('reset');
+      const verifyRes = await AuthAPI.verifyOtp(email, otp);
+      if (verifyRes.data.message === "Xác thực thành công") {
+        setStep('reset');
+      } else {
+        showToast(verifyRes.data.message || 'Invalid OTP', 'error');
+      }
     } catch (error: any) {
       showToast(error?.response?.data?.message || 'Invalid OTP', 'error');
     } finally {
@@ -63,16 +88,34 @@ export default function ForgotPasswordScreen({navigation}: any) {
   };
 
   const handleResetPassword = async () => {
+    if (!newPassword.trim()) {
+      showToast('Please enter new password', 'warning');
+      return;
+    }
+    if (!confirmPassword.trim()) {
+      showToast('Please confirm new password', 'warning');
+      return;
+    }
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      showToast(passwordValidation.message || 'Invalid password', 'error');
+      return;
+    }
     if (newPassword !== confirmPassword) {
       showToast('Passwords do not match', 'error');
       return;
     }
     setLoading(true);
     try {
-      await AuthAPI.resetPassword(email, otp, newPassword);
+      console.log("CALLING RESET PASSWORD API:", {email, newPassword});
+      const resetRes = await AuthAPI.resetPassword(email, newPassword);
+      console.log("RESET PASSWORD RESPONSE:", resetRes);
       showToast('Password reset successfully!', 'success');
       navigation.navigate('Login');
     } catch (error: any) {
+      console.log("RESET PASSWORD ERROR:", error);
+      console.log("ERROR RESPONSE:", error?.response);
+      console.log("ERROR DATA:", error?.response?.data);
       showToast(
         error?.response?.data?.message || 'Reset failed',
         'error',
