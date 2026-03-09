@@ -18,4 +18,21 @@ buildscript {
     }
 }
 
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
+    }
+    configurations.all {
+        resolutionStrategy {
+            // Keep AndroidX versions compatible with RN 0.75 + AGP 8.5.
+            force "androidx.core:core:1.13.1"
+            force "androidx.core:core-ktx:1.13.1"
+            force "androidx.transition:transition:1.5.1"
+            force "androidx.transition:transition-ktx:1.5.1"
+        }
+    }
+}
+
 apply plugin: "com.facebook.react.rootproject"
