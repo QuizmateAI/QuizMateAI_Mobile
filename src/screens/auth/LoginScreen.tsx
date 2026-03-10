@@ -34,29 +34,36 @@ export default function LoginScreen({navigation}: any) {
     }
     setLoading(true);
     try {
-      // ──── MOCK LOGIN for UI testing ────
-      if (username.trim() === 'test' && password === '123456') {
-        const mockUser = {
-          id: 1,
-          username: 'test',
-          email: 'test@quizmateai.com',
-          fullName: 'Test User',
-          avatarUrl: undefined,
-          role: 'USER',
-        };
-        await login('mock-jwt-token-for-ui-testing', mockUser);
-        showToast('Login successful!', 'success');
-        return;
-      }
-      // ──── END MOCK ────
-
       const response = await AuthAPI.login(username, password);
-      if (response.data) {
-        await login(response.data.token, response.data.user);
-        showToast('Login successful!', 'success');
+      const payload = response?.data?.data ?? response?.data;
+      const token = payload?.accessToken ?? payload?.token;
+      const profile = payload?.user ?? {};
+
+      if (!token) {
+        throw new Error('Login response does not contain access token');
       }
+
+      const authUser = {
+        id: Number(payload?.userID ?? payload?.id ?? profile?.id ?? 0),
+        username: profile?.username ?? payload?.username ?? username.trim(),
+        email: profile?.email ?? payload?.email ?? '',
+        fullName:
+          profile?.fullName ??
+          profile?.fullname ??
+          payload?.username ??
+          username.trim(),
+        avatarUrl: profile?.avatarUrl ?? profile?.avatar,
+        role: payload?.role ?? profile?.role ?? 'USER',
+      };
+
+      if (!authUser.email) {
+        throw new Error('Login response does not contain user profile');
+      }
+
+      await login(token, authUser);
+      showToast('Login successful!', 'success');
     } catch (error: any) {
-      const msg = error?.response?.data?.message || 'Login failed';
+      const msg = error?.response?.data?.message || error?.message || 'Login failed';
       showToast(msg, 'error');
     } finally {
       setLoading(false);
