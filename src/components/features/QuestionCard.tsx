@@ -92,7 +92,9 @@ export default function QuestionCard({
   };
 
   const handlePress = (answerId: number) => {
-    if (showResult) return;
+    if (showResult) {
+      return;
+    }
     if (isMultiChoice && onToggleAnswer) {
       onToggleAnswer(answerId);
     } else if (onSelectAnswer) {
