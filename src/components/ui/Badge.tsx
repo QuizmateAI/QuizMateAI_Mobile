@@ -1,6 +1,5 @@
 import React from 'react';
 import {View, Text, StyleSheet, ViewStyle} from 'react-native';
-import {Colors} from '../../theme/colors';
 import {useTheme} from '../../context/ThemeContext';
 
 type BadgeVariant = 'default' | 'success' | 'error' | 'warning' | 'info' | 'outline';

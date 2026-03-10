@@ -5,16 +5,17 @@ buildscript {
         compileSdkVersion = 34
         targetSdkVersion = 34
         ndkVersion = "26.1.10909125"
-        kotlinVersion = "1.9.24"
+        kotlinVersion = "2.0.0" // Đã cập nhật
     }
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle")
+        classpath("com.android.tools.build:gradle:8.5.0")
         classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+        classpath 'com.google.gms:google-services:4.4.2' // Cập nhật bản mới nhất
     }
 }
 
@@ -24,15 +25,7 @@ allprojects {
         mavenCentral()
         maven { url 'https://www.jitpack.io' }
     }
-    configurations.all {
-        resolutionStrategy {
-            // Keep AndroidX versions compatible with RN 0.75 + AGP 8.5.
-            force "androidx.core:core:1.13.1"
-            force "androidx.core:core-ktx:1.13.1"
-            force "androidx.transition:transition:1.5.1"
-            force "androidx.transition:transition-ktx:1.5.1"
-        }
-    }
+    // Đã xóa resolutionStrategy gây lỗi ở đây
 }
 
 apply plugin: "com.facebook.react.rootproject"

@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Modal,
   TouchableWithoutFeedback,
-  Animated,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
