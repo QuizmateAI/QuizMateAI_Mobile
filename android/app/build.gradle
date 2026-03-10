@@ -1,6 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
 
 /**
@@ -117,12 +118,4 @@ dependencies {
     } else {
         implementation jscFlavor
     }
-
-    // Google Sign-In
-    implementation 'com.google.android.gms:play-services-auth:20.7.0'
-
-    implementation platform('com.google.firebase:firebase-bom:32.7.0')
-    implementation 'com.google.firebase:firebase-auth'
 }
-
-apply plugin: 'com.google.gms.google-services'

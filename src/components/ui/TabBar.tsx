@@ -2,7 +2,7 @@ import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {useTheme} from '../../context/ThemeContext';
 import {Colors} from '../../theme/colors';
-import {BorderRadius} from '../../theme/spacing';
+import {BorderRadius, Spacing} from '../../theme/spacing';
 
 interface Tab {
   key: string;

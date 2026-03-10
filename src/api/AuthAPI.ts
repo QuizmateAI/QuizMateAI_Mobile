@@ -39,9 +39,6 @@ const AuthAPI = {
 
   googleLogin: (idToken: string) =>
     api.post('api/auth/google-login', {idToken}),
-
-  firebaseLogin: (idToken: string) =>
-    api.post('api/auth/firebase-login', {idToken}),
 };
 
 export default AuthAPI;
