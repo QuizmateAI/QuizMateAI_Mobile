@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState} from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,6 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import auth from '@react-native-firebase/auth';
-import {GoogleSignin} from '@react-native-google-signin/google-signin';
 import {useTheme} from '../../context/ThemeContext';
 import {useAuth} from '../../context/AuthContext';
 import {useToast} from '../../context/ToastContext';
@@ -19,7 +17,6 @@ import {BorderRadius, Spacing} from '../../theme/spacing';
 import Button from '../../components/ui/Button';
 import FloatingInput from '../../components/ui/Input';
 import AuthAPI from '../../api/AuthAPI';
-import {GOOGLE_CONFIG} from '../../utils/googleConfig';
 
 export default function LoginScreen({navigation}: any) {
   const {isDark, colors, toggleTheme} = useTheme();
@@ -29,13 +26,6 @@ export default function LoginScreen({navigation}: any) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
-  useEffect(() => {
-    GoogleSignin.configure({
-      webClientId: GOOGLE_CONFIG.webClientId,
-      offlineAccess: true,
-    });
-  }, []);
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
@@ -47,7 +37,6 @@ export default function LoginScreen({navigation}: any) {
       const response = await AuthAPI.login(username, password);
       const payload = response?.data?.data ?? response?.data;
       const token = payload?.accessToken ?? payload?.token;
-      const refreshToken = payload?.refreshToken;
       const profile = payload?.user ?? {};
 
       if (!token) {
@@ -71,62 +60,13 @@ export default function LoginScreen({navigation}: any) {
         throw new Error('Login response does not contain user profile');
       }
 
-      await login(token, refreshToken, authUser);
+      await login(token, authUser);
       showToast('Login successful!', 'success');
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || 'Login failed';
       showToast(msg, 'error');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    try {
-      // Check if your device supports Google Play
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      // Get the users ID token
-      const signInResponse = await GoogleSignin.signIn();
-      const idToken = signInResponse.data?.idToken;
-
-      if (!idToken) {
-        throw new Error('No ID token received from Google');
-      }
-
-      // Create a Google credential with the token
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-
-      // Sign-in the user with the credential
-      const userCredential = await auth().signInWithCredential(googleCredential);
-
-      // Get the ID token from Firebase
-      const firebaseIdToken = await userCredential.user.getIdToken();
-
-      // Send to backend
-      const response = await AuthAPI.firebaseLogin(firebaseIdToken);
-      if (response.data) {
-        const payload = response.data?.data ?? response.data;
-        const token = payload?.accessToken;
-        const refreshToken = payload?.refreshToken;
-
-        if (!token) {
-          throw new Error('Login response does not contain access token');
-        }
-
-        const user = {
-          id: payload.userID,
-          username: payload.user?.username ?? payload.username ?? '',
-          email: payload.user?.email ?? payload.email ?? '',
-          fullName: payload.user?.fullName ?? payload.fullName ?? '',
-          avatarUrl: payload.user?.avatar ?? payload.avatar ?? '',
-          role: payload.role,
-        };
-        await login(token, refreshToken, user);
-        showToast('Login successful!', 'success');
-      }
-    } catch (error: any) {
-      const msg = error?.message || 'Google login failed';
-      showToast(msg, 'error');
     }
   };
 
@@ -220,7 +160,7 @@ export default function LoginScreen({navigation}: any) {
             <Button
               title="Continue with Google"
               variant="outline"
-              onPress={handleGoogleLogin}
+              onPress={() => {}}
               icon="google"
             />
           </View>
