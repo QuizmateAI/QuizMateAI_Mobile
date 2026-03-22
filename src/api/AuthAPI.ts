@@ -37,6 +37,9 @@ const AuthAPI = {
   resetPassword: (email: string, newPassword: string) =>
     api.post('api/auth/reset-password', {}, {params: {email, newPassword}}),
 
+  firebaseLogin: (idToken: string) =>
+    api.post('api/auth/firebase-login', {idToken}),
+
   googleLogin: (idToken: string) =>
     api.post('api/auth/google-login', {idToken}),
 };
