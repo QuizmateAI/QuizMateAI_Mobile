@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
-  ActivityIndicator,
   Dimensions,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -25,6 +23,7 @@ import GroupAPI from '../../api/GroupAPI';
 import QuizAPI from '../../api/QuizAPI';
 import FlashcardAPI from '../../api/FlashcardAPI';
 import RoadmapAPI from '../../api/RoadmapAPI';
+import useWebSocket from '../../hooks/useWebSocket';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -45,10 +44,17 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [flashcards, setFlashcards] = useState<any[]>([]);
   const [roadmaps, setRoadmaps] = useState<any[]>([]);
-  const [sources, setSources] = useState<any[]>([]);
+  const [sources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('chat');
   const [chatMessage, setChatMessage] = useState('');
+  const latestFetchRequestIdRef = useRef(0);
+  const refreshRetryTimer1Ref = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const refreshRetryTimer2Ref = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // Invite
   const [inviteVisible, setInviteVisible] = useState(false);
@@ -56,12 +62,19 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const [inviting, setInviting] = useState(false);
 
   const fetchData = useCallback(async () => {
+    const requestId = ++latestFetchRequestIdRef.current;
+
     try {
       const [memRes, quizRes, fcRes] = await Promise.all([
         GroupAPI.getMembers(groupId),
         QuizAPI.getByContext('GROUP', groupId),
         FlashcardAPI.getByContext('GROUP', groupId),
       ]);
+
+      if (requestId !== latestFetchRequestIdRef.current) {
+        return;
+      }
+
       setMembers(memRes.data || []);
       setQuizzes(quizRes.data || []);
       setFlashcards(fcRes.data || []);
@@ -69,29 +82,29 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       // Roadmaps
       try {
         const rmRes = await RoadmapAPI.getForGroup(groupId);
+        if (requestId !== latestFetchRequestIdRef.current) {
+          return;
+        }
         setRoadmaps(rmRes.data || []);
       } catch {
+        if (requestId !== latestFetchRequestIdRef.current) {
+          return;
+        }
         setRoadmaps([]);
       }
     } catch {
-      // ──── MOCK DATA for UI testing ────
-      setMembers([
-        {userId: 1, fullName: 'Test User', role: 'LEADER'},
-        {userId: 2, fullName: 'Nguyễn Văn An', role: 'CONTRIBUTOR'},
-        {userId: 3, fullName: 'Trần Thị Bình', role: 'MEMBER'},
-        {userId: 4, fullName: 'Lê Hoàng Cường', role: 'MEMBER'},
-      ]);
-      setQuizzes([
-        {id: 1, name: 'Group Quiz - Chapter 1', questionCount: 20},
-        {id: 2, name: 'Weekly Assessment #3', questionCount: 10},
-      ]);
-      setFlashcards([
-        {id: 1, name: 'Group Vocab Cards', itemCount: 24},
-      ]);
-      setRoadmaps([{id: 1, name: 'Group Learning Path'}]);
-      // ──── END MOCK ────
+      if (requestId !== latestFetchRequestIdRef.current) {
+        return;
+      }
+      setMembers([]);
+      setQuizzes([]);
+      setFlashcards([]);
+      setRoadmaps([]);
+      showToast('Failed to load group data', 'error');
     } finally {
-      setLoading(false);
+      if (requestId === latestFetchRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [groupId, showToast]);
 
@@ -99,8 +112,54 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     fetchData();
   }, [fetchData]);
 
+  const triggerMaterialRefresh = useCallback(() => {
+    fetchData();
+
+    if (refreshRetryTimer1Ref.current) {
+      clearTimeout(refreshRetryTimer1Ref.current);
+    }
+    if (refreshRetryTimer2Ref.current) {
+      clearTimeout(refreshRetryTimer2Ref.current);
+    }
+
+    // Retry refreshes because WS broadcast can arrive before REST state is fully committed.
+    refreshRetryTimer1Ref.current = setTimeout(() => {
+      fetchData();
+    }, 1000);
+    refreshRetryTimer2Ref.current = setTimeout(() => {
+      fetchData();
+    }, 2500);
+  }, [fetchData]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshRetryTimer1Ref.current) {
+        clearTimeout(refreshRetryTimer1Ref.current);
+      }
+      if (refreshRetryTimer2Ref.current) {
+        clearTimeout(refreshRetryTimer2Ref.current);
+      }
+    };
+  }, []);
+
+  const {isConnected: wsConnected} = useWebSocket({
+    groupId,
+    enabled: !!groupId,
+    onMaterialUploaded: triggerMaterialRefresh,
+    onMaterialDeleted: triggerMaterialRefresh,
+    onMaterialUpdated: triggerMaterialRefresh,
+    onProgress: triggerMaterialRefresh,
+  });
+
+  useEffect(() => {
+    if (!wsConnected) {
+      return;
+    }
+    fetchData();
+  }, [wsConnected, fetchData]);
+
   const handleInvite = async () => {
-    if (!inviteEmail.trim()) return;
+    if (!inviteEmail.trim()) {return;}
     setInviting(true);
     try {
       await GroupAPI.sendInvitation(groupId, {email: inviteEmail});
@@ -112,6 +171,27 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     } finally {
       setInviting(false);
     }
+  };
+
+  const handleQuickAction = (key: string) => {
+    if (key === 'roadmap') {
+      navigation.navigate('RoadmapJourney', {
+        contextType: 'GROUP',
+        contextId: groupId,
+        title,
+      });
+      return;
+    }
+    if (key === 'flashcard') {
+      showToast('AI flashcard creation is workspace-only currently', 'info');
+      return;
+    }
+    if (key === 'quiz' || key === 'mockTest') {
+      showToast('Use existing quizzes from this group for now', 'info');
+      setActiveBottomTab('studio');
+      return;
+    }
+    setActiveBottomTab('studio');
   };
 
   if (loading) {
@@ -139,6 +219,15 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
             numberOfLines={1}>
             {title}
           </Text>
+          <View style={styles.headerMetaRow}>
+            <View
+              style={[
+                styles.wsDot,
+                {backgroundColor: wsConnected ? '#10B981' : '#94A3B8'},
+              ]}
+            />
+            <Text style={[styles.wsText, {color: colors.textSecondary}]}>Live</Text>
+          </View>
           <Text style={[styles.memberCount, {color: colors.textSecondary}]}>
             {members.length} members
           </Text>
@@ -174,7 +263,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 <TouchableOpacity
                   key={action.key}
                   activeOpacity={0.7}
-                  onPress={() => setActiveBottomTab('studio')}
+                  onPress={() => handleQuickAction(action.key)}
                   style={[
                     styles.quickAction,
                     {
@@ -203,7 +292,6 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 value={members.length}
                 color="#2563EB"
                 colors={colors}
-                isDark={isDark}
               />
               <OverviewCard
                 icon="head-question-outline"
@@ -211,7 +299,6 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 value={quizzes.length}
                 color="#7C3AED"
                 colors={colors}
-                isDark={isDark}
               />
               <OverviewCard
                 icon="cards-outline"
@@ -219,7 +306,6 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 value={flashcards.length}
                 color="#EA580C"
                 colors={colors}
-                isDark={isDark}
               />
             </View>
 
@@ -385,6 +471,15 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 <TouchableOpacity
                   key={item.label}
                   activeOpacity={0.7}
+                  onPress={() => {
+                    if (item.label === 'Roadmaps') {
+                      navigation.navigate('RoadmapJourney', {
+                        contextType: 'GROUP',
+                        contextId: groupId,
+                        title,
+                      });
+                    }
+                  }}
                   style={[
                     styles.studioItem,
                     {backgroundColor: colors.surface, borderColor: colors.border},
@@ -578,9 +673,9 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
 
 /* ──── Sub-components ──── */
 function OverviewCard({
-  icon, label, value, color, colors, isDark,
+  icon, label, value, color, colors,
 }: {
-  icon: string; label: string; value: number; color: string; colors: any; isDark: boolean;
+  icon: string; label: string; value: number; color: string; colors: any;
 }) {
   return (
     <View
@@ -608,6 +703,9 @@ const styles = StyleSheet.create({
   },
   backBtn: {padding: Spacing.sm},
   headerCenter: {flex: 1, marginHorizontal: Spacing.sm},
+  headerMetaRow: {flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2},
+  wsDot: {width: 8, height: 8, borderRadius: 99},
+  wsText: {fontSize: 11, fontWeight: '500'},
   headerTitle: {fontSize: 16, fontWeight: '600'},
   memberCount: {fontSize: 12, marginTop: 1},
   inviteBtn: {

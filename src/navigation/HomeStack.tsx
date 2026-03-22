@@ -4,12 +4,27 @@ import HomeScreen from '../screens/home/HomeScreen';
 import WorkspaceScreen from '../screens/home/WorkspaceScreen';
 import GroupWorkspaceScreen from '../screens/home/GroupWorkspaceScreen';
 import GroupManagementScreen from '../screens/home/GroupManagementScreen';
+import CreateAIQuizScreen from '../screens/home/CreateAIQuizScreen';
+import WorkspaceProfileWizardScreen from '../screens/home/WorkspaceProfileWizardScreen';
+import CreateAIFlashcardScreen from '../screens/home/CreateAIFlashcardScreen';
+import RoadmapJourneyScreen from '../screens/home/RoadmapJourneyScreen';
+import MaterialDetailScreen from '../screens/home/MaterialDetailScreen';
 
 export type HomeStackParamList = {
   HomeMain: undefined;
   Workspace: {workspaceId: number; title?: string};
   GroupWorkspace: {groupId: number; title?: string};
   GroupManagement: {groupId: number; title?: string};
+  CreateAIQuiz: {workspaceId: number; materials?: any[]};
+  CreateAIFlashcard: {workspaceId: number; materials?: any[]};
+  RoadmapJourney: {
+    contextType: 'WORKSPACE' | 'GROUP';
+    contextId: number;
+    title?: string;
+    materials?: any[];
+  };
+  MaterialDetail: {material: any};
+  WorkspaceProfileWizard: {workspaceId: number; title?: string};
 };
 
 const Stack = createStackNavigator<HomeStackParamList>();
@@ -21,6 +36,17 @@ export default function HomeStack() {
       <Stack.Screen name="Workspace" component={WorkspaceScreen} />
       <Stack.Screen name="GroupWorkspace" component={GroupWorkspaceScreen} />
       <Stack.Screen name="GroupManagement" component={GroupManagementScreen} />
+      <Stack.Screen name="CreateAIQuiz" component={CreateAIQuizScreen} />
+      <Stack.Screen
+        name="CreateAIFlashcard"
+        component={CreateAIFlashcardScreen}
+      />
+      <Stack.Screen name="RoadmapJourney" component={RoadmapJourneyScreen} />
+      <Stack.Screen
+        name="WorkspaceProfileWizard"
+        component={WorkspaceProfileWizardScreen}
+      />
+      <Stack.Screen name="MaterialDetail" component={MaterialDetailScreen} />
     </Stack.Navigator>
   );
 }

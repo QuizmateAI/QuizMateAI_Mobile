@@ -1,24 +1,48 @@
 import api from './api';
 
+const mapPlan = (plan: any) => {
+  const entitlement = plan?.entitlement || {};
+  const features = [
+    entitlement?.canProcessPdf ? 'Process PDF files' : null,
+    entitlement?.canProcessWord ? 'Process Word files' : null,
+    entitlement?.canProcessSlide ? 'Process Slides' : null,
+    entitlement?.canProcessExcel ? 'Process Excel files' : null,
+    entitlement?.canProcessImage ? 'Process images' : null,
+    entitlement?.canProcessAudio ? 'Process audio' : null,
+    entitlement?.canProcessVideo ? 'Process video' : null,
+    entitlement?.hasAdvanceQuizConfig ? 'Advanced quiz settings' : null,
+    entitlement?.hasAiCompanionMode ? 'AI companion mode' : null,
+    entitlement?.hasWorkspaceAnalytics ? 'Workspace analytics' : null,
+  ].filter(Boolean);
+
+  return {
+    ...plan,
+    id: plan?.planCatalogId ?? plan?.planId ?? plan?.id,
+    name: plan?.displayName ?? plan?.planName ?? plan?.name,
+    type: plan?.planScope ?? plan?.type,
+    duration: plan?.duration ?? 'month',
+    features,
+  };
+};
+
 const PaymentAPI = {
   getPlan: (id: number) =>
-    api.get(`/api/plan/${id}`).then(res => ({
+    api.get(`/api/plan-catalog/${id}`).then(res => ({
       ...res,
-      data: {
-        ...res.data?.data,
-        id: res.data?.data?.planId,
-        name: res.data?.data?.planName,
-      },
+      data: mapPlan(res.data?.data),
     })),
   getPurchasablePlans: (type: 'INDIVIDUAL' | 'GROUP') =>
-    api.get(`/api/plan/purchasable?type=${type}`).then(res => ({
-      ...res,
-      data: (res.data?.data || []).map((plan: any) => ({
-        ...plan,
-        id: plan.planId,
-        name: plan.planName,
-      })),
-    })),
+    (type === 'GROUP'
+      ? api.get('/api/plan-catalog/active/group')
+      : api.get('/api/plan-catalog/active/user')
+    ).then(res => {
+      const raw = res.data?.data;
+      const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+      return {
+        ...res,
+        data: list.map(mapPlan),
+      };
+    }),
   createMomoPayment: (planId: number, groupId?: number) =>
     api.post(
       `/api/momo/create/${planId}${groupId ? `?groupId=${groupId}` : ''}`,

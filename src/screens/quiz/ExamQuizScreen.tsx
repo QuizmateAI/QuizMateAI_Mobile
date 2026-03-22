@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, useCallback} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -28,9 +28,33 @@ export default function ExamQuizScreen({navigation, route}: any) {
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [textAnswers, setTextAnswers] = useState<Record<number, string>>({});
   const [attemptId, setAttemptId] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
+
+  const isTextAnswerQuestion = (q: any) => {
+    const type = String(q?.questionType || '').toUpperCase();
+    return (
+      type === 'SHORT_ANSWER' ||
+      type === 'FILL_IN_BLANK' ||
+      q?.questionTypeId === 3 ||
+      q?.questionTypeId === 5
+    );
+  };
+
+  const shouldActivateAndRetry = (error: any) => {
+    const message = String(
+      error?.response?.data?.message || error?.message || '',
+    ).toLowerCase();
+    const statusCode = Number(error?.response?.data?.statusCode);
+    return (
+      statusCode === 1083 ||
+      message.includes('chua duoc kich hoat') ||
+      message.includes('chưa được kích hoạt') ||
+      message.includes('not active')
+    );
+  };
 
   useEffect(() => {
     QuizAPI.getFull(quizId)
@@ -41,28 +65,33 @@ export default function ExamQuizScreen({navigation, route}: any) {
             s.questions?.map((q: any) => ({...q, sectionName: s.name})),
           ) || [];
         setQuestions(allQuestions);
-        setTimeLeft((res.data?.timeLimitMinutes || 30) * 60);
+        setTimeLeft(res.data?.timeLimitSeconds || 30 * 60);
       })
-      .catch(() => showToast('Failed to load quiz', 'error'))
+      .catch((error: any) =>
+        showToast(
+          error?.response?.data?.message || error?.message || 'Failed to load quiz',
+          'error',
+        ),
+      )
       .finally(() => setLoading(false));
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {clearInterval(timerRef.current);}
     };
   }, [quizId, showToast]);
 
-  const startTimer = useCallback(() => {
+  const startTimer = () => {
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
+          if (timerRef.current) {clearInterval(timerRef.current);}
           handleAutoSubmit();
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-  }, []);
+  };
 
   const handleAutoSubmit = async () => {
     if (attemptId) {
@@ -79,8 +108,39 @@ export default function ExamQuizScreen({navigation, route}: any) {
       setAttemptId(res.data?.id);
       setStarted(true);
       startTimer();
-    } catch {
-      showToast('Failed to start exam', 'error');
+    } catch (error: any) {
+      if (shouldActivateAndRetry(error)) {
+        try {
+          await QuizAPI.toggleStatus(quizId);
+          setQuiz((prev: any) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'ACTIVE',
+                }
+              : prev,
+          );
+          const retryRes = await QuizAPI.startAttempt(quizId);
+          setAttemptId(retryRes.data?.id);
+          setStarted(true);
+          startTimer();
+          showToast('Quiz activated. Starting now...', 'success');
+          return;
+        } catch (retryError: any) {
+          showToast(
+            retryError?.response?.data?.message ||
+              retryError?.message ||
+              'Failed to activate quiz',
+            'error',
+          );
+          return;
+        }
+      }
+
+      showToast(
+        error?.response?.data?.message || error?.message || 'Failed to start exam',
+        'error',
+      );
     }
   };
 
@@ -91,14 +151,27 @@ export default function ExamQuizScreen({navigation, route}: any) {
     }
   };
 
+  const handleChangeTextAnswer = (questionId: number, text: string) => {
+    setTextAnswers(prev => ({...prev, [questionId]: text}));
+    if (attemptId) {
+      QuizAPI.saveAnswer(attemptId, {questionId, textAnswer: text}).catch(() => {});
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!attemptId) return;
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (!attemptId) {
+      showToast('Exam attempt is missing', 'error');
+      return;
+    }
+    if (timerRef.current) {clearInterval(timerRef.current);}
     try {
       await QuizAPI.submitAttempt(attemptId);
       navigation.replace('QuizResult', {attemptId});
-    } catch {
-      showToast('Failed to submit', 'error');
+    } catch (error: any) {
+      showToast(
+        error?.response?.data?.message || error?.message || 'Failed to submit',
+        'error',
+      );
     }
   };
 
@@ -142,7 +215,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
               <View style={styles.startInfoItem}>
                 <Icon name="clock-outline" size={16} color={colors.textSecondary} />
                 <Text style={[styles.startInfoText, {color: colors.textSecondary}]}>
-                  {quiz?.timeLimitMinutes || 30} minutes
+                  {formatTime(quiz?.timeLimitSeconds || 30 * 60)}
                 </Text>
               </View>
             </View>
@@ -164,6 +237,11 @@ export default function ExamQuizScreen({navigation, route}: any) {
 
   const currentQuestion = questions[currentIndex];
   const isTimeWarning = timeLeft < 60;
+  const answeredCount = questions.filter(q => {
+    const hasChoiceAnswer = answers[q?.id] !== undefined;
+    const hasTextAnswer = (textAnswers[q?.id] || '').trim().length > 0;
+    return hasChoiceAnswer || hasTextAnswer;
+  }).length;
 
   return (
     <SafeAreaView
@@ -207,6 +285,33 @@ export default function ExamQuizScreen({navigation, route}: any) {
         </View>
       </View>
 
+      <View
+        style={[
+          styles.timerPanel,
+          {
+            borderColor: colors.border,
+            backgroundColor: colors.surface,
+          },
+        ]}>
+        <Icon
+          name="timer-sand"
+          size={20}
+          color={isTimeWarning ? Colors.error : Colors.primary}
+        />
+        <Text
+          style={[
+            styles.timerPanelValue,
+            {
+              color: isTimeWarning ? Colors.error : colors.heading,
+            },
+          ]}>
+          {formatTime(timeLeft)}
+        </Text>
+        <Text style={[styles.timerPanelSub, {color: colors.textSecondary}]}>
+          {answeredCount}/{questions.length} answered
+        </Text>
+      </View>
+
       {/* Question Nav */}
       <FlatList
         data={questions}
@@ -216,7 +321,10 @@ export default function ExamQuizScreen({navigation, route}: any) {
         contentContainerStyle={styles.navScroll}
         renderItem={({index}) => {
           const isActive = index === currentIndex;
-          const isAnswered = answers[questions[index]?.id] !== undefined;
+          const q = questions[index];
+          const isAnswered =
+            answers[q?.id] !== undefined ||
+            (textAnswers[q?.id] || '').trim().length > 0;
           return (
             <TouchableOpacity
               onPress={() => setCurrentIndex(index)}
@@ -257,9 +365,15 @@ export default function ExamQuizScreen({navigation, route}: any) {
             index={currentIndex}
             question={currentQuestion.content}
             answers={currentQuestion.answers || []}
+            questionType={currentQuestion.questionType}
+            questionTypeId={currentQuestion.questionTypeId}
             selectedAnswerId={answers[currentQuestion.id]}
             onSelectAnswer={(answerId) =>
               handleSelectAnswer(currentQuestion.id, answerId)
+            }
+            textAnswer={textAnswers[currentQuestion.id] || ''}
+            onChangeTextAnswer={text =>
+              handleChangeTextAnswer(currentQuestion.id, text)
             }
             difficulty={currentQuestion.difficulty}
           />
@@ -291,7 +405,11 @@ export default function ExamQuizScreen({navigation, route}: any) {
           />
         ) : (
           <Button
-            title="Next"
+            title={
+              currentQuestion && isTextAnswerQuestion(currentQuestion)
+                ? 'Save & Next'
+                : 'Next'
+            }
             size="md"
             onPress={() =>
               setCurrentIndex(i => Math.min(questions.length - 1, i + 1))
@@ -356,6 +474,27 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   timerText: {fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums']},
+  timerPanel: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timerPanelValue: {
+    marginTop: 4,
+    fontSize: 28,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  timerPanelSub: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '500',
+  },
 
   navScroll: {
     paddingHorizontal: Spacing.lg,

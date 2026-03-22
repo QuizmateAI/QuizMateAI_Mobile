@@ -12,7 +12,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
-import {BorderRadius, Spacing} from '../../theme/spacing';
+import {Spacing} from '../../theme/spacing';
 import Button from '../../components/ui/Button';
 import FloatingInput from '../../components/ui/Input';
 import AuthAPI from '../../api/AuthAPI';
@@ -67,7 +67,7 @@ export default function RegisterScreen({navigation}: any) {
   const [showPassword, setShowPassword] = useState(false);
 
   const handleRegister = async () => {
-  console.log("=== REGISTER BUTTON CLICKED ===");
+  console.log('=== REGISTER BUTTON CLICKED ===');
 
   if (!fullName.trim()) {
     showToast('Full name is required', 'warning');
@@ -104,44 +104,44 @@ export default function RegisterScreen({navigation}: any) {
   setLoading(true);
 
   try {
-    console.log("CHECKING USERNAME AVAILABILITY:", username);
+    console.log('CHECKING USERNAME AVAILABILITY:', username);
     const checkUsernameRes = await AuthAPI.checkUsername(username);
-    console.log("CHECK USERNAME RESPONSE:", checkUsernameRes);
+    console.log('CHECK USERNAME RESPONSE:', checkUsernameRes);
 
     if (!checkUsernameRes.data.data) {
       showToast('Username is already in use', 'error');
       return;
     }
 
-    console.log("CHECKING EMAIL AVAILABILITY:", email);
+    console.log('CHECKING EMAIL AVAILABILITY:', email);
     const checkRes = await AuthAPI.checkEmail(email);
-    console.log("CHECK EMAIL RESPONSE:", checkRes);
+    console.log('CHECK EMAIL RESPONSE:', checkRes);
 
     if (!checkRes.data.data) {
       showToast('Email is already in use', 'error');
       return;
     }
 
-    console.log("CALLING SEND OTP API:", email);
+    console.log('CALLING SEND OTP API:', email);
 
     const otpRes = await AuthAPI.sendOtp(email);
 
-    console.log("OTP SENT SUCCESS:", otpRes);
+    console.log('OTP SENT SUCCESS:', otpRes);
 
     setStep('otp');
     showToast('OTP sent to your email', 'success');
 
   } catch (error: any) {
-    console.log("SEND OTP ERROR:", error);
-    console.log("ERROR RESPONSE:", error?.response);
-    console.log("ERROR DATA:", error?.response?.data);
+    console.log('SEND OTP ERROR:', error);
+    console.log('ERROR RESPONSE:', error?.response);
+    console.log('ERROR DATA:', error?.response?.data);
 
     showToast(
       error?.response?.data?.message || 'Failed to send OTP',
       'error'
     );
   } finally {
-    console.log("SEND OTP PROCESS FINISHED");
+    console.log('SEND OTP PROCESS FINISHED');
     setLoading(false);
   }
 };
@@ -149,7 +149,7 @@ export default function RegisterScreen({navigation}: any) {
   const handleResendOtp = async () => {
     setLoading(true);
     try {
-      console.log("RESENDING OTP TO:", email);
+      console.log('RESENDING OTP TO:', email);
       await AuthAPI.sendOtp(email);
       showToast('OTP resent to your email', 'success');
     } catch (error: any) {
@@ -166,14 +166,14 @@ export default function RegisterScreen({navigation}: any) {
     }
     setLoading(true);
     try {
-      console.log("CALLING VERIFY OTP API:", email, otp);
+      console.log('CALLING VERIFY OTP API:', email, otp);
       const verifyRes = await AuthAPI.verifyOtp(email, otp);
-      console.log("VERIFY OTP RESPONSE:", verifyRes);
+      console.log('VERIFY OTP RESPONSE:', verifyRes);
 
-      if (verifyRes.data.message === "Xác thực thành công") {
-        console.log("OTP VERIFIED SUCCESS");
+      if (verifyRes.data.message === 'Xác thực thành công') {
+        console.log('OTP VERIFIED SUCCESS');
 
-        console.log("CALLING REGISTER API", {
+        console.log('CALLING REGISTER API', {
           fullName,
           username,
           email,
@@ -188,16 +188,16 @@ export default function RegisterScreen({navigation}: any) {
           confirmPassword,
         });
 
-        console.log("REGISTER SUCCESS:", registerRes);
+        console.log('REGISTER SUCCESS:', registerRes);
 
         showToast('Account created successfully!', 'success');
         navigation.navigate('Login');
       } else {
-        console.log("OTP VERIFICATION FAILED:", verifyRes.data.message);
+        console.log('OTP VERIFICATION FAILED:', verifyRes.data.message);
         showToast(verifyRes.data.message || 'Invalid OTP', 'error');
       }
     } catch (error: any) {
-      console.log("VERIFY OTP OR REGISTER ERROR:", error);
+      console.log('VERIFY OTP OR REGISTER ERROR:', error);
       showToast(error?.response?.data?.message || 'Verification failed', 'error');
     } finally {
       setLoading(false);

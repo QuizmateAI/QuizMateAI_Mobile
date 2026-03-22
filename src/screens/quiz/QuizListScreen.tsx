@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,6 @@ import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import Badge from '../../components/ui/Badge';
 import QuizAPI from '../../api/QuizAPI';
 
 export default function QuizListScreen({navigation}: any) {
@@ -24,28 +23,22 @@ export default function QuizListScreen({navigation}: any) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchQuizzes = async () => {
+  const fetchQuizzes = useCallback(async () => {
     try {
       const res = await QuizAPI.getByUser();
       setQuizzes(res.data || []);
     } catch {
-      // ──── MOCK DATA ────
-      setQuizzes([
-        {id: 1, name: 'Machine Learning Fundamentals', questionCount: 25, contextType: 'WORKSPACE'},
-        {id: 2, name: 'React Native Components', questionCount: 15, contextType: 'WORKSPACE'},
-        {id: 3, name: 'Data Structures - Arrays & Trees', questionCount: 20, contextType: 'GROUP'},
-        {id: 4, name: 'Japanese N3 Vocabulary', questionCount: 30, contextType: 'WORKSPACE'},
-      ]);
-      // ──── END MOCK ────
+      setQuizzes([]);
+      showToast('Failed to load quizzes', 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     fetchQuizzes();
-  }, []);
+  }, [fetchQuizzes]);
 
   if (loading) {
     return <LoadingSpinner />;
@@ -67,15 +60,20 @@ export default function QuizListScreen({navigation}: any) {
 
       <FlatList
         data={quizzes}
-        keyExtractor={item => String(item.id)}
+        keyExtractor={item => String(item.id || item.quizId)}
         renderItem={({item}) => (
           <TouchableOpacity
-            onPress={() =>
+            onPress={() => {
+              const quizId = item.id || item.quizId;
+              if (!quizId) {
+                showToast('Quiz ID is missing', 'error');
+                return;
+              }
               navigation.navigate('PracticeQuiz', {
-                quizId: item.id,
-                title: item.name,
-              })
-            }
+                quizId,
+                title: item.name || item.title,
+              });
+            }}
             activeOpacity={0.7}
             style={[
               styles.quizCard,
@@ -111,12 +109,17 @@ export default function QuizListScreen({navigation}: any) {
             <View style={styles.quizCardFooter}>
               <View style={styles.quizActions}>
                 <TouchableOpacity
-                  onPress={() =>
+                  onPress={() => {
+                    const quizId = item.id || item.quizId;
+                    if (!quizId) {
+                      showToast('Quiz ID is missing', 'error');
+                      return;
+                    }
                     navigation.navigate('PracticeQuiz', {
-                      quizId: item.id,
-                      title: item.name,
-                    })
-                  }
+                      quizId,
+                      title: item.name || item.title,
+                    });
+                  }}
                   style={[
                     styles.actionBtn,
                     {backgroundColor: isDark ? 'rgba(37,99,235,0.15)' : '#EFF6FF'},
@@ -127,12 +130,17 @@ export default function QuizListScreen({navigation}: any) {
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() =>
+                  onPress={() => {
+                    const quizId = item.id || item.quizId;
+                    if (!quizId) {
+                      showToast('Quiz ID is missing', 'error');
+                      return;
+                    }
                     navigation.navigate('ExamQuiz', {
-                      quizId: item.id,
-                      title: item.name,
-                    })
-                  }
+                      quizId,
+                      title: item.name || item.title,
+                    });
+                  }}
                   style={[
                     styles.actionBtn,
                     {backgroundColor: isDark ? 'rgba(234,88,12,0.15)' : '#FFF7ED'},

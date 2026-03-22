@@ -9,7 +9,11 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithCredential,
+} from '@react-native-firebase/auth';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
 import {useTheme} from '../../context/ThemeContext';
 import {useAuth} from '../../context/AuthContext';
@@ -28,6 +32,7 @@ export default function LoginScreen({navigation}: any) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
@@ -82,9 +87,17 @@ export default function LoginScreen({navigation}: any) {
   };
 
   const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
     try {
       // Check if your device supports Google Play
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+      // Clear previous Google session so account chooser is shown every time.
+      const hasPreviousSignIn = await GoogleSignin.hasPreviousSignIn();
+      if (hasPreviousSignIn) {
+        await GoogleSignin.signOut();
+      }
+
       // Get the users ID token
       const signInResponse = await GoogleSignin.signIn();
       const idToken = signInResponse.data?.idToken;
@@ -94,10 +107,13 @@ export default function LoginScreen({navigation}: any) {
       }
 
       // Create a Google credential with the token
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+      const googleCredential = GoogleAuthProvider.credential(idToken);
 
       // Sign-in the user with the credential
-      const userCredential = await auth().signInWithCredential(googleCredential);
+      const userCredential = await signInWithCredential(
+        getAuth(),
+        googleCredential,
+      );
 
       // Get the ID token from Firebase
       const firebaseIdToken = await userCredential.user.getIdToken();
@@ -127,6 +143,8 @@ export default function LoginScreen({navigation}: any) {
     } catch (error: any) {
       const msg = error?.message || 'Google login failed';
       showToast(msg, 'error');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -222,6 +240,7 @@ export default function LoginScreen({navigation}: any) {
               variant="outline"
               onPress={handleGoogleLogin}
               icon="google"
+              loading={googleLoading}
             />
           </View>
 

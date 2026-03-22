@@ -27,75 +27,15 @@ export default function SubscriptionScreen({navigation}: any) {
   const [planType, setPlanType] = useState('individual');
   const [plans, setPlans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    PaymentAPI.getPurchasablePlans(
-      planType === 'group' ? 'GROUP' : 'INDIVIDUAL',
-    )
+    setLoadError(null);
+    PaymentAPI.getPurchasablePlans(planType === 'group' ? 'GROUP' : 'INDIVIDUAL')
       .then(res => setPlans(res.data || []))
       .catch(() => {
-        // ──── MOCK DATA for UI testing ────
-        setPlans([
-          {
-            id: 1,
-            name: 'Starter',
-            price: 49000,
-            duration: 'month',
-            type: 'INDIVIDUAL',
-            recommended: false,
-            features: [
-              '5 Workspaces',
-              'AI Quiz Generation',
-              'Basic Analytics',
-              'Email Support',
-            ],
-          },
-          {
-            id: 2,
-            name: 'Premium',
-            price: 99000,
-            duration: 'month',
-            type: 'INDIVIDUAL',
-            recommended: true,
-            features: [
-              'Unlimited Workspaces',
-              'AI Quiz & Flashcard Generation',
-              'Advanced Analytics',
-              'Priority Support',
-              'Custom Roadmaps',
-            ],
-          },
-          {
-            id: 3,
-            name: 'Group Basic',
-            price: 199000,
-            duration: 'month',
-            type: 'GROUP',
-            recommended: false,
-            features: [
-              'Up to 10 members',
-              'Shared workspaces',
-              'Group analytics',
-              'Email Support',
-            ],
-          },
-          {
-            id: 4,
-            name: 'Group Pro',
-            price: 399000,
-            duration: 'month',
-            type: 'GROUP',
-            recommended: true,
-            features: [
-              'Up to 50 members',
-              'Unlimited shared workspaces',
-              'Advanced group analytics',
-              'Priority Support',
-              'Admin controls',
-            ],
-          },
-        ]);
-        // ──── END MOCK ────
+        setPlans([]);
+        setLoadError('Failed to load subscription plans');
       })
       .finally(() => setLoading(false));
   }, [planType]);
@@ -138,6 +78,9 @@ export default function SubscriptionScreen({navigation}: any) {
             styles.currentPlanCard,
             {backgroundColor: colors.surface, borderColor: colors.border},
           ]}>
+          {!!loadError && (
+            <Text style={[styles.errorText, {color: '#EF4444'}]}>{loadError}</Text>
+          )}
           <View style={styles.currentPlanHeader}>
             <View
               style={[
@@ -206,7 +149,7 @@ export default function SubscriptionScreen({navigation}: any) {
               </Text>
             </View>
           ) : (
-            filteredPlans.map((plan: any, idx: number) => (
+            filteredPlans.map((plan: any) => (
               <View
                 key={plan.id}
                 style={[
@@ -334,6 +277,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     marginBottom: Spacing.xl,
   },
+  errorText: {fontSize: 12, marginBottom: Spacing.sm},
   currentPlanHeader: {
     flexDirection: 'row',
     alignItems: 'center',

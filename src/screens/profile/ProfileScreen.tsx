@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -18,10 +17,7 @@ import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import Avatar from '../../components/ui/Avatar';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
 import FloatingInput from '../../components/ui/Input';
-import Dialog from '../../components/ui/Dialog';
 import {Card} from '../../components/ui/Card';
 import ProfileAPI from '../../api/ProfileAPI';
 
@@ -48,31 +44,19 @@ export default function ProfileScreen({navigation}: any) {
         setEditBirthday(res.data?.birthday || '');
       })
       .catch(() => {
-        // ──── MOCK DATA ────
-        const mock = {
-          fullName: user?.fullName || 'Test User',
-          username: user?.username || 'test',
-          email: user?.email || 'test@quizmateai.com',
+        setProfile({
+          fullName: user?.fullName || '',
+          username: user?.username || '',
+          email: user?.email || '',
           avatarUrl: user?.avatarUrl || null,
-          birthday: '2003-05-15',
-          level: 5,
-          xp: 450,
-          nextLevelXp: 1000,
-          topicCount: 8,
-          totalHours: 42,
-          streak: 7,
-          avgScore: 78,
-          badges: [
-            {emoji: '🏆', name: 'Quiz Master'},
-            {emoji: '🔥', name: 'Streak Keeper'},
-            {emoji: '⚡', name: 'Speedster'},
-          ],
-        };
-        setProfile(mock);
-        setEditName(mock.fullName);
-        setEditBirthday(mock.birthday);
+          birthday: '',
+          badges: [],
+        });
+        setEditName(user?.fullName || '');
+        setEditBirthday('');
+        showToast('Failed to load profile', 'error');
       });
-  }, [user]);
+  }, [user, showToast]);
 
   /* ──── Avatar Upload ──── */
   const handleAvatarPress = useCallback(async () => {
@@ -109,12 +93,7 @@ export default function ProfileScreen({navigation}: any) {
         }
         showToast('Avatar updated!', 'success');
       } catch {
-        // For mock mode: just update locally
-        setProfile((prev: any) => ({...prev, avatarUrl: asset.uri}));
-        if (user) {
-          await updateUser({...user, avatarUrl: asset.uri || undefined});
-        }
-        showToast('Avatar updated!', 'success');
+        showToast('Failed to upload avatar', 'error');
       }
     } catch (err: any) {
       showToast('Failed to pick image', 'error');

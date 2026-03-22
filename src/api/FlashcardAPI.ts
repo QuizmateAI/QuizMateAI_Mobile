@@ -9,7 +9,19 @@ const mapFlashcard = (item: any) => ({
 
 const FlashcardAPI = {
   getByContext: (contextType: string, contextId: number) =>
-    api.get(`/api/flashcards/getByContext/${contextType}/${contextId}`).then(res => ({
+    (() => {
+      let path = '';
+      if (contextType === 'WORKSPACE' || contextType === 'GROUP') {
+        path = `/api/flashcards/getByWorkspace/${contextId}`;
+      } else if (contextType === 'ROADMAP') {
+        path = `/api/flashcards/getByRoadmap/${contextId}`;
+      } else if (contextType === 'PHASE') {
+        path = `/api/flashcards/getByPhase/${contextId}`;
+      } else {
+        path = `/api/flashcards/getByKnowledge/${contextId}`;
+      }
+      return api.get(path);
+    })().then(res => ({
       ...res,
       data: (res.data?.data || []).map(mapFlashcard),
     })),
@@ -24,6 +36,7 @@ const FlashcardAPI = {
       data: mapFlashcard(res.data?.data),
     })),
   create: (data: any) => api.post('/api/flashcards/create', data),
+  generateAI: (data: any) => api.post('/api/ai/flashcard:generated', data),
   updateItem: (id: number, data: any) => api.put(`/api/flashcards/items/${id}`, data),
   deleteItem: (id: number) => api.delete(`/api/flashcards/items/${id}`),
 };

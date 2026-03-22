@@ -13,7 +13,6 @@ import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
-import {Card} from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
@@ -43,20 +42,8 @@ export default function PaymentScreen({navigation, route}: any) {
         const planRes = await PaymentAPI.getPlan(planId);
         setPlan(planRes.data);
       } catch {
-        // ──── MOCK DATA ────
-        setPlan({
-          id: planId,
-          name: planName || 'Premium Plan',
-          price: 99000,
-          duration: 'month',
-          type: paramPlanType || 'INDIVIDUAL',
-          features: [
-            'Unlimited workspaces',
-            'AI-powered quiz generation',
-            'Priority support',
-            'Advanced analytics',
-          ],
-        });
+        setPlan(null);
+        showToast('Failed to load plan details', 'error');
       }
 
       // Load groups for GROUP plans
@@ -68,18 +55,20 @@ export default function PaymentScreen({navigation, route}: any) {
           ),
         );
       } catch {
-        setGroups([
-          {id: 1, groupName: 'SEP490 Capstone Team', memberCount: 6},
-          {id: 2, groupName: 'Study Group - AI', memberCount: 12},
-        ]);
+        setGroups([]);
       }
 
       setLoading(false);
     };
     loadData();
-  }, [planId, planName, paramPlanType]);
+  }, [planId, planName, paramPlanType, showToast]);
 
   const handlePayment = async () => {
+    if (!plan) {
+      showToast('Plan is unavailable', 'error');
+      return;
+    }
+
     if (isGroupPlan && !selectedGroupId) {
       showToast('Please select a group first', 'warning');
       return;
@@ -94,18 +83,11 @@ export default function PaymentScreen({navigation, route}: any) {
       const payUrl = res.data?.payUrl || res.data?.url;
       if (payUrl) {
         await Linking.openURL(payUrl);
+      } else {
+        showToast('Payment URL was not returned', 'error');
       }
     } catch {
-      // Mock result for UI testing
-      navigation.navigate('PaymentResult', {
-        status: 'success',
-        orderId: `ORD-${Date.now()}`,
-        amount: plan?.price || 99000,
-        orderInfo: `Payment for ${plan?.name || planName}`,
-        transId: `TXN-${Date.now()}`,
-        payType: selectedMethod,
-        responseTime: String(Date.now()),
-      });
+      showToast('Failed to create payment', 'error');
     } finally {
       setProcessing(false);
     }

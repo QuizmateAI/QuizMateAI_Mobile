@@ -1,5 +1,5 @@
 import React from 'react';
-import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import {View, Text, StyleSheet, TouchableOpacity, TextInput} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
 import {Colors} from '../../theme/colors';
@@ -16,8 +16,12 @@ interface QuestionCardProps {
   index: number;
   question: string;
   answers: Answer[];
+  questionTypeId?: number;
+  questionType?: string;
   selectedAnswerId?: number | null;
   onSelectAnswer?: (answerId: number) => void;
+  textAnswer?: string;
+  onChangeTextAnswer?: (text: string) => void;
   showResult?: boolean;
   difficulty?: 'EASY' | 'MEDIUM' | 'HARD';
   explanation?: string;
@@ -30,8 +34,12 @@ export default function QuestionCard({
   index,
   question,
   answers,
+  questionTypeId,
+  questionType,
   selectedAnswerId,
   onSelectAnswer,
+  textAnswer,
+  onChangeTextAnswer,
   showResult = false,
   difficulty,
   explanation,
@@ -40,6 +48,16 @@ export default function QuestionCard({
   onToggleAnswer,
 }: QuestionCardProps) {
   const {isDark, colors} = useTheme();
+
+  const normalizedType = String(questionType || '').toUpperCase();
+  const isTextAnswerQuestion =
+    normalizedType === 'SHORT_ANSWER' ||
+    normalizedType === 'FILL_IN_BLANK' ||
+    questionTypeId === 3 ||
+    questionTypeId === 5;
+
+  const correctTextAnswer =
+    answers.find(answer => answer.isCorrect)?.content || '';
 
   const getDifficultyVariant = () => {
     switch (difficulty) {
@@ -131,31 +149,73 @@ export default function QuestionCard({
         {question}
       </Text>
 
-      <View style={styles.answers}>
-        {answers.map(answer => {
-          const style = getAnswerStyle(answer);
-          return (
-            <TouchableOpacity
-              key={answer.id}
-              onPress={() => handlePress(answer.id)}
-              activeOpacity={showResult ? 1 : 0.7}
+      {isTextAnswerQuestion ? (
+        <View style={styles.textAnswerWrap}>
+          <Text style={[styles.textAnswerLabel, {color: colors.textSecondary}]}>
+            {showResult ? 'Your answer' : 'Enter your answer'}
+          </Text>
+          <TextInput
+            value={textAnswer || ''}
+            onChangeText={onChangeTextAnswer}
+            editable={!showResult}
+            multiline
+            placeholder="Type your answer..."
+            placeholderTextColor={colors.placeholder}
+            style={[
+              styles.textAnswerInput,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: isDark ? Colors.dark.surfaceVariant : '#F8FAFC',
+              },
+            ]}
+          />
+
+          {showResult && (
+            <View
               style={[
-                styles.answerOption,
+                styles.correctAnswerBox,
                 {
-                  backgroundColor: style.bg,
-                  borderColor: style.border,
+                  borderColor: isDark ? '#065F46' : '#10B981',
+                  backgroundColor: isDark ? 'rgba(16,185,129,0.1)' : '#ECFDF5',
                 },
               ]}>
-              <Icon name={style.icon} size={20} color={style.border} />
-              <Text
-                style={[styles.answerText, {color: style.text}]}
-                numberOfLines={3}>
-                {answer.content}
+              <Text style={[styles.correctAnswerLabel, {color: isDark ? '#34D399' : '#059669'}]}>
+                Expected answer
               </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+              <Text style={[styles.correctAnswerText, {color: isDark ? '#34D399' : '#047857'}]}>
+                {correctTextAnswer || 'No reference answer provided'}
+              </Text>
+            </View>
+          )}
+        </View>
+      ) : (
+        <View style={styles.answers}>
+          {answers.map(answer => {
+            const style = getAnswerStyle(answer);
+            return (
+              <TouchableOpacity
+                key={answer.id}
+                onPress={() => handlePress(answer.id)}
+                activeOpacity={showResult ? 1 : 0.7}
+                style={[
+                  styles.answerOption,
+                  {
+                    backgroundColor: style.bg,
+                    borderColor: style.border,
+                  },
+                ]}>
+                <Icon name={style.icon} size={20} color={style.border} />
+                <Text
+                  style={[styles.answerText, {color: style.text}]}
+                  numberOfLines={3}>
+                  {answer.content}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
 
       {showResult && explanation && (
         <View
@@ -224,6 +284,38 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
     lineHeight: 20,
+  },
+  textAnswerWrap: {
+    gap: Spacing.xs,
+  },
+  textAnswerLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  textAnswerInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    minHeight: 88,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    textAlignVertical: 'top',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  correctAnswerBox: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  correctAnswerLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  correctAnswerText: {
+    fontSize: 13,
+    lineHeight: 19,
   },
   explanation: {
     marginTop: Spacing.base,

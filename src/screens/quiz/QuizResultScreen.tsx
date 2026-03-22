@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   Dimensions,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -28,7 +27,42 @@ export default function QuizResultScreen({navigation, route}: any) {
 
   useEffect(() => {
     QuizAPI.getResult(attemptId)
-      .then(res => setResult(res.data))
+      .then(async res => {
+        const attemptResult = res.data;
+        const quizId = Number(attemptResult?.quizId);
+
+        if (!quizId) {
+          setResult(attemptResult);
+          return;
+        }
+
+        try {
+          const fullRes = await QuizAPI.getFull(quizId);
+          const fullQuestions =
+            fullRes.data?.sections?.flatMap((section: any) => section?.questions || []) || [];
+          const questionMap = new Map(
+            fullQuestions.map((q: any) => [Number(q?.id || q?.questionId), q]),
+          );
+
+          const mergedQuestions = (attemptResult?.questions || []).map((q: any, i: number) => {
+            const source = questionMap.get(Number(q?.id || q?.questionId));
+            return {
+              ...q,
+              id: q?.id || q?.questionId || source?.id || i,
+              content: source?.content || q?.content || `Question ${i + 1}`,
+              answers: Array.isArray(source?.answers) ? source.answers : q?.answers || [],
+              explanation: source?.explanation || q?.explanation,
+              difficulty: source?.difficulty || q?.difficulty,
+              questionTypeId: source?.questionTypeId || q?.questionTypeId,
+              questionType: q?.questionType,
+            };
+          });
+
+          setResult({...attemptResult, questions: mergedQuestions});
+        } catch {
+          setResult(attemptResult);
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [attemptId]);
@@ -163,7 +197,10 @@ export default function QuizResultScreen({navigation, route}: any) {
                 index={i}
                 question={q.content}
                 answers={q.answers || []}
+                questionType={q.questionType}
+                questionTypeId={q.questionTypeId}
                 selectedAnswerId={q.selectedAnswerId}
+                textAnswer={q.textAnswer || ''}
                 showResult
                 difficulty={q.difficulty}
                 explanation={q.explanation}
