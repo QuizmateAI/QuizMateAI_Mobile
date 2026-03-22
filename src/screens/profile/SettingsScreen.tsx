@@ -20,7 +20,7 @@ import FloatingInput from '../../components/ui/Input';
 import ProfileAPI from '../../api/ProfileAPI';
 
 export default function SettingsScreen({navigation}: any) {
-  const {isDark, colors, toggleTheme, themeMode, setThemeMode} = useTheme();
+  const {isDark, colors, toggleTheme} = useTheme();
   const {user, logout, updateUser} = useAuth();
   const {showToast} = useToast();
 

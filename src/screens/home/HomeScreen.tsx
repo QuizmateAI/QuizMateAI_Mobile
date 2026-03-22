@@ -81,18 +81,9 @@ export default function HomeScreen({ navigation }: any) {
       setWorkspaces(wsRes.data || []);
       setGroups(grRes.data || []);
     } catch {
-      // ──── MOCK DATA for UI testing when backend is unavailable ────
-      setWorkspaces([
-        { id: 1, name: 'Machine Learning Basics', description: 'An introduction to ML concepts, algorithms, and applications', topicName: 'AI & ML', createdAt: '2026-03-01T10:00:00Z' },
-        { id: 2, name: 'React Native Development', description: 'Mobile app development with React Native', topicName: 'Programming', createdAt: '2026-03-05T14:30:00Z' },
-        { id: 3, name: 'Data Structures & Algorithms', description: 'Core CS concepts for coding interviews', topicName: 'Computer Science', createdAt: '2026-02-28T09:00:00Z' },
-        { id: 4, name: 'Japanese N3 Grammar', description: 'JLPT N3 grammar patterns and practice', topicName: 'Language', createdAt: '2026-03-08T16:00:00Z' },
-      ]);
-      setGroups([
-        { id: 1, name: 'SEP490 Capstone Team', description: 'Capstone project collaboration', memberCount: 6, role: 'LEADER' },
-        { id: 2, name: 'Study Group - AI', description: 'AI study group for final exam prep', memberCount: 12, role: 'MEMBER' },
-      ]);
-      // ──── END MOCK ────
+      setWorkspaces([]);
+      setGroups([]);
+      showToast('Failed to load workspaces/groups', 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -110,7 +101,7 @@ export default function HomeScreen({ navigation }: any) {
 
   // ---------- Create ----------
   const handleCreate = async () => {
-    if (!newName.trim()) return;
+    if (!newName.trim()) {return;}
     setCreating(true);
     try {
       if (activeTab === 'workspace') {
@@ -139,7 +130,7 @@ export default function HomeScreen({ navigation }: any) {
   };
 
   const handleActionSelect = (key: string) => {
-    if (!selectedWorkspace) return;
+    if (!selectedWorkspace) {return;}
     if (key === 'edit') {
       // Pre-fill dialog with workspace data
       setEditTitle(selectedWorkspace.title || selectedWorkspace.name || '');
@@ -152,7 +143,7 @@ export default function HomeScreen({ navigation }: any) {
 
   // ---------- Edit Workspace ----------
   const handleEditWorkspace = async () => {
-    if (!selectedWorkspace) return;
+    if (!selectedWorkspace) {return;}
     setSaving(true);
     try {
       const workspaceId =
@@ -173,7 +164,7 @@ export default function HomeScreen({ navigation }: any) {
 
   // ---------- Delete Workspace ----------
   const handleDeleteWorkspace = async () => {
-    if (!selectedWorkspace) return;
+    if (!selectedWorkspace) {return;}
     setDeleting(true);
     try {
       const workspaceId =

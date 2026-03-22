@@ -75,7 +75,7 @@ export default function ForgotPasswordScreen({navigation}: any) {
     setLoading(true);
     try {
       const verifyRes = await AuthAPI.verifyOtp(email, otp);
-      if (verifyRes.data.message === "Xác thực thành công") {
+      if (verifyRes.data.message === 'Xác thực thành công') {
         setStep('reset');
       } else {
         showToast(verifyRes.data.message || 'Invalid OTP', 'error');
@@ -107,15 +107,15 @@ export default function ForgotPasswordScreen({navigation}: any) {
     }
     setLoading(true);
     try {
-      console.log("CALLING RESET PASSWORD API:", {email, newPassword});
+      console.log('CALLING RESET PASSWORD API:', {email, newPassword});
       const resetRes = await AuthAPI.resetPassword(email, newPassword);
-      console.log("RESET PASSWORD RESPONSE:", resetRes);
+      console.log('RESET PASSWORD RESPONSE:', resetRes);
       showToast('Password reset successfully!', 'success');
       navigation.navigate('Login');
     } catch (error: any) {
-      console.log("RESET PASSWORD ERROR:", error);
-      console.log("ERROR RESPONSE:", error?.response);
-      console.log("ERROR DATA:", error?.response?.data);
+      console.log('RESET PASSWORD ERROR:', error);
+      console.log('ERROR RESPONSE:', error?.response);
+      console.log('ERROR DATA:', error?.response?.data);
       showToast(
         error?.response?.data?.message || 'Reset failed',
         'error',

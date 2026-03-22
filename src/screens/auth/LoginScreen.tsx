@@ -69,7 +69,6 @@ export default function LoginScreen({navigation}: any) {
       setLoading(false);
     }
   };
-
   return (
     <SafeAreaView
       style={[styles.container, {backgroundColor: colors.background}]}>

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  FlatList,
   Dimensions,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import DocumentPicker from 'react-native-document-picker';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
@@ -24,6 +24,8 @@ import MaterialAPI from '../../api/MaterialAPI';
 import QuizAPI from '../../api/QuizAPI';
 import FlashcardAPI from '../../api/FlashcardAPI';
 import RoadmapAPI from '../../api/RoadmapAPI';
+import useWebSocket from '../../hooks/useWebSocket';
+import WorkspaceProfileAPI from '../../api/WorkspaceProfileAPI';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -54,57 +56,308 @@ export default function WorkspaceScreen({navigation, route}: any) {
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [flashcards, setFlashcards] = useState<any[]>([]);
   const [roadmaps, setRoadmaps] = useState<any[]>([]);
+  const [profileStatusLoading, setProfileStatusLoading] = useState(true);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('chat');
   const [chatMessage, setChatMessage] = useState('');
   const [deletingMaterial, setDeletingMaterial] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const hasAutoOpenedWizardRef = useRef(false);
+  const lastQuizProgressEventKeyRef = useRef<string | null>(null);
+  const latestFetchRequestIdRef = useRef(0);
+  const processingPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const refreshRetryTimer1Ref = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const refreshRetryTimer2Ref = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const fetchData = useCallback(async () => {
+    const requestId = ++latestFetchRequestIdRef.current;
+
     try {
-      const [wsRes, matRes, quizRes, fcRes] = await Promise.all([
+      const [wsRes, matRes] = await Promise.all([
         WorkspaceAPI.getById(workspaceId),
         MaterialAPI.getByWorkspace(workspaceId),
+      ]);
+
+      if (requestId !== latestFetchRequestIdRef.current) {
+        return;
+      }
+
+      setWorkspace(wsRes.data);
+      setMaterials(Array.isArray(matRes.data) ? matRes.data : matRes.data?.data || []);
+
+      try {
+        setProfileStatusLoading(true);
+        const profileRes = await WorkspaceProfileAPI.getProfile(workspaceId);
+        if (requestId !== latestFetchRequestIdRef.current) {
+          return;
+        }
+        const profile = profileRes.data?.data || profileRes.data || {};
+        const done =
+          profile?.onboardingCompleted === true ||
+          String(profile?.workspaceSetupStatus || '').toUpperCase() === 'DONE';
+        setOnboardingCompleted(Boolean(done));
+      } catch {
+        if (requestId !== latestFetchRequestIdRef.current) {
+          return;
+        }
+        setOnboardingCompleted(null);
+      } finally {
+        if (requestId === latestFetchRequestIdRef.current) {
+          setProfileStatusLoading(false);
+        }
+      }
+
+      const [quizRes, fcRes] = await Promise.allSettled([
         QuizAPI.getByContext('WORKSPACE', workspaceId),
         FlashcardAPI.getByContext('WORKSPACE', workspaceId),
       ]);
-      setWorkspace(wsRes.data);
-      setMaterials(matRes.data || []);
-      setQuizzes(quizRes.data || []);
-      setFlashcards(fcRes.data || []);
+
+      if (requestId !== latestFetchRequestIdRef.current) {
+        return;
+      }
+
+      setQuizzes(quizRes.status === 'fulfilled' ? quizRes.value.data || [] : []);
+      setFlashcards(fcRes.status === 'fulfilled' ? fcRes.value.data || [] : []);
 
       // Roadmaps – separate try/catch so it doesn't block others
       try {
         const rmRes = await RoadmapAPI.getForWorkspace(workspaceId);
+        if (requestId !== latestFetchRequestIdRef.current) {
+          return;
+        }
         setRoadmaps(rmRes.data || []);
       } catch {
+        if (requestId !== latestFetchRequestIdRef.current) {
+          return;
+        }
         setRoadmaps([]);
       }
     } catch {
-      // ──── MOCK DATA for UI testing ────
-      setWorkspace({name: title, topicName: 'Computer Science'});
-      setMaterials([
-        {id: 1, title: 'Chapter 1 - Introduction.pdf', materialType: 'PDF', status: 'READY', uploadedAt: '2026-03-01T10:00:00Z'},
-        {id: 2, title: 'Lecture Notes Week 3.pdf', materialType: 'PDF', status: 'READY', uploadedAt: '2026-03-03T14:00:00Z'},
-        {id: 3, title: 'Practice Problems.docx', materialType: 'DOC', status: 'PROCESSING', uploadedAt: '2026-03-08T09:00:00Z'},
-      ]);
-      setQuizzes([
-        {id: 1, name: 'Midterm Practice Quiz', questionCount: 25},
-        {id: 2, name: 'Chapter 1-3 Review', questionCount: 15},
-      ]);
-      setFlashcards([
-        {id: 1, name: 'Key Definitions', itemCount: 30},
-        {id: 2, name: 'Algorithm Complexity Cards', itemCount: 18},
-      ]);
-      setRoadmaps([{id: 1, name: 'Learning Path'}]);
-      // ──── END MOCK ────
+      if (requestId !== latestFetchRequestIdRef.current) {
+        return;
+      }
+      setWorkspace(null);
+      setMaterials([]);
+      setQuizzes([]);
+      setFlashcards([]);
+      setRoadmaps([]);
+      setOnboardingCompleted(null);
+      setProfileStatusLoading(false);
+      showToast('Failed to load workspace data', 'error');
     } finally {
-      setLoading(false);
+      if (requestId === latestFetchRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [workspaceId, showToast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (loading || profileStatusLoading) {
+      return;
+    }
+    if (hasAutoOpenedWizardRef.current) {
+      return;
+    }
+    if (onboardingCompleted === false) {
+      hasAutoOpenedWizardRef.current = true;
+      navigation.navigate('WorkspaceProfileWizard', {
+        workspaceId,
+        title,
+      });
+    }
+  }, [loading, profileStatusLoading, onboardingCompleted, navigation, workspaceId, title]);
+
+  const triggerMaterialRefresh = useCallback(() => {
+    fetchData();
+
+    if (refreshRetryTimer1Ref.current) {
+      clearTimeout(refreshRetryTimer1Ref.current);
+    }
+    if (refreshRetryTimer2Ref.current) {
+      clearTimeout(refreshRetryTimer2Ref.current);
+    }
+
+    // Retry refreshes because WS broadcast can arrive before REST state is fully committed.
+    refreshRetryTimer1Ref.current = setTimeout(() => {
+      fetchData();
+    }, 1000);
+    refreshRetryTimer2Ref.current = setTimeout(() => {
+      fetchData();
+    }, 2500);
+  }, [fetchData]);
+
+  const extractMaterialEvent = useCallback((payload: any) => {
+    const materialId =
+      payload?.materialId ||
+      payload?.id ||
+      payload?.data?.materialId ||
+      payload?.data?.id;
+
+    const status =
+      payload?.final_status ||
+      payload?.status ||
+      payload?.data?.final_status ||
+      payload?.data?.status;
+
+    const eventType = String(payload?.type || payload?.data?.type || '').toUpperCase();
+
+    return {
+      materialId: materialId != null ? String(materialId) : null,
+      status: status != null ? String(status).toUpperCase() : null,
+      eventType,
+    };
+  }, []);
+
+  const applyMaterialWsEvent = useCallback(
+    (payload: any) => {
+      const {materialId, status, eventType} = extractMaterialEvent(payload);
+
+      if (!materialId) {
+        triggerMaterialRefresh();
+        return;
+      }
+
+      if (eventType === 'DELETED' || status === 'DELETED') {
+        setMaterials(prev =>
+          prev.filter(item => String(item.materialId || item.id) !== materialId),
+        );
+        triggerMaterialRefresh();
+        return;
+      }
+
+      setMaterials(prev =>
+        prev.map(item => {
+          if (String(item.materialId || item.id) !== materialId) {
+            return item;
+          }
+
+          return {
+            ...item,
+            ...(status ? {status} : {}),
+            ...(status ? {final_status: status} : {}),
+          };
+        }),
+      );
+
+      triggerMaterialRefresh();
+    },
+    [extractMaterialEvent, triggerMaterialRefresh],
+  );
+
+  const handleProgressEvent = useCallback(
+    (payload: any) => {
+      const status = String(payload?.status || payload?.data?.status || '').toUpperCase();
+      if (status === 'QUIZ_COMPLETED' || status === 'MOCKTEST_COMPLETED') {
+        const quizData = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+        const eventWorkspaceId = Number(
+          quizData?.workspaceId || payload?.workspaceId || workspaceId,
+        );
+
+        if (eventWorkspaceId && Number(workspaceId) && eventWorkspaceId !== Number(workspaceId)) {
+          return;
+        }
+
+        const quizId = quizData?.quizId || quizData?.id || 'unknown';
+        const eventKey = `${status}:${eventWorkspaceId || 'na'}:${quizId}`;
+
+        if (lastQuizProgressEventKeyRef.current !== eventKey) {
+          lastQuizProgressEventKeyRef.current = eventKey;
+          showToast(
+            status === 'MOCKTEST_COMPLETED'
+              ? 'AI mock test is ready'
+              : 'AI quiz is ready',
+            'success',
+          );
+        }
+
+        fetchData();
+        return;
+      }
+
+      applyMaterialWsEvent(payload);
+    },
+    [applyMaterialWsEvent, fetchData, showToast, workspaceId],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (refreshRetryTimer1Ref.current) {
+        clearTimeout(refreshRetryTimer1Ref.current);
+      }
+      if (refreshRetryTimer2Ref.current) {
+        clearTimeout(refreshRetryTimer2Ref.current);
+      }
+      if (processingPollTimerRef.current) {
+        clearInterval(processingPollTimerRef.current);
+      }
+    };
+  }, []);
+
+  const {isConnected: wsConnected} = useWebSocket({
+    workspaceId,
+    enabled: !!workspaceId,
+    onMaterialUploaded: applyMaterialWsEvent,
+    onMaterialDeleted: applyMaterialWsEvent,
+    onMaterialUpdated: applyMaterialWsEvent,
+    onProgress: handleProgressEvent,
+  });
+
+  useEffect(() => {
+    if (!wsConnected) {
+      return;
+    }
+    fetchData();
+  }, [wsConnected, fetchData]);
+
+  useEffect(() => {
+    const hasProcessingMaterial = materials.some(item => {
+      const status = String(
+        item?.final_status || item?.status || item?.processingStatus || '',
+      ).toUpperCase();
+
+      return [
+        'PROCESSING',
+        'PROCECCSING',
+        'PENDING',
+        'IN_PROGRESS',
+        'ACTIVE',
+      ].includes(status);
+    });
+
+    if (!hasProcessingMaterial) {
+      if (processingPollTimerRef.current) {
+        clearInterval(processingPollTimerRef.current);
+        processingPollTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (processingPollTimerRef.current) {
+      return;
+    }
+
+    processingPollTimerRef.current = setInterval(() => {
+      fetchData();
+    }, 4000);
+
+    return () => {
+      if (processingPollTimerRef.current) {
+        clearInterval(processingPollTimerRef.current);
+        processingPollTimerRef.current = null;
+      }
+    };
+  }, [materials, fetchData]);
 
   /* ──── Delete Material ──── */
   const handleDeleteMaterial = (mat: any) => {
@@ -134,6 +387,66 @@ export default function WorkspaceScreen({navigation, route}: any) {
     );
   };
 
+  const handleUploadMaterial = async () => {
+    try {
+      const picked = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.allFiles],
+        presentationStyle: 'fullScreen',
+      });
+
+      if (!picked?.uri) {
+        return;
+      }
+
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('file', {
+        uri: picked.uri,
+        type: picked.type || 'application/octet-stream',
+        name: picked.name || `upload-${Date.now()}`,
+      } as any);
+      formData.append('workspaceID', String(workspaceId));
+
+      await MaterialAPI.upload(formData);
+      showToast('Upload started, processing in background', 'success');
+      fetchData();
+    } catch (error: any) {
+      if (DocumentPicker.isCancel(error)) {
+        return;
+      }
+      showToast('Failed to upload material', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleQuickAction = (key: string) => {
+    if (key === 'quiz' || key === 'mockTest') {
+      navigation.navigate('CreateAIQuiz', {
+        workspaceId,
+        materials,
+      });
+      return;
+    }
+    if (key === 'roadmap') {
+      navigation.navigate('RoadmapJourney', {
+        contextType: 'WORKSPACE',
+        contextId: workspaceId,
+        title,
+        materials,
+      });
+      return;
+    }
+    if (key === 'flashcard') {
+      navigation.navigate('CreateAIFlashcard', {
+        workspaceId,
+        materials,
+      });
+      return;
+    }
+    setActiveBottomTab('studio');
+  };
+
   /* ──── Status badge colors ──── */
   const getStatusBadge = (status?: string) => {
     switch (status?.toUpperCase()) {
@@ -142,8 +455,15 @@ export default function WorkspaceScreen({navigation, route}: any) {
       case 'COMPLETED':
         return {variant: 'success' as const, label: 'Ready'};
       case 'PROCESSING':
+      case 'PROCECCSING':
       case 'PENDING':
         return {variant: 'warning' as const, label: 'Processing'};
+      case 'REJECT':
+      case 'REJECTED':
+        return {variant: 'error' as const, label: 'Rejected'};
+      case 'WARN':
+      case 'WARNED':
+        return {variant: 'warning' as const, label: 'Warning'};
       case 'FAILED':
       case 'ERROR':
         return {variant: 'error' as const, label: 'Failed'};
@@ -177,6 +497,15 @@ export default function WorkspaceScreen({navigation, route}: any) {
             numberOfLines={1}>
             {title || workspace?.name || workspace?.title}
           </Text>
+          <View style={styles.headerMetaRow}>
+            <View
+              style={[
+                styles.wsDot,
+                {backgroundColor: wsConnected ? '#10B981' : '#94A3B8'},
+              ]}
+            />
+            <Text style={[styles.wsText, {color: colors.textSecondary}]}>Live</Text>
+          </View>
           {workspace?.topicName && (
             <Text
               style={[styles.headerSub, {color: colors.textSecondary}]}
@@ -185,7 +514,14 @@ export default function WorkspaceScreen({navigation, route}: any) {
             </Text>
           )}
         </View>
-        <TouchableOpacity style={styles.headerAction}>
+        <TouchableOpacity
+          style={styles.headerAction}
+          onPress={() =>
+            navigation.navigate('WorkspaceProfileWizard', {
+              workspaceId,
+              title,
+            })
+          }>
           <Icon name="dots-vertical" size={22} color={colors.icon} />
         </TouchableOpacity>
       </View>
@@ -195,6 +531,33 @@ export default function WorkspaceScreen({navigation, route}: any) {
         style={styles.mainContent}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
+        {onboardingCompleted === false && (
+          <View
+            style={[
+              styles.onboardingBanner,
+              {
+                backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+                borderColor: isDark ? '#334155' : '#BFDBFE',
+              },
+            ]}>
+            <View style={styles.onboardingBannerHead}>
+              <Icon name="account-cog-outline" size={18} color={Colors.primary} />
+              <Text style={[styles.onboardingBannerTitle, {color: colors.heading}]}>Workspace Profile Setup Required</Text>
+            </View>
+            <Text style={[styles.onboardingBannerText, {color: colors.textSecondary}]}>Complete onboarding profile so roadmap, AI quiz, and mock-test flows can run correctly.</Text>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('WorkspaceProfileWizard', {
+                  workspaceId,
+                  title,
+                })
+              }
+              style={styles.onboardingBannerAction}>
+              <Text style={styles.onboardingBannerActionText}>Open Setup</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ───────── CHAT TAB ───────── */}
         {activeBottomTab === 'chat' && (
           <View style={styles.chatArea}>
@@ -207,11 +570,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 <TouchableOpacity
                   key={action.key}
                   activeOpacity={0.7}
-                  onPress={() => {
-                    // Navigate to specific creation or list
-                    // For now, switch to Studio tab
-                    setActiveBottomTab('studio');
-                  }}
+                  onPress={() => handleQuickAction(action.key)}
                   style={[
                     styles.quickAction,
                     {
@@ -240,7 +599,6 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 value={materials.length}
                 color="#64748B"
                 colors={colors}
-                isDark={isDark}
               />
               <OverviewCard
                 icon="head-question-outline"
@@ -248,7 +606,6 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 value={quizzes.length}
                 color="#2563EB"
                 colors={colors}
-                isDark={isDark}
               />
               <OverviewCard
                 icon="cards-outline"
@@ -256,7 +613,6 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 value={flashcards.length}
                 color="#EA580C"
                 colors={colors}
-                isDark={isDark}
               />
             </View>
 
@@ -394,16 +750,20 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 Sources ({materials.length})
               </Text>
               <TouchableOpacity
-                onPress={() => {
-                  // TODO: Implement file picker upload
-                  showToast('File upload coming soon', 'info');
-                }}
+                onPress={handleUploadMaterial}
+                disabled={uploading}
                 style={[
                   styles.addSourceBtn,
                   {backgroundColor: Colors.primary},
                 ]}>
-                <Icon name="plus" size={16} color="#FFFFFF" />
-                <Text style={styles.addSourceText}>Add</Text>
+                {uploading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Icon name="plus" size={16} color="#FFFFFF" />
+                    <Text style={styles.addSourceText}>Add</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -436,7 +796,8 @@ export default function WorkspaceScreen({navigation, route}: any) {
                   Upload documents to get started with AI-powered learning
                 </Text>
                 <TouchableOpacity
-                  onPress={() => showToast('File upload coming soon', 'info')}
+                  onPress={handleUploadMaterial}
+                  disabled={uploading}
                   style={[
                     styles.uploadBtn,
                     {
@@ -454,10 +815,15 @@ export default function WorkspaceScreen({navigation, route}: any) {
             ) : (
               materials.map((mat: any) => {
                 const matId = mat.materialId || mat.id;
-                const status = getStatusBadge(mat.status);
+                const status = getStatusBadge(mat.final_status || mat.status);
                 return (
-                  <View
+                  <TouchableOpacity
                     key={matId}
+                    onPress={() =>
+                      navigation.navigate('MaterialDetail', {
+                        material: mat,
+                      })
+                    }
                     style={[
                       styles.sourceItem,
                       {
@@ -526,7 +892,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                         />
                       )}
                     </TouchableOpacity>
-                  </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -557,8 +923,24 @@ export default function WorkspaceScreen({navigation, route}: any) {
                   onPress={() => {
                     if (item.key === 'sources') {
                       setActiveBottomTab('sources');
+                    } else if (item.key === 'quiz') {
+                      navigation.navigate('CreateAIQuiz', {
+                        workspaceId,
+                        materials,
+                      });
+                    } else if (item.key === 'roadmap') {
+                      navigation.navigate('RoadmapJourney', {
+                        contextType: 'WORKSPACE',
+                        contextId: workspaceId,
+                        title,
+                        materials,
+                      });
+                    } else if (item.key === 'flashcard') {
+                      navigation.navigate('CreateAIFlashcard', {
+                        workspaceId,
+                        materials,
+                      });
                     }
-                    // Future: navigate to specific list screens
                   }}
                   style={[
                     styles.studioItem,
@@ -756,6 +1138,13 @@ export default function WorkspaceScreen({navigation, route}: any) {
           colors={colors}
         />
       </View>
+
+      {uploading && (
+        <View style={styles.blockingOverlay}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.blockingText}>Uploading material...</Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -768,14 +1157,12 @@ function OverviewCard({
   value,
   color,
   colors,
-  isDark,
 }: {
   icon: string;
   label: string;
   value: number;
   color: string;
   colors: any;
-  isDark: boolean;
 }) {
   return (
     <View
@@ -856,9 +1243,31 @@ const styles = StyleSheet.create({
   },
   backBtn: {padding: Spacing.sm},
   headerCenter: {flex: 1, marginHorizontal: Spacing.sm},
+  headerMetaRow: {flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2},
+  wsDot: {width: 8, height: 8, borderRadius: 99},
+  wsText: {fontSize: 11, fontWeight: '500'},
   headerTitle: {fontSize: 16, fontWeight: '600'},
   headerSub: {fontSize: 12, marginTop: 1},
   headerAction: {padding: Spacing.sm},
+  onboardingBanner: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.xs,
+  },
+  onboardingBannerHead: {flexDirection: 'row', alignItems: 'center', gap: Spacing.xs},
+  onboardingBannerTitle: {fontSize: 13, fontWeight: '700'},
+  onboardingBannerText: {fontSize: 12, lineHeight: 17},
+  onboardingBannerAction: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary,
+  },
+  onboardingBannerActionText: {color: '#FFFFFF', fontSize: 12, fontWeight: '700'},
 
   mainContent: {flex: 1},
   scrollContent: {padding: Spacing.lg, paddingBottom: 160},
@@ -1109,4 +1518,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   toolbarLabel: {fontSize: 11},
+  blockingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00000030',
+    gap: Spacing.sm,
+  },
+  blockingText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });

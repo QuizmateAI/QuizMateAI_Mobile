@@ -27,8 +27,27 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
-  const [showResult, setShowResult] = useState(false);
+  const [textAnswers, setTextAnswers] = useState<Record<number, string>>({});
+  const [showResult] = useState(false);
   const [attemptId, setAttemptId] = useState<number | null>(null);
+
+  const isTextAnswerQuestion = (q: any) => {
+    const type = String(q?.questionType || '').toUpperCase();
+    return type === 'SHORT_ANSWER' || type === 'FILL_IN_BLANK' || q?.questionTypeId === 3 || q?.questionTypeId === 5;
+  };
+
+  const shouldActivateAndRetry = (error: any) => {
+    const message = String(
+      error?.response?.data?.message || error?.message || '',
+    ).toLowerCase();
+    const statusCode = Number(error?.response?.data?.statusCode);
+    return (
+      statusCode === 1083 ||
+      message.includes('chua duoc kich hoat') ||
+      message.includes('chưa được kích hoạt') ||
+      message.includes('not active')
+    );
+  };
 
   useEffect(() => {
     QuizAPI.getFull(quizId)
@@ -40,7 +59,12 @@ export default function PracticeQuizScreen({navigation, route}: any) {
           ) || [];
         setQuestions(allQuestions);
       })
-      .catch(() => showToast('Failed to load quiz', 'error'))
+      .catch((error: any) =>
+        showToast(
+          error?.response?.data?.message || error?.message || 'Failed to load quiz',
+          'error',
+        ),
+      )
       .finally(() => setLoading(false));
   }, [quizId, showToast]);
 
@@ -49,8 +73,38 @@ export default function PracticeQuizScreen({navigation, route}: any) {
       const res = await QuizAPI.startAttempt(quizId);
       setAttemptId(res.data?.id);
       setStarted(true);
-    } catch {
-      showToast('Failed to start quiz', 'error');
+    } catch (error: any) {
+      if (shouldActivateAndRetry(error)) {
+        try {
+          await QuizAPI.toggleStatus(quizId);
+          setQuiz((prev: any) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'ACTIVE',
+                }
+              : prev,
+          );
+          const retryRes = await QuizAPI.startAttempt(quizId);
+          setAttemptId(retryRes.data?.id);
+          setStarted(true);
+          showToast('Quiz activated. Starting now...', 'success');
+          return;
+        } catch (retryError: any) {
+          showToast(
+            retryError?.response?.data?.message ||
+              retryError?.message ||
+              'Failed to activate quiz',
+            'error',
+          );
+          return;
+        }
+      }
+
+      showToast(
+        error?.response?.data?.message || error?.message || 'Failed to start quiz',
+        'error',
+      );
     }
   };
 
@@ -61,13 +115,26 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     }
   };
 
+  const handleChangeTextAnswer = (questionId: number, text: string) => {
+    setTextAnswers(prev => ({...prev, [questionId]: text}));
+    if (attemptId) {
+      QuizAPI.saveAnswer(attemptId, {questionId, textAnswer: text}).catch(() => {});
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!attemptId) return;
+    if (!attemptId) {
+      showToast('Quiz attempt is missing', 'error');
+      return;
+    }
     try {
       await QuizAPI.submitAttempt(attemptId);
       navigation.replace('QuizResult', {attemptId});
-    } catch {
-      showToast('Failed to submit', 'error');
+    } catch (error: any) {
+      showToast(
+        error?.response?.data?.message || error?.message || 'Failed to submit',
+        'error',
+      );
     }
   };
 
@@ -174,9 +241,15 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             index={currentIndex}
             question={currentQuestion.content}
             answers={currentQuestion.answers || []}
+            questionType={currentQuestion.questionType}
+            questionTypeId={currentQuestion.questionTypeId}
             selectedAnswerId={answers[currentQuestion.id]}
             onSelectAnswer={(answerId) =>
               handleSelectAnswer(currentQuestion.id, answerId)
+            }
+            textAnswer={textAnswers[currentQuestion.id] || ''}
+            onChangeTextAnswer={text =>
+              handleChangeTextAnswer(currentQuestion.id, text)
             }
             difficulty={currentQuestion.difficulty}
             explanation={
@@ -212,7 +285,11 @@ export default function PracticeQuizScreen({navigation, route}: any) {
           />
         ) : (
           <Button
-            title="Next"
+            title={
+              currentQuestion && isTextAnswerQuestion(currentQuestion)
+                ? 'Save & Next'
+                : 'Next'
+            }
             size="md"
             onPress={handleNext}
             fullWidth={false}

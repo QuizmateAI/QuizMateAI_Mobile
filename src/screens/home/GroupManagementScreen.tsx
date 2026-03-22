@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -25,7 +24,6 @@ import FloatingInput from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import ActionSheet from '../../components/ui/ActionSheet';
 import GroupAPI from '../../api/GroupAPI';
-
 const TABS = [
   {key: 'dashboard', label: 'Dashboard'},
   {key: 'members', label: 'Members'},
@@ -55,15 +53,15 @@ export default function GroupManagementScreen({navigation, route}: any) {
   const [roleFilter, setRoleFilter] = useState('all');
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [memberActionVisible, setMemberActionVisible] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [_actionLoading, setActionLoading] = useState(false);
 
   // Settings tab state
   const [isEditing, setIsEditing] = useState(false);
   const [editGroupName, setEditGroupName] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [saving, _setSaving] = useState(false);
   const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [deleting, _setDeleting] = useState(false);
 
   // Invite dialog
   const [inviteVisible, setInviteVisible] = useState(false);
@@ -93,18 +91,11 @@ export default function GroupManagementScreen({navigation, route}: any) {
       );
       setEditDescription(selectedGroup?.description || '');
     } catch {
-      // ──── MOCK DATA for UI testing ────
-      setGroup({groupId, groupName: title || 'SEP490 Capstone Team', description: 'Capstone project collaboration', topicName: 'Software Engineering'});
-      setEditGroupName(title || 'SEP490 Capstone Team');
-      setEditDescription('Capstone project collaboration');
-      setMembers([
-        {userId: 1, id: 1, groupMemberId: 101, fullName: 'Test User', username: 'test', email: 'test@quizmateai.com', role: 'LEADER', canUpload: true},
-        {userId: 2, id: 2, groupMemberId: 102, fullName: 'Nguyễn Văn An', username: 'nguyenan', email: 'an@quizmateai.com', role: 'CONTRIBUTOR', canUpload: true},
-        {userId: 3, id: 3, groupMemberId: 103, fullName: 'Trần Thị Bình', username: 'tranbinh', email: 'binh@quizmateai.com', role: 'MEMBER', canUpload: false},
-        {userId: 4, id: 4, groupMemberId: 104, fullName: 'Lê Hoàng Cường', username: 'lecuong', email: 'cuong@quizmateai.com', role: 'MEMBER', canUpload: true},
-        {userId: 5, id: 5, groupMemberId: 105, fullName: 'Phạm Minh Duy', username: 'phamduy', email: 'duy@quizmateai.com', role: 'CONTRIBUTOR', canUpload: false},
-      ]);
-      // ──── END MOCK ────
+      setGroup({groupId, groupName: title || '', description: ''});
+      setEditGroupName(title || '');
+      setEditDescription('');
+      setMembers([]);
+      showToast('Failed to load group details', 'error');
     } finally {
       setLoading(false);
     }
@@ -132,10 +123,10 @@ export default function GroupManagementScreen({navigation, route}: any) {
   // ──── Member actions ────
   const getMemberActions = (member: any) => {
     const actions: any[] = [];
-    if (!isLeader || member.role === 'LEADER') return actions;
+    if (!isLeader || member.role === 'LEADER') {return actions;}
     const isSelf =
       member.userId === currentUserId || member.id === currentUserId;
-    if (isSelf) return actions;
+    if (isSelf) {return actions;}
 
     // Toggle upload
     actions.push({
@@ -171,7 +162,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
   };
 
   const handleMemberAction = async (key: string) => {
-    if (!selectedMember) return;
+    if (!selectedMember) {return;}
     const memberId = selectedMember.groupMemberId || selectedMember.id;
     setActionLoading(true);
 
@@ -228,7 +219,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
 
   // ──── Invite ────
   const handleInvite = async () => {
-    if (!inviteEmail.trim()) return;
+    if (!inviteEmail.trim()) {return;}
     setInviting(true);
     try {
       await GroupAPI.sendInvitation(groupId, {email: inviteEmail});
@@ -893,14 +884,12 @@ function StatCard({
   value,
   color,
   colors,
-  isDark,
 }: {
   icon: string;
   label: string;
   value: number;
   color: string;
   colors: any;
-  isDark: boolean;
 }) {
   return (
     <View

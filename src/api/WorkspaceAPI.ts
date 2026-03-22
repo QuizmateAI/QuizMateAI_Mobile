@@ -9,26 +9,26 @@ const mapWorkspace = (item: any) => ({
 
 const WorkspaceAPI = {
   getByUser: () =>
-    api.get('/api/workSpace/getByUser').then(res => ({
+    api.get('/api/workspace/getByUser').then(res => ({
       ...res,
       data: (res.data?.data?.content || []).map(mapWorkspace),
     })),
   getById: (id: number) =>
-    api.get(`/api/workSpace/${id}`).then(res => ({
+    api.get(`/api/workspace/${id}`).then(res => ({
       ...res,
       data: mapWorkspace(res.data?.data),
     })),
   create: (data: {name: string; description?: string}) =>
-    api.post('/api/workSpace/create', {
-      title: data.name,
+    api.post('/api/workspace/create/individual', {
+      name: data.name,
       description: data.description,
     }),
   update: (id: number, data: {name?: string; description?: string}) =>
-    api.put(`/api/workSpace/${id}`, {
-      title: data.name,
+    api.put(`/api/workspace/${id}`, {
+      name: data.name,
       description: data.description,
     }),
-  delete: (id: number) => api.delete(`/api/workSpace/${id}`),
+  delete: (id: number) => api.delete(`/api/workspace/individual/${id}`),
 };
 
 export default WorkspaceAPI;

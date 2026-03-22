@@ -45,7 +45,7 @@ export default function MainTabNavigator() {
         component={HomeStack}
         options={{
           tabBarIcon: ({color, size, focused}) => (
-            <TabIcon name={focused ? "home" : "home-outline"} color={color} size={size} />
+            <TabIcon name={focused ? 'home' : 'home-outline'} color={color} size={size} />
           ),
         }}
       />
@@ -54,7 +54,7 @@ export default function MainTabNavigator() {
         component={QuizStack}
         options={{
           tabBarIcon: ({color, size, focused}) => (
-            <TabIcon name={focused ? "head-question" : "head-question-outline"} color={color} size={size} />
+            <TabIcon name={focused ? 'head-question' : 'head-question-outline'} color={color} size={size} />
           ),
         }}
       />
@@ -63,7 +63,7 @@ export default function MainTabNavigator() {
         component={ProfileStack}
         options={{
           tabBarIcon: ({color, size, focused}) => (
-            <TabIcon name={focused ? "account-circle" : "account-circle-outline"} color={color} size={size} />
+            <TabIcon name={focused ? 'account-circle' : 'account-circle-outline'} color={color} size={size} />
           ),
         }}
       />

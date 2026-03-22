@@ -89,3 +89,4 @@ yarn-error.log
 
 # Temporary
 *.tmp
+android/app/google-services.json
