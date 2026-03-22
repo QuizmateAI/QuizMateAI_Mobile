@@ -9,11 +9,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {
-  getAuth,
-  GoogleAuthProvider,
-  signInWithCredential,
-} from '@react-native-firebase/auth';
+import auth from '@react-native-firebase/auth';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
 import {useTheme} from '../../context/ThemeContext';
 import {useAuth} from '../../context/AuthContext';
@@ -97,7 +93,6 @@ export default function LoginScreen({navigation}: any) {
       if (hasPreviousSignIn) {
         await GoogleSignin.signOut();
       }
-
       // Get the users ID token
       const signInResponse = await GoogleSignin.signIn();
       const idToken = signInResponse.data?.idToken;
@@ -107,13 +102,10 @@ export default function LoginScreen({navigation}: any) {
       }
 
       // Create a Google credential with the token
-      const googleCredential = GoogleAuthProvider.credential(idToken);
+      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
 
       // Sign-in the user with the credential
-      const userCredential = await signInWithCredential(
-        getAuth(),
-        googleCredential,
-      );
+      const userCredential = await auth().signInWithCredential(googleCredential);
 
       // Get the ID token from Firebase
       const firebaseIdToken = await userCredential.user.getIdToken();
