@@ -19,7 +19,7 @@ import QuizAPI from '../../api/QuizAPI';
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
 export default function QuizResultScreen({navigation, route}: any) {
-  const {attemptId} = route.params;
+  const {attemptId, backContext} = route.params;
   const {isDark, colors} = useTheme();
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -104,6 +104,72 @@ export default function QuizResultScreen({navigation, route}: any) {
     {icon: 'help-circle-outline', label: 'Questions', value: totalQuestions},
   ];
 
+  const backButtonTitle =
+    backContext?.type === 'workspace'
+      ? 'Back to Workspace'
+      : backContext?.type === 'group'
+      ? 'Back to Group'
+      : backContext?.type === 'roadmap'
+      ? 'Back to Roadmap'
+      : 'Back to Quizzes';
+
+  const handleBack = () => {
+    if (
+      backContext?.type === 'workspace' &&
+      Number.isInteger(backContext.workspaceId) &&
+      backContext.workspaceId > 0
+    ) {
+      navigation.navigate('Home', {
+        screen: 'Workspace',
+        params: {
+          workspaceId: backContext.workspaceId,
+          title: backContext.title,
+        },
+      });
+      return;
+    }
+
+    if (
+      backContext?.type === 'group' &&
+      Number.isInteger(backContext.groupId) &&
+      backContext.groupId > 0
+    ) {
+      navigation.navigate('Home', {
+        screen: 'GroupWorkspace',
+        params: {
+          groupId: backContext.groupId,
+          title: backContext.title,
+        },
+      });
+      return;
+    }
+
+    if (
+      backContext?.type === 'roadmap' &&
+      Number.isInteger(backContext.contextId) &&
+      backContext.contextId > 0
+    ) {
+      navigation.navigate('Home', {
+        screen: 'RoadmapJourney',
+        params: {
+          contextType: backContext.contextType,
+          contextId: backContext.contextId,
+          title: backContext.title,
+        },
+      });
+      return;
+    }
+
+    try {
+      navigation.reset({
+        index: 0,
+        routes: [{name: 'QuizList'}],
+      });
+    } catch {
+      navigation.navigate('QuizList');
+    }
+  };
+
   return (
     <SafeAreaView
       style={[styles.container, {backgroundColor: colors.backgroundSecondary}]}>
@@ -179,8 +245,8 @@ export default function QuizResultScreen({navigation, route}: any) {
             onPress={() => setShowReview(!showReview)}
           />
           <Button
-            title="Back to Quizzes"
-            onPress={() => navigation.popToTop()}
+            title={backButtonTitle}
+            onPress={handleBack}
             icon="arrow-left"
           />
         </View>

@@ -110,12 +110,15 @@ const QuizAPI = {
   toggleStatus: (quizId: number) =>
     api.patch(`/api/quiz/${quizId}/toggle-status`),
   delete: (quizId: number) => api.delete(`/api/quiz/${quizId}`),
-  startAttempt: (quizId: number) =>
+  startAttempt: (
+    quizId: number,
+    options?: {isCompanionMode?: boolean; isPracticeMode?: boolean},
+  ) =>
     api
       .post(`/api/quiz-attempts/start/${quizId}`, null, {
         params: {
-          isCompanionMode: false,
-          isPracticeMode: false,
+          isCompanionMode: Boolean(options?.isCompanionMode),
+          isPracticeMode: Boolean(options?.isPracticeMode),
         },
       })
       .then(res => ({
@@ -138,6 +141,27 @@ const QuizAPI = {
           typeof data.textAnswer === 'string' ? data.textAnswer : null,
       },
     ]),
+  submitPracticeQuestion: (
+    attemptId: number,
+    data: {
+      questionId: number;
+      selectedAnswerIds?: number[];
+      textAnswer?: string | null;
+    },
+  ) =>
+    api
+      .post(`/api/quiz-attempts/${attemptId}/practice/submit-question`, {
+        questionId: data.questionId,
+        selectedAnswerIds: Array.isArray(data.selectedAnswerIds)
+          ? data.selectedAnswerIds
+          : [],
+        textAnswer:
+          typeof data.textAnswer === 'string' ? data.textAnswer : null,
+      })
+      .then(res => ({
+        ...res,
+        data: res.data?.data,
+      })),
   submitAttempt: (attemptId: number) =>
     api.post(`/api/quiz-attempts/${attemptId}/submit`),
   getResult: (attemptId: number) =>

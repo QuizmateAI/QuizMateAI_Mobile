@@ -52,6 +52,12 @@ export default function MainTabNavigator() {
       <Tab.Screen
         name="Quiz"
         component={QuizStack}
+        listeners={({navigation}) => ({
+          tabPress: e => {
+            e.preventDefault();
+            navigation.navigate('Quiz', {screen: 'QuizList'} as never);
+          },
+        })}
         options={{
           tabBarIcon: ({color, size, focused}) => (
             <TabIcon name={focused ? 'head-question' : 'head-question-outline'} color={color} size={size} />

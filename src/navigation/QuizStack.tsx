@@ -5,11 +5,22 @@ import PracticeQuizScreen from '../screens/quiz/PracticeQuizScreen';
 import ExamQuizScreen from '../screens/quiz/ExamQuizScreen';
 import QuizResultScreen from '../screens/quiz/QuizResultScreen';
 
+export type QuizBackContext =
+  | {type: 'quiz-list'}
+  | {type: 'workspace'; workspaceId: number; title?: string}
+  | {type: 'group'; groupId: number; title?: string}
+  | {
+      type: 'roadmap';
+      contextType: 'WORKSPACE' | 'GROUP';
+      contextId: number;
+      title?: string;
+    };
+
 export type QuizStackParamList = {
   QuizList: undefined;
-  PracticeQuiz: {quizId: number; title?: string};
-  ExamQuiz: {quizId: number; title?: string};
-  QuizResult: {attemptId: number};
+  PracticeQuiz: {quizId: number; title?: string; backContext?: QuizBackContext};
+  ExamQuiz: {quizId: number; title?: string; backContext?: QuizBackContext};
+  QuizResult: {attemptId: number; backContext?: QuizBackContext};
 };
 
 const Stack = createStackNavigator<QuizStackParamList>();

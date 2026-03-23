@@ -76,6 +76,54 @@ export default function WorkspaceScreen({navigation, route}: any) {
     null,
   );
 
+  const openQuizModeSelector = useCallback(
+    (quiz: any) => {
+      const quizId = Number(quiz?.id || quiz?.quizId);
+      if (!quizId) {
+        showToast('Quiz ID is missing', 'error');
+        return;
+      }
+
+      const quizTitle = quiz?.name || quiz?.title;
+      Alert.alert('Choose quiz mode', 'How would you like to take this quiz?', [
+        {
+          text: 'Practice',
+          onPress: () =>
+            navigation.navigate('Quiz', {
+              screen: 'PracticeQuiz',
+              params: {
+                quizId,
+                title: quizTitle,
+                backContext: {
+                  type: 'workspace',
+                  workspaceId: Number(workspaceId),
+                  title,
+                },
+              },
+            }),
+        },
+        {
+          text: 'Exam',
+          onPress: () =>
+            navigation.navigate('Quiz', {
+              screen: 'ExamQuiz',
+              params: {
+                quizId,
+                title: quizTitle,
+                backContext: {
+                  type: 'workspace',
+                  workspaceId: Number(workspaceId),
+                  title,
+                },
+              },
+            }),
+        },
+        {text: 'Cancel', style: 'cancel'},
+      ]);
+    },
+    [navigation, showToast, title, workspaceId],
+  );
+
   const fetchData = useCallback(async () => {
     const requestId = ++latestFetchRequestIdRef.current;
 
@@ -632,15 +680,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 {quizzes.map((quiz: any) => (
                   <TouchableOpacity
                     key={quiz.id || quiz.quizId}
-                    onPress={() =>
-                      navigation.navigate('Quiz', {
-                        screen: 'PracticeQuiz',
-                        params: {
-                          quizId: quiz.id || quiz.quizId,
-                          title: quiz.name || quiz.title,
-                        },
-                      })
-                    }
+                    onPress={() => openQuizModeSelector(quiz)}
                     style={[
                       styles.listItem,
                       {
@@ -983,15 +1023,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 {quizzes.slice(0, 3).map((quiz: any) => (
                   <TouchableOpacity
                     key={`q-${quiz.id || quiz.quizId}`}
-                    onPress={() =>
-                      navigation.navigate('Quiz', {
-                        screen: 'PracticeQuiz',
-                        params: {
-                          quizId: quiz.id || quiz.quizId,
-                          title: quiz.name || quiz.title,
-                        },
-                      })
-                    }
+                    onPress={() => openQuizModeSelector(quiz)}
                     style={[
                       styles.recentItem,
                       {

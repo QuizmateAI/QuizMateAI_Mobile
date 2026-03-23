@@ -1,6 +1,7 @@
 ﻿import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,6 +30,56 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   const [structure, setStructure] = useState<any>(null);
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<number[]>([]);
+
+  const openQuizModeSelector = useCallback(
+    (quiz: any) => {
+      const quizId = Number(quiz?.quizId || quiz?.id);
+      if (!quizId) {
+        showToast('Quiz ID is missing', 'error');
+        return;
+      }
+
+      const quizTitle = quiz?.title || quiz?.name;
+      Alert.alert('Choose quiz mode', 'How would you like to take this quiz?', [
+        {
+          text: 'Practice',
+          onPress: () =>
+            navigation.navigate('Quiz', {
+              screen: 'PracticeQuiz',
+              params: {
+                quizId,
+                title: quizTitle,
+                backContext: {
+                  type: 'roadmap',
+                  contextType,
+                  contextId: Number(contextId),
+                  title,
+                },
+              },
+            }),
+        },
+        {
+          text: 'Exam',
+          onPress: () =>
+            navigation.navigate('Quiz', {
+              screen: 'ExamQuiz',
+              params: {
+                quizId,
+                title: quizTitle,
+                backContext: {
+                  type: 'roadmap',
+                  contextType,
+                  contextId: Number(contextId),
+                  title,
+                },
+              },
+            }),
+        },
+        {text: 'Cancel', style: 'cancel'},
+      ]);
+    },
+    [contextId, contextType, navigation, showToast, title],
+  );
 
   const selectedRoadmap = useMemo(
     () => roadmaps.find(item => (item.roadmapId || item.id) === selectedRoadmapId),
@@ -285,15 +336,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                           <TouchableOpacity
                             key={quiz.quizId}
                             style={[styles.quizItem, {borderColor: colors.border}]}
-                            onPress={() =>
-                              navigation.navigate('Quiz', {
-                                screen: 'PracticeQuiz',
-                                params: {
-                                  quizId: quiz.quizId,
-                                  title: quiz.title,
-                                },
-                              })
-                            }>
+                            onPress={() => openQuizModeSelector(quiz)}>
                             <Text style={[styles.quizItemTitle, {color: colors.text}]}>
                               {quiz.title || `Quiz #${quiz.quizId}`}
                             </Text>
@@ -367,15 +410,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                                 <TouchableOpacity
                                   key={quiz.quizId}
                                   style={[styles.quizItem, {borderColor: colors.border}]}
-                                  onPress={() =>
-                                    navigation.navigate('Quiz', {
-                                      screen: 'PracticeQuiz',
-                                      params: {
-                                        quizId: quiz.quizId,
-                                        title: quiz.title,
-                                      },
-                                    })
-                                  }>
+                                  onPress={() => openQuizModeSelector(quiz)}>
                                   <Text style={[styles.quizItemTitle, {color: colors.text}]}>
                                     {quiz.title || `Quiz #${quiz.quizId}`}
                                   </Text>
@@ -399,15 +434,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                           <TouchableOpacity
                             key={quiz.quizId}
                             style={[styles.quizItem, {borderColor: colors.border}]}
-                            onPress={() =>
-                              navigation.navigate('Quiz', {
-                                screen: 'PracticeQuiz',
-                                params: {
-                                  quizId: quiz.quizId,
-                                  title: quiz.title,
-                                },
-                              })
-                            }>
+                            onPress={() => openQuizModeSelector(quiz)}>
                             <Text style={[styles.quizItemTitle, {color: colors.text}]}>
                               {quiz.title || `Quiz #${quiz.quizId}`}
                             </Text>
