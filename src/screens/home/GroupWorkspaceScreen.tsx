@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   Dimensions,
+  Alert,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -60,6 +61,54 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const [inviteVisible, setInviteVisible] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
+
+  const openQuizModeSelector = useCallback(
+    (quiz: any) => {
+      const quizId = Number(quiz?.id || quiz?.quizId);
+      if (!quizId) {
+        showToast('Quiz ID is missing', 'error');
+        return;
+      }
+
+      const quizTitle = quiz?.name || quiz?.title;
+      Alert.alert('Choose quiz mode', 'How would you like to take this quiz?', [
+        {
+          text: 'Practice',
+          onPress: () =>
+            navigation.navigate('Quiz', {
+              screen: 'PracticeQuiz',
+              params: {
+                quizId,
+                title: quizTitle,
+                backContext: {
+                  type: 'group',
+                  groupId: Number(groupId),
+                  title,
+                },
+              },
+            }),
+        },
+        {
+          text: 'Exam',
+          onPress: () =>
+            navigation.navigate('Quiz', {
+              screen: 'ExamQuiz',
+              params: {
+                quizId,
+                title: quizTitle,
+                backContext: {
+                  type: 'group',
+                  groupId: Number(groupId),
+                  title,
+                },
+              },
+            }),
+        },
+        {text: 'Cancel', style: 'cancel'},
+      ]);
+    },
+    [groupId, navigation, showToast, title],
+  );
 
   const fetchData = useCallback(async () => {
     const requestId = ++latestFetchRequestIdRef.current;
@@ -321,15 +370,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 {quizzes.map((quiz: any) => (
                   <TouchableOpacity
                     key={quiz.id || quiz.quizId}
-                    onPress={() =>
-                      navigation.navigate('Quiz', {
-                        screen: 'PracticeQuiz',
-                        params: {
-                          quizId: quiz.id || quiz.quizId,
-                          title: quiz.name || quiz.title,
-                        },
-                      })
-                    }
+                    onPress={() => openQuizModeSelector(quiz)}
                     style={[
                       styles.listItem,
                       {backgroundColor: colors.surface, borderColor: colors.border},
@@ -506,12 +547,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 {quizzes.slice(0, 3).map((quiz: any) => (
                   <TouchableOpacity
                     key={`q-${quiz.id || quiz.quizId}`}
-                    onPress={() =>
-                      navigation.navigate('Quiz', {
-                        screen: 'PracticeQuiz',
-                        params: {quizId: quiz.id || quiz.quizId, title: quiz.name || quiz.title},
-                      })
-                    }
+                    onPress={() => openQuizModeSelector(quiz)}
                     style={[
                       styles.recentItem,
                       {backgroundColor: colors.surface, borderColor: colors.border},

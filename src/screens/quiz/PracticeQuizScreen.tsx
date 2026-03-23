@@ -18,7 +18,7 @@ import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
 
 export default function PracticeQuizScreen({navigation, route}: any) {
-  const {quizId, title} = route.params;
+  const {quizId, title, backContext} = route.params;
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [quiz, setQuiz] = useState<any>(null);
@@ -28,7 +28,10 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [textAnswers, setTextAnswers] = useState<Record<number, string>>({});
-  const [showResult] = useState(false);
+  const [submittedQuestionIds, setSubmittedQuestionIds] = useState<
+    Record<number, boolean>
+  >({});
+  const [questionFeedback, setQuestionFeedback] = useState<Record<number, any>>({});
   const [attemptId, setAttemptId] = useState<number | null>(null);
 
   const isTextAnswerQuestion = (q: any) => {
@@ -70,8 +73,42 @@ export default function PracticeQuizScreen({navigation, route}: any) {
 
   const handleStart = async () => {
     try {
-      const res = await QuizAPI.startAttempt(quizId);
-      setAttemptId(res.data?.id);
+      const res = await QuizAPI.startAttempt(quizId, {isPracticeMode: true});
+      const attempt = res.data || {};
+      const nextAttemptId = Number(attempt?.id || attempt?.attemptId || 0);
+      setAttemptId(nextAttemptId || null);
+
+      const restoredAnswers: Record<number, number> = {};
+      const restoredTextAnswers: Record<number, string> = {};
+      const restoredSubmitted: Record<number, boolean> = {};
+      const savedAnswers = Array.isArray(attempt?.savedAnswers)
+        ? attempt.savedAnswers
+        : [];
+
+      savedAnswers.forEach((item: any) => {
+        const qid = Number(item?.questionId);
+        if (!Number.isFinite(qid)) {
+          return;
+        }
+
+        const selectedAnswerIds = Array.isArray(item?.selectedAnswerIds)
+          ? item.selectedAnswerIds.filter((value: any) => value != null)
+          : [];
+
+        if (selectedAnswerIds.length > 0) {
+          restoredAnswers[qid] = Number(selectedAnswerIds[0]);
+          restoredSubmitted[qid] = true;
+        }
+
+        if (typeof item?.textAnswer === 'string' && item.textAnswer.trim()) {
+          restoredTextAnswers[qid] = item.textAnswer;
+          restoredSubmitted[qid] = true;
+        }
+      });
+
+      setAnswers(restoredAnswers);
+      setTextAnswers(restoredTextAnswers);
+      setSubmittedQuestionIds(restoredSubmitted);
       setStarted(true);
     } catch (error: any) {
       if (shouldActivateAndRetry(error)) {
@@ -85,8 +122,12 @@ export default function PracticeQuizScreen({navigation, route}: any) {
                 }
               : prev,
           );
-          const retryRes = await QuizAPI.startAttempt(quizId);
-          setAttemptId(retryRes.data?.id);
+          const retryRes = await QuizAPI.startAttempt(quizId, {
+            isPracticeMode: true,
+          });
+          const attempt = retryRes.data || {};
+          const nextAttemptId = Number(attempt?.id || attempt?.attemptId || 0);
+          setAttemptId(nextAttemptId || null);
           setStarted(true);
           showToast('Quiz activated. Starting now...', 'success');
           return;
@@ -109,16 +150,105 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   };
 
   const handleSelectAnswer = (questionId: number, answerId: number) => {
-    setAnswers(prev => ({...prev, [questionId]: answerId}));
-    if (attemptId) {
-      QuizAPI.saveAnswer(attemptId, {questionId, answerId}).catch(() => {});
+    if (submittedQuestionIds[questionId]) {
+      return;
     }
+    setAnswers(prev => ({...prev, [questionId]: answerId}));
   };
 
   const handleChangeTextAnswer = (questionId: number, text: string) => {
+    if (submittedQuestionIds[questionId]) {
+      return;
+    }
     setTextAnswers(prev => ({...prev, [questionId]: text}));
-    if (attemptId) {
-      QuizAPI.saveAnswer(attemptId, {questionId, textAnswer: text}).catch(() => {});
+  };
+
+  const handleViewResult = async () => {
+    if (!attemptId) {
+      showToast('Quiz attempt is missing', 'error');
+      return;
+    }
+
+    const currentQuestion = questions[currentIndex];
+    if (!currentQuestion?.id) {
+      showToast('Question is missing', 'error');
+      return;
+    }
+
+    const questionId = Number(currentQuestion.id);
+    if (submittedQuestionIds[questionId]) {
+      return;
+    }
+
+    const text = (textAnswers[questionId] || '').trim();
+    const selectedId = answers[questionId];
+    if (!text && (selectedId === undefined || selectedId === null)) {
+      showToast('Hãy chọn câu trả lời để xem đáp án', 'error');
+      return;
+    }
+
+    try {
+      const res = await QuizAPI.submitPracticeQuestion(attemptId, {
+        questionId,
+        selectedAnswerIds:
+          selectedId !== undefined && selectedId !== null ? [selectedId] : [],
+        textAnswer: text || null,
+      });
+
+      const feedback = res.data || {};
+      setQuestionFeedback(prev => ({...prev, [questionId]: feedback}));
+      setSubmittedQuestionIds(prev => ({...prev, [questionId]: true}));
+
+      const correctAnswerIds = Array.isArray(feedback?.correctAnswerIds)
+        ? feedback.correctAnswerIds
+        : [];
+      const correctAnswerContents = Array.isArray(feedback?.correctAnswerContents)
+        ? feedback.correctAnswerContents
+        : [];
+
+      setQuestions(prev =>
+        prev.map((question: any) => {
+          if (Number(question?.id) !== questionId) {
+            return question;
+          }
+
+          const updatedAnswers = Array.isArray(question?.answers)
+            ? question.answers.map((answer: any) => ({
+                ...answer,
+                isCorrect: correctAnswerIds.includes(Number(answer?.id)),
+              }))
+            : [];
+
+          if (
+            updatedAnswers.length === 0 &&
+            correctAnswerContents.length > 0 &&
+            isTextAnswerQuestion(question)
+          ) {
+            return {
+              ...question,
+              answers: correctAnswerContents.map((content: string, idx: number) => ({
+                id: -(idx + 1),
+                content,
+                isCorrect: true,
+              })),
+              explanation: feedback?.explanation || question?.explanation,
+            };
+          }
+
+          return {
+            ...question,
+            answers: updatedAnswers,
+            explanation: feedback?.explanation || question?.explanation,
+          };
+        }),
+      );
+    } catch (error: any) {
+      showToast(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to view result',
+        'error',
+      );
     }
   };
 
@@ -129,7 +259,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     }
     try {
       await QuizAPI.submitAttempt(attemptId);
-      navigation.replace('QuizResult', {attemptId});
+      navigation.replace('QuizResult', {attemptId, backContext});
     } catch (error: any) {
       showToast(
         error?.response?.data?.message || error?.message || 'Failed to submit',
@@ -139,6 +269,10 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   };
 
   const handleNext = () => {
+    const currentQuestion = questions[currentIndex];
+    if (currentQuestion && !submittedQuestionIds[currentQuestion.id]) {
+      return;
+    }
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
     }
@@ -158,6 +292,12 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     ? ((currentIndex + 1) / questions.length) * 100
     : 0;
   const currentQuestion = questions[currentIndex];
+  const isCurrentSubmitted = currentQuestion
+    ? Boolean(submittedQuestionIds[currentQuestion.id])
+    : false;
+  const currentFeedback = currentQuestion
+    ? questionFeedback[currentQuestion.id]
+    : null;
 
   if (!started) {
     return (
@@ -253,9 +393,11 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             }
             difficulty={currentQuestion.difficulty}
             explanation={
-              showResult ? currentQuestion.explanation : undefined
+              isCurrentSubmitted
+                ? currentFeedback?.explanation || currentQuestion.explanation
+                : undefined
             }
-            showResult={showResult}
+            showResult={isCurrentSubmitted}
           />
         )}
       </ScrollView>
@@ -276,22 +418,28 @@ export default function PracticeQuizScreen({navigation, route}: any) {
           style={{flex: 1}}
         />
         {currentIndex === questions.length - 1 ? (
-          <Button
-            title="Submit"
-            size="md"
-            onPress={handleSubmit}
-            fullWidth={false}
-            style={{flex: 1, backgroundColor: Colors.success}}
-          />
+          isCurrentSubmitted ? (
+            <Button
+              title="Submit"
+              size="md"
+              onPress={handleSubmit}
+              fullWidth={false}
+              style={{flex: 1, backgroundColor: Colors.success}}
+            />
+          ) : (
+            <Button
+              title="View Result"
+              size="md"
+              onPress={handleViewResult}
+              fullWidth={false}
+              style={{flex: 1}}
+            />
+          )
         ) : (
           <Button
-            title={
-              currentQuestion && isTextAnswerQuestion(currentQuestion)
-                ? 'Save & Next'
-                : 'Next'
-            }
+            title={isCurrentSubmitted ? 'Next' : 'View Result'}
             size="md"
-            onPress={handleNext}
+            onPress={isCurrentSubmitted ? handleNext : handleViewResult}
             fullWidth={false}
             style={{flex: 1}}
           />

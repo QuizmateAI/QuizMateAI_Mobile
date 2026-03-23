@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  FlatList,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -19,7 +18,7 @@ import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
 
 export default function ExamQuizScreen({navigation, route}: any) {
-  const {quizId, title} = route.params;
+  const {quizId, title, backContext} = route.params;
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [quiz, setQuiz] = useState<any>(null);
@@ -32,6 +31,147 @@ export default function ExamQuizScreen({navigation, route}: any) {
   const [attemptId, setAttemptId] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const attemptIdRef = useRef<number | null>(null);
+  const currentIndexRef = useRef(0);
+  const questionsRef = useRef<any[]>([]);
+  const isPerQuestionModeRef = useRef(false);
+
+  const isTotalTimerMode = (value: any) => {
+    if (
+      value === true ||
+      value === 'true' ||
+      value === 1 ||
+      value === '1'
+    ) {
+      return true;
+    }
+    return String(value || '').toUpperCase() === 'TOTAL';
+  };
+
+  const getPerQuestionDuration = (question: any) => {
+    const seconds = Number(
+      question?.duration ?? question?.timeLimit ?? question?.timeLimitSeconds ?? 0,
+    );
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return 30;
+    }
+    return Math.max(1, Math.floor(seconds));
+  };
+
+  const isPerQuestionMode = quiz ? !isTotalTimerMode(quiz?.timerMode) : false;
+
+  const getAttemptRemainingSeconds = (
+    timeoutAt?: string | null,
+    fallbackSeconds: number = 0,
+  ) => {
+    if (!timeoutAt) {
+      return Math.max(0, fallbackSeconds);
+    }
+
+    const timeoutMs = new Date(timeoutAt).getTime();
+    if (Number.isNaN(timeoutMs)) {
+      return Math.max(0, fallbackSeconds);
+    }
+
+    return Math.max(0, Math.ceil((timeoutMs - Date.now()) / 1000));
+  };
+
+  const resolvePerQuestionProgress = (
+    list: any[],
+    startedAt?: string | null,
+    restoredAnswers: Record<number, number> = {},
+    restoredTextAnswers: Record<number, string> = {},
+  ) => {
+    if (!Array.isArray(list) || list.length === 0) {
+      return {currentIndex: 0, timeLeft: 0, isFinished: true};
+    }
+
+    const firstUnansweredIndex = list.findIndex((q: any) => {
+      const hasChoice = restoredAnswers[q?.id] !== undefined;
+      const hasText = (restoredTextAnswers[q?.id] || '').trim().length > 0;
+      return !(hasChoice || hasText);
+    });
+    const fallbackIndex =
+      firstUnansweredIndex === -1 ? list.length : firstUnansweredIndex;
+
+    if (!startedAt) {
+      if (fallbackIndex >= list.length) {
+        return {
+          currentIndex: list.length - 1,
+          timeLeft: 0,
+          isFinished: true,
+        };
+      }
+      return {
+        currentIndex: fallbackIndex,
+        timeLeft: getPerQuestionDuration(list[fallbackIndex]),
+        isFinished: false,
+      };
+    }
+
+    const startedAtMs = new Date(startedAt).getTime();
+    if (Number.isNaN(startedAtMs)) {
+      if (fallbackIndex >= list.length) {
+        return {
+          currentIndex: list.length - 1,
+          timeLeft: 0,
+          isFinished: true,
+        };
+      }
+      return {
+        currentIndex: fallbackIndex,
+        timeLeft: getPerQuestionDuration(list[fallbackIndex]),
+        isFinished: false,
+      };
+    }
+
+    let elapsedSeconds = Math.floor((Date.now() - startedAtMs) / 1000);
+    if (!Number.isFinite(elapsedSeconds) || elapsedSeconds < 0) {
+      elapsedSeconds = 0;
+    }
+
+    let timelineIndex = 0;
+    let timelineTimeLeft = getPerQuestionDuration(list[0]);
+    let cursor = elapsedSeconds;
+
+    for (let i = 0; i < list.length; i += 1) {
+      const questionDuration = getPerQuestionDuration(list[i]);
+      if (cursor >= questionDuration) {
+        cursor -= questionDuration;
+        continue;
+      }
+      timelineIndex = i;
+      timelineTimeLeft = Math.max(0, questionDuration - cursor);
+      break;
+    }
+
+    const totalDuration = list.reduce(
+      (sum, q) => sum + getPerQuestionDuration(q),
+      0,
+    );
+    const isTimelineFinished = elapsedSeconds >= totalDuration;
+    const isAnsweredFinished = fallbackIndex >= list.length;
+
+    if (isTimelineFinished || isAnsweredFinished) {
+      return {
+        currentIndex: list.length - 1,
+        timeLeft: 0,
+        isFinished: true,
+      };
+    }
+
+    const resolvedIndex = Math.max(timelineIndex, fallbackIndex);
+    const resolvedTimeLeft =
+      resolvedIndex === timelineIndex
+        ? timelineTimeLeft
+        : getPerQuestionDuration(list[resolvedIndex]);
+
+    return {
+      currentIndex: resolvedIndex,
+      timeLeft: resolvedTimeLeft,
+      isFinished: false,
+    };
+  };
 
   const isTextAnswerQuestion = (q: any) => {
     const type = String(q?.questionType || '').toUpperCase();
@@ -57,15 +197,38 @@ export default function ExamQuizScreen({navigation, route}: any) {
   };
 
   useEffect(() => {
+    questionsRef.current = questions;
+  }, [questions]);
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  useEffect(() => {
+    isPerQuestionModeRef.current = isPerQuestionMode;
+  }, [isPerQuestionMode]);
+
+  useEffect(() => {
+    attemptIdRef.current = attemptId;
+  }, [attemptId]);
+
+  useEffect(() => {
     QuizAPI.getFull(quizId)
       .then(res => {
-        setQuiz(res.data);
+        const quizData = res.data;
+        setQuiz(quizData);
         const allQuestions =
-          res.data?.sections?.flatMap((s: any) =>
+          quizData?.sections?.flatMap((s: any) =>
             s.questions?.map((q: any) => ({...q, sectionName: s.name})),
           ) || [];
         setQuestions(allQuestions);
-        setTimeLeft(res.data?.timeLimitSeconds || 30 * 60);
+
+        const perQuestion = !isTotalTimerMode(quizData?.timerMode);
+        if (perQuestion) {
+          setTimeLeft(getPerQuestionDuration(allQuestions[0]));
+        } else {
+          setTimeLeft(quizData?.timeLimitSeconds || 30 * 60);
+        }
       })
       .catch((error: any) =>
         showToast(
@@ -80,11 +243,35 @@ export default function ExamQuizScreen({navigation, route}: any) {
     };
   }, [quizId, showToast]);
 
+  const stopTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = undefined;
+    }
+  };
+
   const startTimer = () => {
+    stopTimer();
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
-          if (timerRef.current) {clearInterval(timerRef.current);}
+          if (isPerQuestionModeRef.current) {
+            const idx = currentIndexRef.current;
+            const list = questionsRef.current;
+            const hasNext = idx < list.length - 1;
+
+            if (hasNext) {
+              const nextIndex = idx + 1;
+              setCurrentIndex(nextIndex);
+              return getPerQuestionDuration(list[nextIndex]);
+            }
+
+            stopTimer();
+            handleAutoSubmit();
+            return 0;
+          }
+
+          stopTimer();
           handleAutoSubmit();
           return 0;
         }
@@ -94,10 +281,13 @@ export default function ExamQuizScreen({navigation, route}: any) {
   };
 
   const handleAutoSubmit = async () => {
-    if (attemptId) {
+    if (attemptIdRef.current) {
       try {
-        await QuizAPI.submitAttempt(attemptId);
-        navigation.replace('QuizResult', {attemptId});
+        await QuizAPI.submitAttempt(attemptIdRef.current);
+        navigation.replace('QuizResult', {
+          attemptId: attemptIdRef.current,
+          backContext,
+        });
       } catch {}
     }
   };
@@ -105,9 +295,69 @@ export default function ExamQuizScreen({navigation, route}: any) {
   const handleStart = async () => {
     try {
       const res = await QuizAPI.startAttempt(quizId);
-      setAttemptId(res.data?.id);
-      setStarted(true);
-      startTimer();
+      const attempt = res.data || {};
+      const nextAttemptId = Number(attempt?.id || attempt?.attemptId || 0);
+      setAttemptId(nextAttemptId || null);
+      attemptIdRef.current = nextAttemptId || null;
+
+      const savedAnswers = Array.isArray(attempt?.savedAnswers)
+        ? attempt.savedAnswers
+        : [];
+      const restoredAnswers: Record<number, number> = {};
+      const restoredTextAnswers: Record<number, string> = {};
+
+      savedAnswers.forEach((item: any) => {
+        const qid = Number(item?.questionId);
+        if (!Number.isFinite(qid)) {
+          return;
+        }
+
+        const selectedAnswerIds = Array.isArray(item?.selectedAnswerIds)
+          ? item.selectedAnswerIds.filter((value: any) => value != null)
+          : [];
+
+        if (selectedAnswerIds.length > 0) {
+          restoredAnswers[qid] = Number(selectedAnswerIds[0]);
+        }
+
+        if (typeof item?.textAnswer === 'string' && item.textAnswer.trim()) {
+          restoredTextAnswers[qid] = item.textAnswer;
+        }
+      });
+
+      setAnswers(restoredAnswers);
+      setTextAnswers(restoredTextAnswers);
+
+      const allQuestions = questionsRef.current;
+      if (isPerQuestionMode) {
+        const progress = resolvePerQuestionProgress(
+          allQuestions,
+          attempt?.startedAt,
+          restoredAnswers,
+          restoredTextAnswers,
+        );
+
+        setCurrentIndex(progress.currentIndex);
+        setTimeLeft(progress.timeLeft);
+        setStarted(true);
+
+        if (progress.isFinished) {
+          stopTimer();
+          handleAutoSubmit();
+        } else {
+          startTimer();
+        }
+      } else {
+        const fallbackTotalSeconds = Number(quiz?.timeLimitSeconds) || 30 * 60;
+        const remainingSeconds = getAttemptRemainingSeconds(
+          attempt?.timeoutAt,
+          fallbackTotalSeconds,
+        );
+        setCurrentIndex(0);
+        setTimeLeft(remainingSeconds);
+        setStarted(true);
+        startTimer();
+      }
     } catch (error: any) {
       if (shouldActivateAndRetry(error)) {
         try {
@@ -121,9 +371,69 @@ export default function ExamQuizScreen({navigation, route}: any) {
               : prev,
           );
           const retryRes = await QuizAPI.startAttempt(quizId);
-          setAttemptId(retryRes.data?.id);
-          setStarted(true);
-          startTimer();
+          const attempt = retryRes.data || {};
+          const nextAttemptId = Number(attempt?.id || attempt?.attemptId || 0);
+          setAttemptId(nextAttemptId || null);
+          attemptIdRef.current = nextAttemptId || null;
+
+          const savedAnswers = Array.isArray(attempt?.savedAnswers)
+            ? attempt.savedAnswers
+            : [];
+          const restoredAnswers: Record<number, number> = {};
+          const restoredTextAnswers: Record<number, string> = {};
+
+          savedAnswers.forEach((item: any) => {
+            const qid = Number(item?.questionId);
+            if (!Number.isFinite(qid)) {
+              return;
+            }
+
+            const selectedAnswerIds = Array.isArray(item?.selectedAnswerIds)
+              ? item.selectedAnswerIds.filter((value: any) => value != null)
+              : [];
+
+            if (selectedAnswerIds.length > 0) {
+              restoredAnswers[qid] = Number(selectedAnswerIds[0]);
+            }
+
+            if (typeof item?.textAnswer === 'string' && item.textAnswer.trim()) {
+              restoredTextAnswers[qid] = item.textAnswer;
+            }
+          });
+
+          setAnswers(restoredAnswers);
+          setTextAnswers(restoredTextAnswers);
+
+          const allQuestions = questionsRef.current;
+          if (isPerQuestionMode) {
+            const progress = resolvePerQuestionProgress(
+              allQuestions,
+              attempt?.startedAt,
+              restoredAnswers,
+              restoredTextAnswers,
+            );
+
+            setCurrentIndex(progress.currentIndex);
+            setTimeLeft(progress.timeLeft);
+            setStarted(true);
+
+            if (progress.isFinished) {
+              stopTimer();
+              handleAutoSubmit();
+            } else {
+              startTimer();
+            }
+          } else {
+            const fallbackTotalSeconds = Number(quiz?.timeLimitSeconds) || 30 * 60;
+            const remainingSeconds = getAttemptRemainingSeconds(
+              attempt?.timeoutAt,
+              fallbackTotalSeconds,
+            );
+            setCurrentIndex(0);
+            setTimeLeft(remainingSeconds);
+            setStarted(true);
+            startTimer();
+          }
           showToast('Quiz activated. Starting now...', 'success');
           return;
         } catch (retryError: any) {
@@ -163,10 +473,10 @@ export default function ExamQuizScreen({navigation, route}: any) {
       showToast('Exam attempt is missing', 'error');
       return;
     }
-    if (timerRef.current) {clearInterval(timerRef.current);}
+    stopTimer();
     try {
       await QuizAPI.submitAttempt(attemptId);
-      navigation.replace('QuizResult', {attemptId});
+      navigation.replace('QuizResult', {attemptId, backContext});
     } catch (error: any) {
       showToast(
         error?.response?.data?.message || error?.message || 'Failed to submit',
@@ -215,7 +525,9 @@ export default function ExamQuizScreen({navigation, route}: any) {
               <View style={styles.startInfoItem}>
                 <Icon name="clock-outline" size={16} color={colors.textSecondary} />
                 <Text style={[styles.startInfoText, {color: colors.textSecondary}]}>
-                  {formatTime(quiz?.timeLimitSeconds || 30 * 60)}
+                  {isPerQuestionMode
+                    ? `${getPerQuestionDuration(questions[0])}s/question`
+                    : formatTime(quiz?.timeLimitSeconds || 30 * 60)}
                 </Text>
               </View>
             </View>
@@ -236,7 +548,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
   }
 
   const currentQuestion = questions[currentIndex];
-  const isTimeWarning = timeLeft < 60;
+  const isTimeWarning = isPerQuestionMode ? timeLeft <= 10 : timeLeft < 60;
   const answeredCount = questions.filter(q => {
     const hasChoiceAnswer = answers[q?.id] !== undefined;
     const hasTextAnswer = (textAnswers[q?.id] || '').trim().length > 0;
@@ -312,49 +624,49 @@ export default function ExamQuizScreen({navigation, route}: any) {
         </Text>
       </View>
 
-      {/* Question Nav */}
-      <FlatList
-        data={questions}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(_, i) => String(i)}
-        contentContainerStyle={styles.navScroll}
-        renderItem={({index}) => {
-          const isActive = index === currentIndex;
-          const q = questions[index];
-          const isAnswered =
-            answers[q?.id] !== undefined ||
-            (textAnswers[q?.id] || '').trim().length > 0;
-          return (
-            <TouchableOpacity
-              onPress={() => setCurrentIndex(index)}
-              style={[
-                styles.navItem,
-                {
-                  backgroundColor: isActive
-                    ? Colors.primary
-                    : isAnswered
-                    ? isDark ? 'rgba(37,99,235,0.15)' : '#EFF6FF'
-                    : isDark ? Colors.dark.surfaceVariant : '#F1F5F9',
-                },
-              ]}>
-              <Text
+      {/* Question Nav (TOTAL mode only, FE behavior) */}
+      {!isPerQuestionMode && (
+        <ScrollView
+          style={styles.navContainer}
+          contentContainerStyle={styles.navWrap}
+          showsVerticalScrollIndicator>
+          {questions.map((q, index) => {
+            const isActive = index === currentIndex;
+            const isAnswered =
+              answers[q?.id] !== undefined ||
+              (textAnswers[q?.id] || '').trim().length > 0;
+            return (
+              <TouchableOpacity
+                key={`${q?.id ?? index}`}
+                onPress={() => setCurrentIndex(index)}
                 style={[
-                  styles.navItemText,
+                  styles.navItem,
                   {
-                    color: isActive
-                      ? '#FFFFFF'
-                      : isAnswered
+                    backgroundColor: isActive
                       ? Colors.primary
-                      : colors.textSecondary,
+                      : isAnswered
+                      ? isDark ? 'rgba(37,99,235,0.15)' : '#EFF6FF'
+                      : isDark ? Colors.dark.surfaceVariant : '#F1F5F9',
                   },
                 ]}>
-                {index + 1}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+                <Text
+                  style={[
+                    styles.navItemText,
+                    {
+                      color: isActive
+                        ? '#FFFFFF'
+                        : isAnswered
+                        ? Colors.primary
+                        : colors.textSecondary,
+                    },
+                  ]}>
+                  {index + 1}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {/* Question */}
       <ScrollView
@@ -386,22 +698,30 @@ export default function ExamQuizScreen({navigation, route}: any) {
           styles.navBar,
           {backgroundColor: colors.surface, borderTopColor: colors.border},
         ]}>
-        <Button
-          title="Previous"
-          variant="outline"
-          size="md"
-          onPress={() => setCurrentIndex(i => Math.max(0, i - 1))}
-          disabled={currentIndex === 0}
-          fullWidth={false}
-          style={{flex: 1}}
-        />
+        {!isPerQuestionMode && (
+          <Button
+            title="Previous"
+            variant="outline"
+            size="md"
+            onPress={() => {
+              const prevIndex = Math.max(0, currentIndex - 1);
+              setCurrentIndex(prevIndex);
+            }}
+            disabled={currentIndex === 0}
+            fullWidth={false}
+            style={{flex: 1}}
+          />
+        )}
         {currentIndex === questions.length - 1 ? (
           <Button
             title="Submit Exam"
             size="md"
             onPress={handleSubmit}
             fullWidth={false}
-            style={{flex: 1, backgroundColor: Colors.success}}
+            style={{
+              flex: 1,
+              backgroundColor: Colors.success,
+            }}
           />
         ) : (
           <Button
@@ -411,9 +731,13 @@ export default function ExamQuizScreen({navigation, route}: any) {
                 : 'Next'
             }
             size="md"
-            onPress={() =>
-              setCurrentIndex(i => Math.min(questions.length - 1, i + 1))
-            }
+            onPress={() => {
+              const nextIndex = Math.min(questions.length - 1, currentIndex + 1);
+              setCurrentIndex(nextIndex);
+              if (isPerQuestionMode) {
+                setTimeLeft(getPerQuestionDuration(questions[nextIndex]));
+              }
+            }}
             fullWidth={false}
             style={{flex: 1}}
           />
@@ -496,9 +820,14 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  navScroll: {
+  navContainer: {
+    maxHeight: 132,
+  },
+  navWrap: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
   },
   navItem: {
