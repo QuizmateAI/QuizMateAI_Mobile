@@ -28,6 +28,8 @@ interface QuestionCardProps {
   isMultiChoice?: boolean;
   selectedAnswerIds?: number[];
   onToggleAnswer?: (answerId: number) => void;
+  disabled?: boolean;
+  instructionText?: string;
 }
 
 export default function QuestionCard({
@@ -46,18 +48,41 @@ export default function QuestionCard({
   isMultiChoice = false,
   selectedAnswerIds = [],
   onToggleAnswer,
+  disabled = false,
+  instructionText,
 }: QuestionCardProps) {
   const {isDark, colors} = useTheme();
 
-  const normalizedType = String(questionType || '').toUpperCase();
+  const normalizedType = String(questionType || '')
+    .trim()
+    .toUpperCase()
+    .replace(/-/g, '_')
+    .replace(/\s+/g, '_');
   const isTextAnswerQuestion =
     normalizedType === 'SHORT_ANSWER' ||
+    normalizedType === 'SHORTANSWER' ||
+    normalizedType === 'SHORT_ANSWERS' ||
+    normalizedType === 'TRA_LOI_NGAN' ||
+    normalizedType === 'CAU_TRA_LOI_NGAN' ||
     normalizedType === 'FILL_IN_BLANK' ||
+    normalizedType === 'FILL_IN_THE_BLANK' ||
+    normalizedType === 'FILL_BLANK' ||
+    normalizedType === 'BLANK_FILLING' ||
+    normalizedType === 'DIEN_VAO_CHO_TRONG' ||
+    normalizedType === 'DIEN_KHUYET' ||
     questionTypeId === 3 ||
     questionTypeId === 5;
 
   const correctTextAnswer =
     answers.find(answer => answer.isCorrect)?.content || '';
+
+  const resolvedIsMultiChoice =
+    isMultiChoice ||
+    normalizedType === 'MULTIPLE_CHOICE' ||
+    normalizedType === 'MULTIPLE_ANSWERS' ||
+    normalizedType === 'MULTI_CHOICE' ||
+    normalizedType === 'MULTI_SELECT' ||
+    answers.filter(answer => answer.isCorrect).length > 1;
 
   const getDifficultyVariant = () => {
     switch (difficulty) {
@@ -69,7 +94,7 @@ export default function QuestionCard({
   };
 
   const getAnswerStyle = (answer: Answer) => {
-    const isSelected = isMultiChoice
+    const isSelected = resolvedIsMultiChoice
       ? selectedAnswerIds.includes(answer.id)
       : selectedAnswerId === answer.id;
 
@@ -97,7 +122,7 @@ export default function QuestionCard({
         bg: isDark ? 'rgba(37,99,235,0.1)' : '#EFF6FF',
         border: isDark ? '#60A5FA' : Colors.primary,
         text: isDark ? '#60A5FA' : '#1D4ED8',
-        icon: isMultiChoice ? 'checkbox-marked' as const : 'radiobox-marked' as const,
+        icon: resolvedIsMultiChoice ? 'checkbox-marked' as const : 'radiobox-marked' as const,
       };
     }
 
@@ -105,13 +130,15 @@ export default function QuestionCard({
       bg: 'transparent',
       border: colors.border,
       text: colors.text,
-      icon: isMultiChoice ? 'checkbox-blank-outline' as const : 'radiobox-blank' as const,
+      icon: resolvedIsMultiChoice ? 'checkbox-blank-outline' as const : 'radiobox-blank' as const,
     };
   };
 
   const handlePress = (answerId: number) => {
-    if (showResult) return;
-    if (isMultiChoice && onToggleAnswer) {
+    if (showResult || disabled) {
+      return;
+    }
+    if (resolvedIsMultiChoice && onToggleAnswer) {
       onToggleAnswer(answerId);
     } else if (onSelectAnswer) {
       onSelectAnswer(answerId);
@@ -131,7 +158,7 @@ export default function QuestionCard({
       <View style={styles.header}>
         <View style={styles.questionInfo}>
           <Text style={[styles.questionNumber, {color: colors.textTertiary}]}>
-            Question {index + 1}
+            Câu {index + 1}
           </Text>
           {difficulty && (
             <Badge
@@ -147,17 +174,33 @@ export default function QuestionCard({
         {question}
       </Text>
 
+      {instructionText ? (
+        <View
+          style={[
+            styles.instructionBox,
+            {
+              backgroundColor: isDark ? 'rgba(37,99,235,0.12)' : '#EFF6FF',
+              borderColor: isDark ? 'rgba(96,165,250,0.25)' : '#BFDBFE',
+            },
+          ]}>
+          <Icon name="information-outline" size={16} color={Colors.primary} />
+          <Text style={[styles.instructionText, {color: isDark ? '#BFDBFE' : '#1D4ED8'}]}>
+            {instructionText}
+          </Text>
+        </View>
+      ) : null}
+
       {isTextAnswerQuestion ? (
         <View style={styles.textAnswerWrap}>
           <Text style={[styles.textAnswerLabel, {color: colors.textSecondary}]}>
-            {showResult ? 'Your answer' : 'Enter your answer'}
+            {showResult ? 'Câu trả lời của bạn' : 'Nhập câu trả lời'}
           </Text>
           <TextInput
             value={textAnswer || ''}
             onChangeText={onChangeTextAnswer}
-            editable={!showResult}
+            editable={!showResult && !disabled}
             multiline
-            placeholder="Type your answer..."
+            placeholder={disabled ? 'Câu trả lời của bạn sẽ được ghi lại bằng giọng nói...' : 'Nhập câu trả lời của bạn...'}
             placeholderTextColor={colors.placeholder}
             style={[
               styles.textAnswerInput,
@@ -179,10 +222,10 @@ export default function QuestionCard({
                 },
               ]}>
               <Text style={[styles.correctAnswerLabel, {color: isDark ? '#34D399' : '#059669'}]}>
-                Expected answer
+                Đáp án tham chiếu
               </Text>
               <Text style={[styles.correctAnswerText, {color: isDark ? '#34D399' : '#047857'}]}>
-                {correctTextAnswer || 'No reference answer provided'}
+                {correctTextAnswer || 'Không có đáp án tham chiếu'}
               </Text>
             </View>
           )}
@@ -195,7 +238,7 @@ export default function QuestionCard({
               <TouchableOpacity
                 key={answer.id}
                 onPress={() => handlePress(answer.id)}
-                activeOpacity={showResult ? 1 : 0.7}
+                activeOpacity={showResult || disabled ? 1 : 0.7}
                 style={[
                   styles.answerOption,
                   {
@@ -222,7 +265,7 @@ export default function QuestionCard({
             {backgroundColor: isDark ? Colors.dark.surfaceVariant : '#F8FAFC'},
           ]}>
           <Text style={[styles.explanationLabel, {color: colors.textSecondary}]}>
-            Explanation
+            Giải thích
           </Text>
           <Text style={[styles.explanationText, {color: colors.text}]}>
             {explanation}
@@ -265,6 +308,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 22,
     marginBottom: Spacing.base,
+  },
+  instructionBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.base,
+  },
+  instructionText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 19,
   },
   answers: {
     gap: Spacing.sm,

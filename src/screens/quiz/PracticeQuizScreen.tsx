@@ -16,6 +16,10 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Button from '../../components/ui/Button';
 import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
+import {
+  isMultipleChoiceQuestion,
+  isTextAnswerQuestion,
+} from '../../utils/voicePractice';
 
 export default function PracticeQuizScreen({navigation, route}: any) {
   const {quizId, title, backContext} = route.params;
@@ -26,18 +30,15 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   const [loading, setLoading] = useState(true);
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [selectedAnswerIdsByQuestion, setSelectedAnswerIdsByQuestion] = useState<
+    Record<number, number[]>
+  >({});
   const [textAnswers, setTextAnswers] = useState<Record<number, string>>({});
   const [submittedQuestionIds, setSubmittedQuestionIds] = useState<
     Record<number, boolean>
   >({});
   const [questionFeedback, setQuestionFeedback] = useState<Record<number, any>>({});
   const [attemptId, setAttemptId] = useState<number | null>(null);
-
-  const isTextAnswerQuestion = (q: any) => {
-    const type = String(q?.questionType || '').toUpperCase();
-    return type === 'SHORT_ANSWER' || type === 'FILL_IN_BLANK' || q?.questionTypeId === 3 || q?.questionTypeId === 5;
-  };
 
   const shouldActivateAndRetry = (error: any) => {
     const message = String(
@@ -64,7 +65,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
       })
       .catch((error: any) =>
         showToast(
-          error?.response?.data?.message || error?.message || 'Failed to load quiz',
+          error?.response?.data?.message || error?.message || 'Không thể tải quiz',
           'error',
         ),
       )
@@ -78,7 +79,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
       const nextAttemptId = Number(attempt?.id || attempt?.attemptId || 0);
       setAttemptId(nextAttemptId || null);
 
-      const restoredAnswers: Record<number, number> = {};
+      const restoredSelectedAnswerIds: Record<number, number[]> = {};
       const restoredTextAnswers: Record<number, string> = {};
       const restoredSubmitted: Record<number, boolean> = {};
       const savedAnswers = Array.isArray(attempt?.savedAnswers)
@@ -92,11 +93,13 @@ export default function PracticeQuizScreen({navigation, route}: any) {
         }
 
         const selectedAnswerIds = Array.isArray(item?.selectedAnswerIds)
-          ? item.selectedAnswerIds.filter((value: any) => value != null)
+          ? item.selectedAnswerIds
+              .map((value: any) => Number(value))
+              .filter((value: number) => Number.isFinite(value))
           : [];
 
         if (selectedAnswerIds.length > 0) {
-          restoredAnswers[qid] = Number(selectedAnswerIds[0]);
+          restoredSelectedAnswerIds[qid] = selectedAnswerIds;
           restoredSubmitted[qid] = true;
         }
 
@@ -106,7 +109,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
         }
       });
 
-      setAnswers(restoredAnswers);
+      setSelectedAnswerIdsByQuestion(restoredSelectedAnswerIds);
       setTextAnswers(restoredTextAnswers);
       setSubmittedQuestionIds(restoredSubmitted);
       setStarted(true);
@@ -129,13 +132,13 @@ export default function PracticeQuizScreen({navigation, route}: any) {
           const nextAttemptId = Number(attempt?.id || attempt?.attemptId || 0);
           setAttemptId(nextAttemptId || null);
           setStarted(true);
-          showToast('Quiz activated. Starting now...', 'success');
+          showToast('Quiz đã được kích hoạt. Bắt đầu ngay...', 'success');
           return;
         } catch (retryError: any) {
           showToast(
             retryError?.response?.data?.message ||
               retryError?.message ||
-              'Failed to activate quiz',
+              'Không thể kích hoạt quiz',
             'error',
           );
           return;
@@ -143,7 +146,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
       }
 
       showToast(
-        error?.response?.data?.message || error?.message || 'Failed to start quiz',
+        error?.response?.data?.message || error?.message || 'Không thể bắt đầu quiz',
         'error',
       );
     }
@@ -153,7 +156,24 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     if (submittedQuestionIds[questionId]) {
       return;
     }
-    setAnswers(prev => ({...prev, [questionId]: answerId}));
+    setSelectedAnswerIdsByQuestion(prev => ({...prev, [questionId]: [answerId]}));
+  };
+
+  const handleToggleAnswer = (questionId: number, answerId: number) => {
+    if (submittedQuestionIds[questionId]) {
+      return;
+    }
+    setSelectedAnswerIdsByQuestion(prev => {
+      const currentIds = Array.isArray(prev[questionId]) ? prev[questionId] : [];
+      const nextIds = currentIds.includes(answerId)
+        ? currentIds.filter(id => id !== answerId)
+        : [...currentIds, answerId];
+
+      return {
+        ...prev,
+        [questionId]: nextIds,
+      };
+    });
   };
 
   const handleChangeTextAnswer = (questionId: number, text: string) => {
@@ -165,13 +185,13 @@ export default function PracticeQuizScreen({navigation, route}: any) {
 
   const handleViewResult = async () => {
     if (!attemptId) {
-      showToast('Quiz attempt is missing', 'error');
+      showToast('Không tìm thấy lượt làm bài', 'error');
       return;
     }
 
     const currentQuestion = questions[currentIndex];
     if (!currentQuestion?.id) {
-      showToast('Question is missing', 'error');
+      showToast('Không tìm thấy câu hỏi', 'error');
       return;
     }
 
@@ -181,8 +201,10 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     }
 
     const text = (textAnswers[questionId] || '').trim();
-    const selectedId = answers[questionId];
-    if (!text && (selectedId === undefined || selectedId === null)) {
+    const selectedAnswerIds = Array.isArray(selectedAnswerIdsByQuestion[questionId])
+      ? selectedAnswerIdsByQuestion[questionId]
+      : [];
+    if (!text && selectedAnswerIds.length === 0) {
       showToast('Hãy chọn câu trả lời để xem đáp án', 'error');
       return;
     }
@@ -190,8 +212,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     try {
       const res = await QuizAPI.submitPracticeQuestion(attemptId, {
         questionId,
-        selectedAnswerIds:
-          selectedId !== undefined && selectedId !== null ? [selectedId] : [],
+        selectedAnswerIds,
         textAnswer: text || null,
       });
 
@@ -246,7 +267,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
       showToast(
         error?.response?.data?.message ||
           error?.message ||
-          'Failed to view result',
+          'Không thể xem kết quả',
         'error',
       );
     }
@@ -254,7 +275,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
 
   const handleSubmit = async () => {
     if (!attemptId) {
-      showToast('Quiz attempt is missing', 'error');
+      showToast('Không tìm thấy lượt làm bài', 'error');
       return;
     }
     try {
@@ -262,7 +283,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
       navigation.replace('QuizResult', {attemptId, backContext});
     } catch (error: any) {
       showToast(
-        error?.response?.data?.message || error?.message || 'Failed to submit',
+        error?.response?.data?.message || error?.message || 'Không thể nộp bài',
         'error',
       );
     }
@@ -298,6 +319,9 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   const currentFeedback = currentQuestion
     ? questionFeedback[currentQuestion.id]
     : null;
+  const currentSelectedAnswerIds = currentQuestion
+    ? selectedAnswerIdsByQuestion[currentQuestion.id] || []
+    : [];
 
   if (!started) {
     return (
@@ -320,15 +344,29 @@ export default function PracticeQuizScreen({navigation, route}: any) {
               {title || quiz?.name}
             </Text>
             <Text style={[styles.startMeta, {color: colors.textSecondary}]}>
-              {questions.length} questions
+              {questions.length} câu hỏi
             </Text>
             <Button
-              title="Start Practice"
+              title="Luyện tập thường"
               onPress={handleStart}
               style={styles.startBtn}
             />
             <Button
-              title="Go Back"
+              title="Luyện tập bằng giọng nói"
+              variant="secondary"
+              icon="microphone"
+              onPress={() =>
+                navigation.navigate('VoicePracticeQuiz', {
+                  quizId,
+                  title: title || quiz?.name,
+                  backContext,
+                  autoStart: true,
+                })
+              }
+              style={styles.startBtn}
+            />
+            <Button
+              title="Quay lại"
               variant="ghost"
               onPress={() => navigation.goBack()}
             />
@@ -383,9 +421,13 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             answers={currentQuestion.answers || []}
             questionType={currentQuestion.questionType}
             questionTypeId={currentQuestion.questionTypeId}
-            selectedAnswerId={answers[currentQuestion.id]}
+            selectedAnswerId={currentSelectedAnswerIds[0] ?? null}
+            selectedAnswerIds={currentSelectedAnswerIds}
             onSelectAnswer={(answerId) =>
               handleSelectAnswer(currentQuestion.id, answerId)
+            }
+            onToggleAnswer={(answerId) =>
+              handleToggleAnswer(currentQuestion.id, answerId)
             }
             textAnswer={textAnswers[currentQuestion.id] || ''}
             onChangeTextAnswer={text =>
@@ -398,6 +440,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
                 : undefined
             }
             showResult={isCurrentSubmitted}
+            isMultiChoice={isMultipleChoiceQuestion(currentQuestion)}
           />
         )}
       </ScrollView>
@@ -409,7 +452,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
           {backgroundColor: colors.surface, borderTopColor: colors.border},
         ]}>
         <Button
-          title="Previous"
+          title="Trước"
           variant="outline"
           size="md"
           onPress={handlePrev}
@@ -420,7 +463,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
         {currentIndex === questions.length - 1 ? (
           isCurrentSubmitted ? (
             <Button
-              title="Submit"
+              title="Nộp bài"
               size="md"
               onPress={handleSubmit}
               fullWidth={false}
@@ -428,7 +471,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             />
           ) : (
             <Button
-              title="View Result"
+              title="Xem kết quả"
               size="md"
               onPress={handleViewResult}
               fullWidth={false}
@@ -437,7 +480,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
           )
         ) : (
           <Button
-            title={isCurrentSubmitted ? 'Next' : 'View Result'}
+            title={isCurrentSubmitted ? 'Tiếp theo' : 'Xem kết quả'}
             size="md"
             onPress={isCurrentSubmitted ? handleNext : handleViewResult}
             fullWidth={false}
