@@ -4,6 +4,7 @@ import QuizListScreen from '../screens/quiz/QuizListScreen';
 import PracticeQuizScreen from '../screens/quiz/PracticeQuizScreen';
 import ExamQuizScreen from '../screens/quiz/ExamQuizScreen';
 import QuizResultScreen from '../screens/quiz/QuizResultScreen';
+import VoicePracticeQuizScreen from '../screens/quiz/VoicePracticeQuizScreen';
 
 export type QuizBackContext =
   | {type: 'quiz-list'}
@@ -19,6 +20,12 @@ export type QuizBackContext =
 export type QuizStackParamList = {
   QuizList: undefined;
   PracticeQuiz: {quizId: number; title?: string; backContext?: QuizBackContext};
+  VoicePracticeQuiz: {
+    quizId: number;
+    title?: string;
+    backContext?: QuizBackContext;
+    autoStart?: boolean;
+  };
   ExamQuiz: {quizId: number; title?: string; backContext?: QuizBackContext};
   QuizResult: {attemptId: number; backContext?: QuizBackContext};
 };
@@ -30,6 +37,7 @@ export default function QuizStack() {
     <Stack.Navigator screenOptions={{headerShown: false}}>
       <Stack.Screen name="QuizList" component={QuizListScreen} />
       <Stack.Screen name="PracticeQuiz" component={PracticeQuizScreen} />
+      <Stack.Screen name="VoicePracticeQuiz" component={VoicePracticeQuizScreen} />
       <Stack.Screen name="ExamQuiz" component={ExamQuizScreen} />
       <Stack.Screen name="QuizResult" component={QuizResultScreen} />
     </Stack.Navigator>

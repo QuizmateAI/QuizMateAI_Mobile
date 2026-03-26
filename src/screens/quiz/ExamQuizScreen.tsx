@@ -16,6 +16,10 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Button from '../../components/ui/Button';
 import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
+import {
+  isMultipleChoiceQuestion,
+  isTextAnswerQuestion,
+} from '../../utils/voicePractice';
 
 export default function ExamQuizScreen({navigation, route}: any) {
   const {quizId, title, backContext} = route.params;
@@ -26,7 +30,9 @@ export default function ExamQuizScreen({navigation, route}: any) {
   const [loading, setLoading] = useState(true);
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [selectedAnswerIdsByQuestion, setSelectedAnswerIdsByQuestion] = useState<
+    Record<number, number[]>
+  >({});
   const [textAnswers, setTextAnswers] = useState<Record<number, string>>({});
   const [attemptId, setAttemptId] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -79,7 +85,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
   const resolvePerQuestionProgress = (
     list: any[],
     startedAt?: string | null,
-    restoredAnswers: Record<number, number> = {},
+    restoredSelectedAnswerIds: Record<number, number[]> = {},
     restoredTextAnswers: Record<number, string> = {},
   ) => {
     if (!Array.isArray(list) || list.length === 0) {
@@ -87,7 +93,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
     }
 
     const firstUnansweredIndex = list.findIndex((q: any) => {
-      const hasChoice = restoredAnswers[q?.id] !== undefined;
+      const hasChoice = (restoredSelectedAnswerIds[q?.id] || []).length > 0;
       const hasText = (restoredTextAnswers[q?.id] || '').trim().length > 0;
       return !(hasChoice || hasText);
     });
@@ -171,16 +177,6 @@ export default function ExamQuizScreen({navigation, route}: any) {
       timeLeft: resolvedTimeLeft,
       isFinished: false,
     };
-  };
-
-  const isTextAnswerQuestion = (q: any) => {
-    const type = String(q?.questionType || '').toUpperCase();
-    return (
-      type === 'SHORT_ANSWER' ||
-      type === 'FILL_IN_BLANK' ||
-      q?.questionTypeId === 3 ||
-      q?.questionTypeId === 5
-    );
   };
 
   const shouldActivateAndRetry = (error: any) => {
@@ -303,7 +299,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
       const savedAnswers = Array.isArray(attempt?.savedAnswers)
         ? attempt.savedAnswers
         : [];
-      const restoredAnswers: Record<number, number> = {};
+      const restoredSelectedAnswerIds: Record<number, number[]> = {};
       const restoredTextAnswers: Record<number, string> = {};
 
       savedAnswers.forEach((item: any) => {
@@ -313,11 +309,13 @@ export default function ExamQuizScreen({navigation, route}: any) {
         }
 
         const selectedAnswerIds = Array.isArray(item?.selectedAnswerIds)
-          ? item.selectedAnswerIds.filter((value: any) => value != null)
+          ? item.selectedAnswerIds
+              .map((value: any) => Number(value))
+              .filter((value: number) => Number.isFinite(value))
           : [];
 
         if (selectedAnswerIds.length > 0) {
-          restoredAnswers[qid] = Number(selectedAnswerIds[0]);
+          restoredSelectedAnswerIds[qid] = selectedAnswerIds;
         }
 
         if (typeof item?.textAnswer === 'string' && item.textAnswer.trim()) {
@@ -325,17 +323,17 @@ export default function ExamQuizScreen({navigation, route}: any) {
         }
       });
 
-      setAnswers(restoredAnswers);
+      setSelectedAnswerIdsByQuestion(restoredSelectedAnswerIds);
       setTextAnswers(restoredTextAnswers);
 
       const allQuestions = questionsRef.current;
       if (isPerQuestionMode) {
-        const progress = resolvePerQuestionProgress(
-          allQuestions,
-          attempt?.startedAt,
-          restoredAnswers,
-          restoredTextAnswers,
-        );
+          const progress = resolvePerQuestionProgress(
+            allQuestions,
+            attempt?.startedAt,
+            restoredSelectedAnswerIds,
+            restoredTextAnswers,
+          );
 
         setCurrentIndex(progress.currentIndex);
         setTimeLeft(progress.timeLeft);
@@ -379,7 +377,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
           const savedAnswers = Array.isArray(attempt?.savedAnswers)
             ? attempt.savedAnswers
             : [];
-          const restoredAnswers: Record<number, number> = {};
+          const restoredSelectedAnswerIds: Record<number, number[]> = {};
           const restoredTextAnswers: Record<number, string> = {};
 
           savedAnswers.forEach((item: any) => {
@@ -389,11 +387,13 @@ export default function ExamQuizScreen({navigation, route}: any) {
             }
 
             const selectedAnswerIds = Array.isArray(item?.selectedAnswerIds)
-              ? item.selectedAnswerIds.filter((value: any) => value != null)
+              ? item.selectedAnswerIds
+                  .map((value: any) => Number(value))
+                  .filter((value: number) => Number.isFinite(value))
               : [];
 
             if (selectedAnswerIds.length > 0) {
-              restoredAnswers[qid] = Number(selectedAnswerIds[0]);
+              restoredSelectedAnswerIds[qid] = selectedAnswerIds;
             }
 
             if (typeof item?.textAnswer === 'string' && item.textAnswer.trim()) {
@@ -401,7 +401,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
             }
           });
 
-          setAnswers(restoredAnswers);
+          setSelectedAnswerIdsByQuestion(restoredSelectedAnswerIds);
           setTextAnswers(restoredTextAnswers);
 
           const allQuestions = questionsRef.current;
@@ -409,7 +409,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
             const progress = resolvePerQuestionProgress(
               allQuestions,
               attempt?.startedAt,
-              restoredAnswers,
+              restoredSelectedAnswerIds,
               restoredTextAnswers,
             );
 
@@ -455,10 +455,42 @@ export default function ExamQuizScreen({navigation, route}: any) {
   };
 
   const handleSelectAnswer = (questionId: number, answerId: number) => {
-    setAnswers(prev => ({...prev, [questionId]: answerId}));
+    setSelectedAnswerIdsByQuestion(prev => ({...prev, [questionId]: [answerId]}));
     if (attemptId) {
-      QuizAPI.saveAnswer(attemptId, {questionId, answerId}).catch(() => {});
+      QuizAPI.saveAnswer(attemptId, {questionId, selectedAnswerIds: [answerId]}).catch(() => {});
     }
+  };
+
+  const handleToggleAnswer = (questionId: number, answerId: number) => {
+    setSelectedAnswerIdsByQuestion(prev => {
+      const currentIds = Array.isArray(prev[questionId]) ? prev[questionId] : [];
+      const nextIds = currentIds.includes(answerId)
+        ? currentIds.filter(id => id !== answerId)
+        : [...currentIds, answerId];
+
+      if (attemptId) {
+        QuizAPI.saveAnswer(attemptId, {questionId, selectedAnswerIds: nextIds}).catch(() => {});
+      }
+
+      return {
+        ...prev,
+        [questionId]: nextIds,
+      };
+    });
+  };
+
+  const currentQuestion = questions[currentIndex];
+  const currentSelectedAnswerIds = currentQuestion
+    ? selectedAnswerIdsByQuestion[currentQuestion.id] || []
+    : [];
+
+  const isAnsweredQuestion = (question: any) => {
+    if (!question) {
+      return false;
+    }
+    const hasChoiceAnswer = (selectedAnswerIdsByQuestion[question?.id] || []).length > 0;
+    const hasTextAnswer = (textAnswers[question?.id] || '').trim().length > 0;
+    return hasChoiceAnswer || hasTextAnswer;
   };
 
   const handleChangeTextAnswer = (questionId: number, text: string) => {
@@ -547,13 +579,8 @@ export default function ExamQuizScreen({navigation, route}: any) {
     );
   }
 
-  const currentQuestion = questions[currentIndex];
   const isTimeWarning = isPerQuestionMode ? timeLeft <= 10 : timeLeft < 60;
-  const answeredCount = questions.filter(q => {
-    const hasChoiceAnswer = answers[q?.id] !== undefined;
-    const hasTextAnswer = (textAnswers[q?.id] || '').trim().length > 0;
-    return hasChoiceAnswer || hasTextAnswer;
-  }).length;
+  const answeredCount = questions.filter(isAnsweredQuestion).length;
 
   return (
     <SafeAreaView
@@ -633,8 +660,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
           {questions.map((q, index) => {
             const isActive = index === currentIndex;
             const isAnswered =
-              answers[q?.id] !== undefined ||
-              (textAnswers[q?.id] || '').trim().length > 0;
+              isAnsweredQuestion(q);
             return (
               <TouchableOpacity
                 key={`${q?.id ?? index}`}
@@ -679,15 +705,20 @@ export default function ExamQuizScreen({navigation, route}: any) {
             answers={currentQuestion.answers || []}
             questionType={currentQuestion.questionType}
             questionTypeId={currentQuestion.questionTypeId}
-            selectedAnswerId={answers[currentQuestion.id]}
+            selectedAnswerId={currentSelectedAnswerIds[0] ?? null}
+            selectedAnswerIds={currentSelectedAnswerIds}
             onSelectAnswer={(answerId) =>
               handleSelectAnswer(currentQuestion.id, answerId)
+            }
+            onToggleAnswer={(answerId) =>
+              handleToggleAnswer(currentQuestion.id, answerId)
             }
             textAnswer={textAnswers[currentQuestion.id] || ''}
             onChangeTextAnswer={text =>
               handleChangeTextAnswer(currentQuestion.id, text)
             }
             difficulty={currentQuestion.difficulty}
+            isMultiChoice={isMultipleChoiceQuestion(currentQuestion)}
           />
         )}
       </ScrollView>

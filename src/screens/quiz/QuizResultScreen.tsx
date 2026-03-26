@@ -266,6 +266,7 @@ export default function QuizResultScreen({navigation, route}: any) {
                 questionType={q.questionType}
                 questionTypeId={q.questionTypeId}
                 selectedAnswerId={q.selectedAnswerId}
+                selectedAnswerIds={q.selectedAnswerIds || []}
                 textAnswer={q.textAnswer || ''}
                 showResult
                 difficulty={q.difficulty}

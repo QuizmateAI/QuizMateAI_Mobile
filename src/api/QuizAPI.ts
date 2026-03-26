@@ -1,4 +1,8 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {API_URL} from '@env';
 import api from './api';
+
+const TOKEN_KEY = '@quizmate_token';
 
 const mapQuiz = (item: any) => ({
   ...item,
@@ -130,13 +134,22 @@ const QuizAPI = {
     })),
   saveAnswer: (
     attemptId: number,
-    data: {questionId: number; answerId?: number | null; textAnswer?: string | null},
+    data: {
+      questionId: number;
+      answerId?: number | null;
+      selectedAnswerIds?: number[];
+      textAnswer?: string | null;
+    },
   ) =>
     api.put(`/api/quiz-attempts/${attemptId}/saveAnswer`, [
       {
         questionId: data.questionId,
         selectedAnswerIds:
-          typeof data.answerId === 'number' ? [data.answerId] : [],
+          Array.isArray(data.selectedAnswerIds)
+            ? data.selectedAnswerIds
+            : typeof data.answerId === 'number'
+            ? [data.answerId]
+            : [],
         textAnswer:
           typeof data.textAnswer === 'string' ? data.textAnswer : null,
       },
@@ -162,6 +175,46 @@ const QuizAPI = {
         ...res,
         data: res.data?.data,
       })),
+  submitCompanionVoiceAnswer: (
+    attemptId: number,
+    data: {
+      questionId: number;
+      audioFile: {
+        uri: string;
+        name: string;
+        type: string;
+      };
+    },
+  ) => {
+    const formData = new FormData();
+    formData.append('questionId', String(data.questionId));
+    formData.append('audioFile', data.audioFile as any);
+
+    return api
+      .post(`/api/quiz-attempts/${attemptId}/companion-answer`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+      .then(res => ({
+        ...res,
+        data: res.data?.data,
+      }));
+  },
+  createCompanionSpeech: (text: string) =>
+    api.post('/api/quiz-attempts/companion-speech', {text}).then(res => ({
+      ...res,
+      data: res.data?.data,
+    })),
+  getCompanionSpeechPlaybackSource: async (speechId: string) => {
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    const baseUrl = String(API_URL || '').replace(/\/+$/, '');
+
+    return {
+      url: `${baseUrl}/api/quiz-attempts/companion-speech/${speechId}`,
+      headers: token ? {Authorization: `Bearer ${token}`} : {},
+    };
+  },
   submitAttempt: (attemptId: number) =>
     api.post(`/api/quiz-attempts/${attemptId}/submit`),
   getResult: (attemptId: number) =>
@@ -191,6 +244,9 @@ const QuizAPI = {
             answers: q.answers || [],
             questionType: q.questionType,
             textAnswer: q.textAnswer,
+            selectedAnswerIds: Array.isArray(q.selectedAnswerIds)
+              ? q.selectedAnswerIds
+              : [],
             selectedAnswerId: q.selectedAnswerIds?.[0],
           })),
         },
