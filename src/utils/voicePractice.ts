@@ -15,6 +15,154 @@ export const VOICE_MAX_RECORDING_MS = 15000;
 export const VOICE_MIN_SPEECH_MS = 700;
 export const VOICE_TTS_RATE = 0.48;
 
+export const VOICE_PRACTICE_CONFIG_STORAGE_KEY = '@voice_practice_config';
+
+export type VoicePracticeConfig = {
+  silenceThresholdDb: number;
+  silenceDurationMs: number;
+  maxRecordingMs: number;
+  minSpeechMs: number;
+};
+
+export type VoicePracticePreset = {
+  id: 'balanced' | 'fast' | 'noisy' | 'long';
+  label: string;
+  description: string;
+  config: VoicePracticeConfig;
+};
+
+const VOICE_PRACTICE_LIMITS = {
+  silenceThresholdDb: {min: -60, max: -20},
+  silenceDurationMs: {min: 500, max: 3000},
+  maxRecordingMs: {min: 5000, max: 45000},
+  minSpeechMs: {min: 300, max: 2000},
+} as const;
+
+const clampNumber = (value: unknown, min: number, max: number, fallback: number) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(numeric)));
+};
+
+const createPlatformThreshold = (iosValue: number, androidValue: number) =>
+  Platform.OS === 'ios' ? iosValue : androidValue;
+
+export const createDefaultVoicePracticeConfig = (): VoicePracticeConfig => ({
+  silenceThresholdDb: VOICE_SILENCE_THRESHOLD_DB,
+  silenceDurationMs: VOICE_SILENCE_DURATION_MS,
+  maxRecordingMs: VOICE_MAX_RECORDING_MS,
+  minSpeechMs: VOICE_MIN_SPEECH_MS,
+});
+
+export const resolveVoicePracticeConfig = (
+  value?: Partial<VoicePracticeConfig> | null,
+): VoicePracticeConfig => {
+  const fallback = createDefaultVoicePracticeConfig();
+
+  return {
+    silenceThresholdDb: clampNumber(
+      value?.silenceThresholdDb,
+      VOICE_PRACTICE_LIMITS.silenceThresholdDb.min,
+      VOICE_PRACTICE_LIMITS.silenceThresholdDb.max,
+      fallback.silenceThresholdDb,
+    ),
+    silenceDurationMs: clampNumber(
+      value?.silenceDurationMs,
+      VOICE_PRACTICE_LIMITS.silenceDurationMs.min,
+      VOICE_PRACTICE_LIMITS.silenceDurationMs.max,
+      fallback.silenceDurationMs,
+    ),
+    maxRecordingMs: clampNumber(
+      value?.maxRecordingMs,
+      VOICE_PRACTICE_LIMITS.maxRecordingMs.min,
+      VOICE_PRACTICE_LIMITS.maxRecordingMs.max,
+      fallback.maxRecordingMs,
+    ),
+    minSpeechMs: clampNumber(
+      value?.minSpeechMs,
+      VOICE_PRACTICE_LIMITS.minSpeechMs.min,
+      VOICE_PRACTICE_LIMITS.minSpeechMs.max,
+      fallback.minSpeechMs,
+    ),
+  };
+};
+
+export const VOICE_PRACTICE_PRESETS: VoicePracticePreset[] = [
+  {
+    id: 'balanced',
+    label: 'Cân bằng',
+    description: 'Mặc định ổn định cho đa số tình huống.',
+    config: createDefaultVoicePracticeConfig(),
+  },
+  {
+    id: 'fast',
+    label: 'Phản hồi nhanh',
+    description: 'Tự chuyển nhanh hơn sau khi bạn dừng nói.',
+    config: resolveVoicePracticeConfig({
+      silenceThresholdDb: VOICE_SILENCE_THRESHOLD_DB,
+      silenceDurationMs: 900,
+      maxRecordingMs: 12000,
+      minSpeechMs: 500,
+    }),
+  },
+  {
+    id: 'noisy',
+    label: 'Chống ồn',
+    description: 'Giảm bắt nhầm tiếng ồn nền hoặc âm thanh xung quanh.',
+    config: resolveVoicePracticeConfig({
+      silenceThresholdDb: createPlatformThreshold(-40, -35),
+      silenceDurationMs: 1800,
+      maxRecordingMs: 15000,
+      minSpeechMs: 900,
+    }),
+  },
+  {
+    id: 'long',
+    label: 'Trả lời dài',
+    description: 'Phù hợp khi bạn cần nói chậm hơn hoặc trả lời dài hơn.',
+    config: resolveVoicePracticeConfig({
+      silenceThresholdDb: createPlatformThreshold(-48, -42),
+      silenceDurationMs: 1900,
+      maxRecordingMs: 25000,
+      minSpeechMs: 600,
+    }),
+  },
+];
+
+export const areVoicePracticeConfigsEqual = (
+  left?: Partial<VoicePracticeConfig> | null,
+  right?: Partial<VoicePracticeConfig> | null,
+) => {
+  const normalizedLeft = resolveVoicePracticeConfig(left);
+  const normalizedRight = resolveVoicePracticeConfig(right);
+  return (
+    normalizedLeft.silenceThresholdDb === normalizedRight.silenceThresholdDb &&
+    normalizedLeft.silenceDurationMs === normalizedRight.silenceDurationMs &&
+    normalizedLeft.maxRecordingMs === normalizedRight.maxRecordingMs &&
+    normalizedLeft.minSpeechMs === normalizedRight.minSpeechMs
+  );
+};
+
+export const detectVoicePracticePresetId = (
+  config?: Partial<VoicePracticeConfig> | null,
+) =>
+  VOICE_PRACTICE_PRESETS.find(preset =>
+    areVoicePracticeConfigsEqual(preset.config, config),
+  )?.id || null;
+
+export const formatVoicePracticeConfigSummary = (
+  config?: Partial<VoicePracticeConfig> | null,
+) => {
+  const normalized = resolveVoicePracticeConfig(config);
+  return `Ngưỡng ${normalized.silenceThresholdDb} dB | Chờ ${(
+    normalized.silenceDurationMs / 1000
+  ).toFixed(1)}s | Tối đa ${Math.round(
+    normalized.maxRecordingMs / 1000,
+  )}s | Nói tối thiểu ${(normalized.minSpeechMs / 1000).toFixed(1)}s`;
+};
+
 export const VOICE_AUDIO_SET: AudioSet = {
   AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
   AudioSourceAndroid: AudioSourceAndroidType.MIC,

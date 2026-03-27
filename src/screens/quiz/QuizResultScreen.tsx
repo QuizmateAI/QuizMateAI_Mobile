@@ -72,9 +72,13 @@ export default function QuizResultScreen({navigation, route}: any) {
   }
 
   const score = result?.score || 0;
+  const accuracyPercent = result?.accuracyPercent || 0;
+  const displayPercent = result?.displayPercent ?? score;
   const totalQuestions = result?.totalQuestions || 0;
   const correctCount = result?.correctCount || 0;
-  const isPassed = result?.passed ?? score >= 50;
+  const hasPassScore = typeof result?.passScore === 'number';
+  const passedFlag = typeof result?.passed === 'boolean' ? result.passed : null;
+  const statusVariant = !hasPassScore ? 'neutral' : passedFlag ? 'pass' : 'fail';
   const timeTaken = result?.timeTakenSeconds
     ? `${Math.floor(result.timeTakenSeconds / 60)}m ${result.timeTakenSeconds % 60}s`
     : '--';
@@ -95,10 +99,25 @@ export default function QuizResultScreen({navigation, route}: any) {
     title: isDark ? '#F87171' : '#DC2626',
   };
 
-  const c = isPassed ? passColors : failColors;
+  const neutralColors = {
+    gradient1: isDark ? 'rgba(59,130,246,0.14)' : '#EFF6FF',
+    gradient2: isDark ? 'rgba(14,165,233,0.1)' : '#F0F9FF',
+    border: isDark ? '#1D4ED8' : '#BFDBFE',
+    icon: '#2563EB',
+    title: isDark ? '#93C5FD' : '#1D4ED8',
+  };
+
+  const c =
+    statusVariant === 'pass'
+      ? passColors
+      : statusVariant === 'fail'
+      ? failColors
+      : neutralColors;
+  const primaryMetricLabel =
+    score === 0 && accuracyPercent > 0 ? 'Accuracy' : 'Score';
 
   const stats = [
-    {icon: 'percent', label: 'Score', value: `${score}%`},
+    {icon: 'percent', label: primaryMetricLabel, value: `${displayPercent}%`},
     {icon: 'check-circle-outline', label: 'Correct', value: `${correctCount}/${totalQuestions}`},
     {icon: 'clock-outline', label: 'Time', value: timeTaken},
     {icon: 'help-circle-outline', label: 'Questions', value: totalQuestions},
@@ -186,28 +205,42 @@ export default function QuizResultScreen({navigation, route}: any) {
             style={[
               styles.iconCircle,
               {
-                backgroundColor: isPassed
+                backgroundColor: statusVariant === 'pass'
                   ? isDark ? 'rgba(16,185,129,0.2)' : '#D1FAE5'
-                  : isDark ? 'rgba(239,68,68,0.2)' : '#FEE2E2',
+                  : statusVariant === 'fail'
+                  ? isDark ? 'rgba(239,68,68,0.2)' : '#FEE2E2'
+                  : isDark ? 'rgba(59,130,246,0.18)' : '#DBEAFE',
               },
             ]}>
             <Icon
-              name={isPassed ? 'trophy' : 'close-circle'}
+              name={
+                statusVariant === 'pass'
+                  ? 'trophy'
+                  : statusVariant === 'fail'
+                  ? 'close-circle'
+                  : 'information-outline'
+              }
               size={40}
               color={c.icon}
             />
           </View>
           <Text style={[styles.scoreTitle, {color: c.title}]}>
-            {isPassed ? 'Congratulations!' : 'Keep Trying!'}
+            {statusVariant === 'pass'
+              ? 'Congratulations!'
+              : statusVariant === 'fail'
+              ? 'Keep Trying!'
+              : 'Quiz Completed'}
           </Text>
           <Text style={[styles.scoreSubtitle, {color: c.title}]}>
-            {isPassed
+            {statusVariant === 'pass'
               ? 'You passed the quiz!'
-              : "Don't give up, practice makes perfect!"}
+              : statusVariant === 'fail'
+              ? "Don't give up, practice makes perfect!"
+              : 'This quiz has no pass threshold. Showing your result by accuracy.'}
           </Text>
 
           <Text style={[styles.scoreValue, {color: c.title}]}>
-            {score}%
+            {displayPercent}%
           </Text>
         </View>
 

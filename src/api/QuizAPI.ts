@@ -223,6 +223,11 @@ const QuizAPI = {
       const maxScore = raw.maxScore || 0;
       const score = raw.score || 0;
       const scorePercent = maxScore > 0 ? Math.round((score / maxScore) * 100) : score;
+      const rawAccuracy = Number(raw.accuracy);
+      const accuracyPercent = Number.isFinite(rawAccuracy)
+        ? Math.round(rawAccuracy <= 1 ? rawAccuracy * 100 : rawAccuracy)
+        : 0;
+      const displayPercent = scorePercent === 0 ? accuracyPercent : scorePercent;
       const startedAt = raw.startedAt ? new Date(raw.startedAt).getTime() : 0;
       const completedAt = raw.completedAt ? new Date(raw.completedAt).getTime() : 0;
       const timeTakenSeconds =
@@ -234,6 +239,8 @@ const QuizAPI = {
         data: {
           ...raw,
           score: scorePercent,
+          accuracyPercent,
+          displayPercent,
           totalQuestions: raw.totalQuestion || 0,
           correctCount: raw.correctQuestion || 0,
           timeTakenSeconds,

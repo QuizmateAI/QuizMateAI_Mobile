@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,127 @@ import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Button from '../../components/ui/Button';
+import Dialog from '../../components/ui/Dialog';
 import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
+import {storage} from '../../utils/storage';
 import {
+  VOICE_PRACTICE_CONFIG_STORAGE_KEY,
+  VOICE_PRACTICE_PRESETS,
+  createDefaultVoicePracticeConfig,
+  detectVoicePracticePresetId,
   isMultipleChoiceQuestion,
   isTextAnswerQuestion,
+  resolveVoicePracticeConfig,
+  type VoicePracticeConfig,
 } from '../../utils/voicePractice';
+
+const VOICE_SETTING_FIELDS: Array<{
+  key: keyof VoicePracticeConfig;
+  label: string;
+  description: string;
+  min: number;
+  max: number;
+  minHint: string;
+  maxHint: string;
+  step: number;
+  formatValue: (value: number) => string;
+}> = [
+  {
+    key: 'silenceThresholdDb',
+    label: 'Độ nhạy micro',
+    description: 'Tăng nếu bạn ở nơi ồn. Giảm nếu bạn nói nhỏ hoặc đứng xa máy.',
+    min: -60,
+    max: -20,
+    minHint: 'Nhạy hơn',
+    maxHint: 'Ít nhạy hơn',
+    step: 5,
+    formatValue: value => `${value} dB`,
+  },
+  {
+    key: 'silenceDurationMs',
+    label: 'Chờ sau khi im lặng',
+    description: 'Ứng dụng đợi bấy lâu sau khi bạn dừng nói rồi mới tự gửi câu trả lời.',
+    min: 500,
+    max: 3000,
+    minHint: 'Phản hồi nhanh hơn',
+    maxHint: 'Chờ lâu hơn',
+    step: 100,
+    formatValue: value => formatVoiceSeconds(value),
+  },
+  {
+    key: 'maxRecordingMs',
+    label: 'Thời gian tối đa mỗi câu',
+    description: 'Giới hạn độ dài của một lần trả lời bằng giọng nói.',
+    min: 5000,
+    max: 45000,
+    minHint: 'Ngắn hơn',
+    maxHint: 'Dài hơn',
+    step: 1000,
+    formatValue: value => formatVoiceSeconds(value),
+  },
+  {
+    key: 'minSpeechMs',
+    label: 'Nói đủ lâu trước khi tự dừng',
+    description:
+      'Ứng dụng chỉ tự gửi sau khi đã nghe bạn nói ít nhất chừng này rồi bạn im lặng.',
+    min: 300,
+    max: 2000,
+    minHint: 'Dừng sớm hơn',
+    maxHint: 'Chắc chắn hơn',
+    step: 100,
+    formatValue: value => formatVoiceSeconds(value),
+  },
+];
+
+function formatVoiceSeconds(ms: number) {
+  const seconds = ms / 1000;
+  const formatted = Number.isInteger(seconds)
+    ? String(seconds)
+    : seconds.toFixed(1).replace('.', ',');
+  return `${formatted} giây`;
+}
+
+function describeSensitivity(thresholdDb: number) {
+  if (thresholdDb <= -45) {
+    return 'Nhạy hơn, phù hợp khi bạn nói nhỏ hoặc để máy hơi xa.';
+  }
+  if (thresholdDb <= -39) {
+    return 'Mức vừa, phù hợp đa số môi trường bình thường.';
+  }
+  return 'Ít nhạy hơn, phù hợp nơi có nhiều tiếng ồn nền.';
+}
+
+function buildVoiceConfigHighlights(config: VoicePracticeConfig) {
+  return [
+    {
+      key: 'sensitivity',
+      title: 'Độ nhạy micro',
+      description: describeSensitivity(config.silenceThresholdDb),
+    },
+    {
+      key: 'silence',
+      title: 'Tự dừng sau khi im lặng',
+      description: `Ứng dụng sẽ đợi ${formatVoiceSeconds(
+        config.silenceDurationMs,
+      )} sau khi bạn dừng nói rồi tự gửi câu trả lời.`,
+    },
+    {
+      key: 'max',
+      title: 'Thời gian tối đa mỗi câu',
+      description: `Mỗi lần trả lời bằng giọng nói kéo dài tối đa ${formatVoiceSeconds(
+        config.maxRecordingMs,
+      )}.`,
+    },
+    {
+      key: 'min',
+      title: 'Nói đủ lâu rồi mới tự dừng',
+      description: `Ứng dụng sẽ chờ bạn nói ít nhất ${formatVoiceSeconds(
+        config.minSpeechMs,
+      )} rồi mới tự gửi sau khi bạn im lặng.`,
+    },
+  ];
+}
 
 export default function PracticeQuizScreen({navigation, route}: any) {
   const {quizId, title, backContext} = route.params;
@@ -39,6 +154,62 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   >({});
   const [questionFeedback, setQuestionFeedback] = useState<Record<number, any>>({});
   const [attemptId, setAttemptId] = useState<number | null>(null);
+  const [voiceConfigDialogVisible, setVoiceConfigDialogVisible] = useState(false);
+  const [voiceConfig, setVoiceConfig] = useState<VoicePracticeConfig>(
+    createDefaultVoicePracticeConfig(),
+  );
+  const [voiceConfigDraft, setVoiceConfigDraft] = useState<VoicePracticeConfig>(
+    createDefaultVoicePracticeConfig(),
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    storage
+      .get<VoicePracticeConfig>(VOICE_PRACTICE_CONFIG_STORAGE_KEY)
+      .then(savedConfig => {
+        if (!active) {
+          return;
+        }
+        const resolvedConfig = resolveVoicePracticeConfig(savedConfig);
+        setVoiceConfig(resolvedConfig);
+        setVoiceConfigDraft(resolvedConfig);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const activeVoicePresetId = useMemo(
+    () => detectVoicePracticePresetId(voiceConfig),
+    [voiceConfig],
+  );
+  const activeVoicePresetLabel = useMemo(
+    () =>
+      VOICE_PRACTICE_PRESETS.find(preset => preset.id === activeVoicePresetId)?.label ||
+      'Tùy chỉnh',
+    [activeVoicePresetId],
+  );
+  const activeVoicePresetDescription = useMemo(
+    () =>
+      VOICE_PRACTICE_PRESETS.find(preset => preset.id === activeVoicePresetId)
+        ?.description || 'Bạn có thể chỉnh chi tiết theo cách nói của mình.',
+    [activeVoicePresetId],
+  );
+  const draftVoicePresetId = useMemo(
+    () => detectVoicePracticePresetId(voiceConfigDraft),
+    [voiceConfigDraft],
+  );
+  const voiceConfigHighlights = useMemo(
+    () => buildVoiceConfigHighlights(voiceConfig),
+    [voiceConfig],
+  );
+  const draftVoiceConfigHighlights = useMemo(
+    () => buildVoiceConfigHighlights(voiceConfigDraft),
+    [voiceConfigDraft],
+  );
 
   const shouldActivateAndRetry = (error: any) => {
     const message = String(
@@ -305,6 +476,54 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     }
   };
 
+  const openVoiceConfigDialog = () => {
+    setVoiceConfigDraft(voiceConfig);
+    setVoiceConfigDialogVisible(true);
+  };
+
+  const closeVoiceConfigDialog = () => {
+    setVoiceConfigDialogVisible(false);
+    setVoiceConfigDraft(voiceConfig);
+  };
+
+  const adjustVoiceConfigDraft = (
+    key: keyof VoicePracticeConfig,
+    delta: number,
+  ) => {
+    setVoiceConfigDraft(prev =>
+      resolveVoicePracticeConfig({
+        ...prev,
+        [key]: prev[key] + delta,
+      }),
+    );
+  };
+
+  const handleApplyVoicePreset = (presetConfig: VoicePracticeConfig) => {
+    setVoiceConfigDraft(resolveVoicePracticeConfig(presetConfig));
+  };
+
+  const handleResetVoiceConfig = () => {
+    setVoiceConfigDraft(createDefaultVoicePracticeConfig());
+  };
+
+  const handleStartVoicePractice = async () => {
+    const nextConfig = resolveVoicePracticeConfig(voiceConfigDraft);
+    setVoiceConfig(nextConfig);
+    setVoiceConfigDialogVisible(false);
+
+    try {
+      await storage.set(VOICE_PRACTICE_CONFIG_STORAGE_KEY, nextConfig);
+    } catch {}
+
+    navigation.navigate('VoicePracticeQuiz', {
+      quizId,
+      title: title || quiz?.name,
+      backContext,
+      autoStart: true,
+      voiceConfig: nextConfig,
+    });
+  };
+
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -354,17 +573,68 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             <Button
               title="Luyện tập bằng giọng nói"
               variant="secondary"
-              icon="microphone"
-              onPress={() =>
-                navigation.navigate('VoicePracticeQuiz', {
-                  quizId,
-                  title: title || quiz?.name,
-                  backContext,
-                  autoStart: true,
-                })
-              }
+              icon="microphone-outline"
+              onPress={openVoiceConfigDialog}
               style={styles.startBtn}
             />
+            <View
+              style={[
+                styles.voiceSummaryCard,
+                {
+                  backgroundColor: isDark ? Colors.dark.surfaceVariant : '#F8FAFC',
+                  borderColor: colors.border,
+                },
+              ]}>
+              <View style={styles.voiceSummaryHeader}>
+                <View
+                  style={[
+                    styles.voiceSummaryIconWrap,
+                    {backgroundColor: isDark ? 'rgba(37,99,235,0.14)' : '#EFF6FF'},
+                  ]}>
+                  <Icon name="tune-vertical" size={16} color={Colors.primary} />
+                </View>
+                <View style={styles.voiceSummaryHeaderText}>
+                  <Text style={[styles.voiceSummaryTitle, {color: colors.heading}]}>
+                    Cấu hình hiện tại
+                  </Text>
+                  <Text style={[styles.voiceSummaryPreset, {color: Colors.primary}]}>
+                    {activeVoicePresetLabel}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.voiceSummaryText, {color: colors.textSecondary}]}>
+                {activeVoicePresetDescription}
+              </Text>
+              <View style={styles.voiceHighlightList}>
+                {voiceConfigHighlights.slice(0, 3).map(item => (
+                  <View key={item.key} style={styles.voiceHighlightRow}>
+                    <View
+                      style={[
+                        styles.voiceHighlightDot,
+                        {backgroundColor: Colors.primary},
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.voiceHighlightText,
+                        {color: colors.textSecondary},
+                      ]}>
+                      <Text style={[styles.voiceHighlightTextStrong, {color: colors.text}]}>
+                        {item.title}:{' '}
+                      </Text>
+                      {item.description}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <TouchableOpacity
+                onPress={openVoiceConfigDialog}
+                style={styles.voiceSummaryLink}>
+                <Text style={[styles.voiceSummaryLinkText, {color: Colors.primary}]}>
+                  Chỉnh trước khi bắt đầu
+                </Text>
+              </TouchableOpacity>
+            </View>
             <Button
               title="Quay lại"
               variant="ghost"
@@ -372,6 +642,227 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             />
           </View>
         </View>
+        <Dialog
+          visible={voiceConfigDialogVisible}
+          onClose={closeVoiceConfigDialog}
+          title="Cấu hình luyện giọng nói">
+          <ScrollView
+            style={styles.voiceDialogScroll}
+            showsVerticalScrollIndicator={false}>
+            <Text style={[styles.voiceDialogIntro, {color: colors.textSecondary}]}>
+              Bạn có thể chọn cấu hình gợi ý nhanh hoặc tinh chỉnh từng thông số ghi âm.
+            </Text>
+            <View
+              style={[
+                styles.voiceTipCard,
+                {
+                  backgroundColor: isDark ? 'rgba(37,99,235,0.12)' : '#EFF6FF',
+                  borderColor: isDark ? 'rgba(96,165,250,0.24)' : '#BFDBFE',
+                },
+              ]}>
+              <Text style={[styles.voiceTipTitle, {color: colors.heading}]}>
+                Gợi ý nhanh
+              </Text>
+              <Text style={[styles.voiceTipText, {color: colors.textSecondary}]}>
+                Nếu ứng dụng cắt lời bạn quá sớm, hãy tăng mục "Chờ sau khi im lặng".
+              </Text>
+              <Text style={[styles.voiceTipText, {color: colors.textSecondary}]}>
+                Nếu nơi xung quanh ồn, hãy chọn cấu hình "Chống ồn" hoặc tăng ngưỡng ít nhạy hơn.
+              </Text>
+            </View>
+
+            <Text style={[styles.voiceSectionTitle, {color: colors.heading}]}>
+              Cấu hình gợi ý
+            </Text>
+            <View style={styles.voicePresetList}>
+              {VOICE_PRACTICE_PRESETS.map(preset => {
+                const isActive = preset.id === draftVoicePresetId;
+                return (
+                  <TouchableOpacity
+                    key={preset.id}
+                    activeOpacity={0.8}
+                    onPress={() => handleApplyVoicePreset(preset.config)}
+                    style={[
+                      styles.voicePresetCard,
+                      {
+                        backgroundColor: isActive
+                          ? isDark
+                            ? 'rgba(37,99,235,0.18)'
+                            : '#EFF6FF'
+                          : colors.surface,
+                        borderColor: isActive ? Colors.primary : colors.border,
+                      },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.voicePresetTitle,
+                        {color: isActive ? Colors.primary : colors.heading},
+                      ]}>
+                      {preset.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.voicePresetDescription,
+                        {color: colors.textSecondary},
+                      ]}>
+                      {preset.description}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={[styles.voiceSectionTitle, {color: colors.heading}]}>
+              Tinh chỉnh chi tiết
+            </Text>
+            {VOICE_SETTING_FIELDS.map(field => {
+              const value = voiceConfigDraft[field.key];
+              return (
+                <View
+                  key={field.key}
+                  style={[
+                    styles.voiceSettingCard,
+                    {
+                      backgroundColor: isDark
+                        ? Colors.dark.surfaceVariant
+                        : Colors.light.surfaceVariant,
+                      borderColor: colors.border,
+                    },
+                  ]}>
+                  <View style={styles.voiceSettingHeader}>
+                    <Text style={[styles.voiceSettingLabel, {color: colors.heading}]}>
+                      {field.label}
+                    </Text>
+                    <Text
+                      style={[styles.voiceSettingValue, {color: Colors.primary}]}>
+                      {field.formatValue(value)}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.voiceSettingDescription,
+                      {color: colors.textSecondary},
+                    ]}>
+                    {field.description}
+                  </Text>
+                  <View style={styles.voiceStepperRow}>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      disabled={value <= field.min}
+                      onPress={() =>
+                        adjustVoiceConfigDraft(field.key, -field.step)
+                      }
+                      style={[
+                        styles.voiceStepperBtn,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          opacity: value <= field.min ? 0.45 : 1,
+                        },
+                      ]}>
+                      <Icon name="minus" size={18} color={colors.text} />
+                    </TouchableOpacity>
+                    <View
+                      style={[
+                        styles.voiceStepperValueWrap,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                        },
+                      ]}>
+                      <Text
+                        style={[
+                          styles.voiceStepperValue,
+                          {color: colors.heading},
+                        ]}>
+                        {field.formatValue(value)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      disabled={value >= field.max}
+                      onPress={() =>
+                        adjustVoiceConfigDraft(field.key, field.step)
+                      }
+                      style={[
+                        styles.voiceStepperBtn,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          opacity: value >= field.max ? 0.45 : 1,
+                        },
+                      ]}>
+                      <Icon name="plus" size={18} color={colors.text} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.voiceSettingRange}>
+                    <Text
+                      style={[
+                        styles.voiceSettingRangeText,
+                        {color: colors.textTertiary},
+                      ]}>
+                      {field.minHint} ({field.formatValue(field.min)})
+                    </Text>
+                    <Text
+                      style={[
+                        styles.voiceSettingRangeText,
+                        {color: colors.textTertiary},
+                      ]}>
+                      {field.maxHint} ({field.formatValue(field.max)})
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+
+            <View
+              style={[
+                styles.voicePreviewCard,
+                {
+                  backgroundColor: isDark ? 'rgba(16,185,129,0.12)' : '#ECFDF5',
+                  borderColor: isDark ? 'rgba(52,211,153,0.3)' : '#A7F3D0',
+                },
+              ]}>
+              <Text style={[styles.voicePreviewTitle, {color: colors.heading}]}>
+                Cấu hình sẽ áp dụng
+              </Text>
+              {draftVoiceConfigHighlights.map(item => (
+                <View key={item.key} style={styles.voiceHighlightRow}>
+                  <View
+                    style={[
+                      styles.voiceHighlightDot,
+                      {backgroundColor: Colors.success},
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.voiceHighlightText,
+                      {color: colors.textSecondary},
+                    ]}>
+                    <Text style={[styles.voiceHighlightTextStrong, {color: colors.text}]}>
+                      {item.title}:{' '}
+                    </Text>
+                    {item.description}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+          <View style={styles.voiceDialogActions}>
+            <Button
+              title="Khôi phục mặc định"
+              variant="outline"
+              size="md"
+              onPress={handleResetVoiceConfig}
+              style={styles.voiceDialogSecondaryAction}
+            />
+            <Button
+              title="Bắt đầu làm bằng giọng nói"
+              onPress={handleStartVoicePractice}
+              style={styles.voiceDialogPrimaryAction}
+            />
+          </View>
+        </Dialog>
       </SafeAreaView>
     );
   }
@@ -516,6 +1007,134 @@ const styles = StyleSheet.create({
   startTitle: {fontSize: 22, fontWeight: '700', textAlign: 'center'},
   startMeta: {fontSize: 14, marginTop: 4, marginBottom: Spacing.xl},
   startBtn: {marginBottom: Spacing.sm},
+  voiceSummaryCard: {
+    width: '100%',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.base,
+    marginBottom: Spacing.base,
+  },
+  voiceSummaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  voiceSummaryIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.sm,
+  },
+  voiceSummaryHeaderText: {flex: 1},
+  voiceSummaryTitle: {fontSize: 14, fontWeight: '700'},
+  voiceSummaryPreset: {fontSize: 12, marginTop: 2, fontWeight: '600'},
+  voiceSummaryText: {fontSize: 13, lineHeight: 20, marginBottom: Spacing.sm},
+  voiceHighlightList: {gap: 10},
+  voiceHighlightRow: {flexDirection: 'row', alignItems: 'flex-start'},
+  voiceHighlightDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    marginTop: 6,
+    marginRight: Spacing.sm,
+  },
+  voiceHighlightText: {flex: 1, fontSize: 12, lineHeight: 19},
+  voiceHighlightTextStrong: {fontWeight: '700'},
+  voiceSummaryLink: {marginTop: Spacing.sm, alignSelf: 'flex-start'},
+  voiceSummaryLinkText: {fontSize: 13, fontWeight: '600'},
+  voiceDialogScroll: {maxHeight: 520},
+  voiceDialogIntro: {fontSize: 13, lineHeight: 20, marginBottom: Spacing.base},
+  voiceTipCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.base,
+    marginBottom: Spacing.base,
+  },
+  voiceTipTitle: {fontSize: 14, fontWeight: '700', marginBottom: 6},
+  voiceTipText: {fontSize: 12, lineHeight: 18, marginTop: 4},
+  voiceSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: Spacing.sm,
+  },
+  voicePresetList: {gap: Spacing.sm, marginBottom: Spacing.base},
+  voicePresetCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.base,
+  },
+  voicePresetTitle: {fontSize: 14, fontWeight: '700', marginBottom: 4},
+  voicePresetDescription: {fontSize: 12, lineHeight: 18},
+  voiceSettingCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.base,
+    marginBottom: Spacing.sm,
+  },
+  voiceSettingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  voiceSettingLabel: {fontSize: 14, fontWeight: '700', flex: 1},
+  voiceSettingValue: {fontSize: 13, fontWeight: '700'},
+  voiceSettingDescription: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 6,
+    marginBottom: Spacing.sm,
+  },
+  voiceStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  voiceStepperBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  voiceStepperValueWrap: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+  },
+  voiceStepperValue: {fontSize: 14, fontWeight: '700'},
+  voiceSettingRange: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing.sm,
+  },
+  voiceSettingRangeText: {fontSize: 11},
+  voicePreviewCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.base,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.base,
+  },
+  voicePreviewTitle: {fontSize: 14, fontWeight: '700', marginBottom: 6},
+  voicePreviewText: {fontSize: 13, lineHeight: 20},
+  voiceDialogActions: {
+    gap: Spacing.sm,
+    paddingTop: Spacing.sm,
+  },
+  voiceDialogSecondaryAction: {
+    width: '100%',
+  },
+  voiceDialogPrimaryAction: {
+    width: '100%',
+  },
 
   header: {
     flexDirection: 'row',
