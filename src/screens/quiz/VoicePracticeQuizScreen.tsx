@@ -20,10 +20,6 @@ import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
 import {
   VOICE_AUDIO_SET,
-  VOICE_MAX_RECORDING_MS,
-  VOICE_MIN_SPEECH_MS,
-  VOICE_SILENCE_DURATION_MS,
-  VOICE_SILENCE_THRESHOLD_DB,
   buildRecordedAudioFile,
   buildVoiceFeedbackPrompt,
   buildVoiceQuestionPrompt,
@@ -33,6 +29,7 @@ import {
   isMatchingQuestion,
   isMultipleChoiceQuestion,
   isTextAnswerQuestion,
+  resolveVoicePracticeConfig,
 } from '../../utils/voicePractice';
 
 type VoiceState =
@@ -71,9 +68,14 @@ const getVoiceStateLabel = (voiceState: VoiceState) => {
 };
 
 export default function VoicePracticeQuizScreen({navigation, route}: any) {
-  const {quizId, title, backContext, autoStart} = route.params || {};
+  const {quizId, title, backContext, autoStart, voiceConfig: routeVoiceConfig} =
+    route.params || {};
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
+  const voiceConfig = useMemo(
+    () => resolveVoicePracticeConfig(routeVoiceConfig),
+    [routeVoiceConfig],
+  );
 
   const recorderRef = useRef(new AudioRecorderPlayer());
   const playerRef = useRef(new AudioRecorderPlayer());
@@ -109,7 +111,9 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [statusMessage, setStatusMessage] = useState('Chế độ luyện giọng nói đã sẵn sàng.');
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
-  const [currentMetering, setCurrentMetering] = useState(VOICE_SILENCE_THRESHOLD_DB);
+  const [currentMetering, setCurrentMetering] = useState(
+    voiceConfig.silenceThresholdDb,
+  );
   const [capturedTranscript, setCapturedTranscript] = useState<string | null>(null);
   const [autoContinueCountdown, setAutoContinueCountdown] = useState<number | null>(null);
   const [selectedAnswerIdsByQuestion, setSelectedAnswerIdsByQuestion] = useState<
@@ -239,8 +243,8 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
       await recorder.stopRecorder();
     } catch {}
     setRecordingDurationMs(0);
-    setCurrentMetering(VOICE_SILENCE_THRESHOLD_DB);
-  }, []);
+    setCurrentMetering(voiceConfig.silenceThresholdDb);
+  }, [voiceConfig.silenceThresholdDb]);
 
   const stopAudioActivities = useCallback(async () => {
     setAutoContinueCountdown(null);
@@ -334,9 +338,14 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
               if (activeSpeechSessionRef.current !== activeSession || settled) {
                 return;
               }
+              const playbackHeaders = Object.fromEntries(
+                Object.entries(playbackSource.headers || {}).filter(
+                  ([, value]) => typeof value === 'string' && value.length > 0,
+                ),
+              );
               await playerRef.current.startPlayer(
                 playbackSource.url,
-                playbackSource.headers,
+                playbackHeaders,
               );
             })
             .catch(() => {
@@ -478,7 +487,7 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
       const nextIndex = findNextPendingIndex(currentIndex, resolvedMap);
       setCapturedTranscript(null);
       setRecordingDurationMs(0);
-      setCurrentMetering(VOICE_SILENCE_THRESHOLD_DB);
+      setCurrentMetering(voiceConfig.silenceThresholdDb);
 
       if (nextIndex >= 0) {
         activeQuestionIdRef.current = null;
@@ -490,7 +499,7 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
 
       await submitWholeAttempt();
     },
-    [currentIndex, findNextPendingIndex, submitWholeAttempt],
+    [currentIndex, findNextPendingIndex, submitWholeAttempt, voiceConfig.silenceThresholdDb],
   );
 
   const waitBeforeAutoContinue = useCallback(async (token: number, shouldSubmitAfterWait = false) => {
@@ -539,7 +548,7 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
       setStatusMessage('Đang nghe... hãy trả lời tự nhiên và dừng lại khi nói xong.');
       setCapturedTranscript(null);
       setRecordingDurationMs(0);
-      setCurrentMetering(VOICE_SILENCE_THRESHOLD_DB);
+      setCurrentMetering(voiceConfig.silenceThresholdDb);
 
       recordingSessionRef.current = {
         uri: '',
@@ -672,10 +681,10 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
 
           const now = Date.now();
           const metering = Number(
-            event?.currentMetering ?? VOICE_SILENCE_THRESHOLD_DB,
+            event?.currentMetering ?? voiceConfig.silenceThresholdDb,
           );
           const currentPosition = Number(event?.currentPosition || 0);
-          const isAboveThreshold = metering > VOICE_SILENCE_THRESHOLD_DB;
+          const isAboveThreshold = metering > voiceConfig.silenceThresholdDb;
 
           setRecordingDurationMs(currentPosition);
           setCurrentMetering(metering);
@@ -699,14 +708,14 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
 
           if (
             recordingSessionRef.current.speechDetectedAt != null &&
-            speechDuration >= VOICE_MIN_SPEECH_MS &&
-            silenceDuration >= VOICE_SILENCE_DURATION_MS
+            speechDuration >= voiceConfig.minSpeechMs &&
+            silenceDuration >= voiceConfig.silenceDurationMs
           ) {
             finalizeRecording().catch(() => {});
             return;
           }
 
-          if (recordingDuration >= VOICE_MAX_RECORDING_MS) {
+          if (recordingDuration >= voiceConfig.maxRecordingMs) {
             finalizeRecording().catch(() => {});
           }
         });
@@ -731,6 +740,7 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
       submittedQuestionIds,
       waitBeforeAutoContinue,
       updateLocalAnswerState,
+      voiceConfig,
     ],
   );
 
@@ -988,15 +998,18 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
               sectionName: section.name,
             })),
           ) || [];
+
         setQuestions(allQuestions);
       })
-      .catch((error: any) =>
+      .catch((error: any) => {
         showToast(
           error?.response?.data?.message || error?.message || 'Không thể tải quiz',
           'error',
-        ),
-      )
-      .finally(() => setLoading(false));
+        );
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, [quizId, showToast]);
 
   useEffect(() => {
