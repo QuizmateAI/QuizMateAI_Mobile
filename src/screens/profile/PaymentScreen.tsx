@@ -34,7 +34,9 @@ export default function PaymentScreen({navigation, route}: any) {
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
 
-  const isGroupPlan = plan?.type === 'GROUP' || paramPlanType === 'GROUP';
+  const normalizedPlanType = (plan?.type || paramPlanType || '').toUpperCase();
+  const isGroupPlan =
+    normalizedPlanType === 'GROUP' || normalizedPlanType === 'WORKSPACE';
 
   useEffect(() => {
     const loadData = async () => {
@@ -80,7 +82,11 @@ export default function PaymentScreen({navigation, route}: any) {
           ? PaymentAPI.createMomoPayment
           : PaymentAPI.createVnpayPayment;
       const res = await api(planId, selectedGroupId || undefined);
-      const payUrl = res.data?.payUrl || res.data?.url;
+      const payUrl =
+        res.data?.payUrl ||
+        res.data?.url ||
+        res.data?.data?.payUrl ||
+        res.data?.data?.url;
       if (payUrl) {
         await Linking.openURL(payUrl);
       } else {

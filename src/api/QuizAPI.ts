@@ -139,6 +139,7 @@ const QuizAPI = {
       answerId?: number | null;
       selectedAnswerIds?: number[];
       textAnswer?: string | null;
+      matchingPairs?: Array<{leftKey: string; rightKey: string}> | null;
     },
   ) =>
     api.put(`/api/quiz-attempts/${attemptId}/saveAnswer`, [
@@ -152,6 +153,9 @@ const QuizAPI = {
             : [],
         textAnswer:
           typeof data.textAnswer === 'string' ? data.textAnswer : null,
+        matchingPairs: Array.isArray(data.matchingPairs)
+          ? data.matchingPairs
+          : null,
       },
     ]),
   submitPracticeQuestion: (
@@ -160,6 +164,7 @@ const QuizAPI = {
       questionId: number;
       selectedAnswerIds?: number[];
       textAnswer?: string | null;
+      matchingPairs?: Array<{leftKey: string; rightKey: string}> | null;
     },
   ) =>
     api
@@ -170,6 +175,9 @@ const QuizAPI = {
           : [],
         textAnswer:
           typeof data.textAnswer === 'string' ? data.textAnswer : null,
+        matchingPairs: Array.isArray(data.matchingPairs)
+          ? data.matchingPairs
+          : null,
       })
       .then(res => ({
         ...res,
@@ -255,6 +263,12 @@ const QuizAPI = {
               ? q.selectedAnswerIds
               : [],
             selectedAnswerId: q.selectedAnswerIds?.[0],
+            matchingPairs: Array.isArray(q.matchingPairs)
+              ? q.matchingPairs
+              : [],
+            correctMatchingPairs: Array.isArray(q.correctMatchingPairs)
+              ? q.correctMatchingPairs
+              : [],
           })),
         },
       };

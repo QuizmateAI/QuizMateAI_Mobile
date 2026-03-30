@@ -5,6 +5,12 @@ import {useTheme} from '../../context/ThemeContext';
 import {Colors} from '../../theme/colors';
 import Badge from '../ui/Badge';
 import {BorderRadius, Spacing} from '../../theme/spacing';
+import MatchingQuestion, {MatchingPair} from './MatchingQuestion';
+import {
+  isMatchingQuestion,
+  isMultipleChoiceQuestion,
+  isTextAnswerQuestion,
+} from '../../utils/voicePractice';
 
 interface Answer {
   id: number;
@@ -30,6 +36,11 @@ interface QuestionCardProps {
   onToggleAnswer?: (answerId: number) => void;
   disabled?: boolean;
   instructionText?: string;
+  matchedPairs?: MatchingPair[];
+  onMatchingPairChange?: (pairs: MatchingPair[]) => void;
+  correctMatchingPairs?: MatchingPair[];
+  matchingLeftItems?: string[];
+  matchingRightItems?: string[];
 }
 
 export default function QuestionCard({
@@ -50,39 +61,22 @@ export default function QuestionCard({
   onToggleAnswer,
   disabled = false,
   instructionText,
+  matchedPairs = [],
+  onMatchingPairChange,
+  correctMatchingPairs = [],
+  matchingLeftItems = [],
+  matchingRightItems = [],
 }: QuestionCardProps) {
   const {isDark, colors} = useTheme();
-
-  const normalizedType = String(questionType || '')
-    .trim()
-    .toUpperCase()
-    .replace(/-/g, '_')
-    .replace(/\s+/g, '_');
-  const isTextAnswerQuestion =
-    normalizedType === 'SHORT_ANSWER' ||
-    normalizedType === 'SHORTANSWER' ||
-    normalizedType === 'SHORT_ANSWERS' ||
-    normalizedType === 'TRA_LOI_NGAN' ||
-    normalizedType === 'CAU_TRA_LOI_NGAN' ||
-    normalizedType === 'FILL_IN_BLANK' ||
-    normalizedType === 'FILL_IN_THE_BLANK' ||
-    normalizedType === 'FILL_BLANK' ||
-    normalizedType === 'BLANK_FILLING' ||
-    normalizedType === 'DIEN_VAO_CHO_TRONG' ||
-    normalizedType === 'DIEN_KHUYET' ||
-    questionTypeId === 3 ||
-    questionTypeId === 5;
+  const questionMeta = {questionType, questionTypeId, answers};
+  const isTextType = isTextAnswerQuestion(questionMeta);
+  const isMatchingType = isMatchingQuestion(questionMeta);
 
   const correctTextAnswer =
     answers.find(answer => answer.isCorrect)?.content || '';
 
   const resolvedIsMultiChoice =
-    isMultiChoice ||
-    normalizedType === 'MULTIPLE_CHOICE' ||
-    normalizedType === 'MULTIPLE_ANSWERS' ||
-    normalizedType === 'MULTI_CHOICE' ||
-    normalizedType === 'MULTI_SELECT' ||
-    answers.filter(answer => answer.isCorrect).length > 1;
+    isMultiChoice || isMultipleChoiceQuestion(questionMeta);
 
   const getDifficultyVariant = () => {
     switch (difficulty) {
@@ -190,7 +184,17 @@ export default function QuestionCard({
         </View>
       ) : null}
 
-      {isTextAnswerQuestion ? (
+      {isMatchingType ? (
+        <MatchingQuestion
+          leftItems={matchingLeftItems}
+          rightItems={matchingRightItems}
+          matchedPairs={matchedPairs}
+          onPairChange={onMatchingPairChange}
+          disabled={disabled}
+          showResult={showResult}
+          correctPairs={correctMatchingPairs}
+        />
+      ) : isTextType ? (
         <View style={styles.textAnswerWrap}>
           <Text style={[styles.textAnswerLabel, {color: colors.textSecondary}]}>
             {showResult ? 'Câu trả lời của bạn' : 'Nhập câu trả lời'}

@@ -15,8 +15,33 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Button from '../../components/ui/Button';
 import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
+import {isMatchingQuestion} from '../../utils/voicePractice';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
+
+const getMatchingItemsFromResult = (question: any) => {
+  const correctPairs = Array.isArray(question?.correctMatchingPairs)
+    ? question.correctMatchingPairs
+    : [];
+  // Fallback: extract from answers if correctMatchingPairs not available
+  if (correctPairs.length === 0) {
+    const answers = question?.answers || [];
+    const correctAnswer = answers.find((a: any) => a.isCorrect);
+    const pairs = Array.isArray(correctAnswer?.matchingPairs)
+      ? correctAnswer.matchingPairs
+      : [];
+    return {
+      leftItems: pairs.map((p: any) => p.leftKey),
+      rightItems: pairs.map((p: any) => p.rightKey),
+      correctPairs: pairs,
+    };
+  }
+  return {
+    leftItems: correctPairs.map((p: any) => p.leftKey),
+    rightItems: correctPairs.map((p: any) => p.rightKey),
+    correctPairs,
+  };
+};
 
 export default function QuizResultScreen({navigation, route}: any) {
   const {attemptId, backContext} = route.params;
@@ -45,7 +70,7 @@ export default function QuizResultScreen({navigation, route}: any) {
           );
 
           const mergedQuestions = (attemptResult?.questions || []).map((q: any, i: number) => {
-            const source = questionMap.get(Number(q?.id || q?.questionId));
+            const source: any = questionMap.get(Number(q?.id || q?.questionId));
             return {
               ...q,
               id: q?.id || q?.questionId || source?.id || i,
@@ -54,7 +79,7 @@ export default function QuizResultScreen({navigation, route}: any) {
               explanation: source?.explanation || q?.explanation,
               difficulty: source?.difficulty || q?.difficulty,
               questionTypeId: source?.questionTypeId || q?.questionTypeId,
-              questionType: q?.questionType,
+              questionType: source?.questionType || q?.questionType,
             };
           });
 
@@ -304,6 +329,10 @@ export default function QuizResultScreen({navigation, route}: any) {
                 showResult
                 difficulty={q.difficulty}
                 explanation={q.explanation}
+                matchedPairs={q.matchingPairs || []}
+                matchingLeftItems={getMatchingItemsFromResult(q).leftItems}
+                matchingRightItems={getMatchingItemsFromResult(q).rightItems}
+                correctMatchingPairs={getMatchingItemsFromResult(q).correctPairs}
               />
             ))}
           </View>
