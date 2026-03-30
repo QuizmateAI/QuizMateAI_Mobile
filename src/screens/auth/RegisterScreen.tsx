@@ -24,29 +24,29 @@ const validateEmail = (email: string): boolean => {
 
 const validateUsername = (username: string): {isValid: boolean; message?: string} => {
   if (!username.trim()) {
-    return {isValid: false, message: 'Username is required'};
+    return {isValid: false, message: 'Bắt buộc nhập tên đăng nhập'};
   }
   if (username.length < 3 || username.length > 50) {
-    return {isValid: false, message: 'Username must be between 3 and 50 characters'};
+    return {isValid: false, message: 'Tên đăng nhập phải từ 3 đến 50 ký tự'};
   }
   const usernameRegex = /^(?=.*[a-zA-Z])(?=.*\d)[a-zA-Z0-9._@-]+$/;
   if (!usernameRegex.test(username)) {
-    return {isValid: false, message: 'Username must contain both letters and numbers, and can include . _ @ -'};
+    return {isValid: false, message: 'Tên đăng nhập phải có cả chữ và số, có thể gồm . _ @ -'};
   }
   return {isValid: true};
 };
 
 const validatePassword = (password: string): {isValid: boolean; message?: string} => {
   if (!password.trim()) {
-    return {isValid: false, message: 'Password is required'};
+    return {isValid: false, message: 'Bắt buộc nhập mật khẩu'};
   }
   if (password.length < 9) {
-    return {isValid: false, message: 'Password must be at least 9 characters long'};
+    return {isValid: false, message: 'Mật khẩu phải có ít nhất 9 ký tự'};
   }
   const hasLetter = /[a-zA-Z]/.test(password);
   const hasNumber = /\d/.test(password);
   if (!hasLetter || !hasNumber) {
-    return {isValid: false, message: 'Password must contain both letters and numbers'};
+    return {isValid: false, message: 'Mật khẩu phải có cả chữ và số'};
   }
   return {isValid: true};
 };
@@ -70,34 +70,34 @@ export default function RegisterScreen({navigation}: any) {
   console.log('=== REGISTER BUTTON CLICKED ===');
 
   if (!fullName.trim()) {
-    showToast('Full name is required', 'warning');
+    showToast('Bắt buộc nhập họ và tên', 'warning');
     return;
   }
 
   const usernameValidation = validateUsername(username);
   if (!usernameValidation.isValid) {
-    showToast(usernameValidation.message || 'Invalid username', 'error');
+    showToast(usernameValidation.message || 'Tên đăng nhập không hợp lệ', 'error');
     return;
   }
 
   if (!validateEmail(email)) {
-    showToast('Please enter a valid email address', 'error');
+    showToast('Vui lòng nhập địa chỉ email hợp lệ', 'error');
     return;
   }
 
   const passwordValidation = validatePassword(password);
   if (!passwordValidation.isValid) {
-    showToast(passwordValidation.message || 'Invalid password', 'error');
+    showToast(passwordValidation.message || 'Mật khẩu không hợp lệ', 'error');
     return;
   }
 
   if (!confirmPassword.trim()) {
-    showToast('Please confirm your password', 'warning');
+    showToast('Vui lòng xác nhận mật khẩu', 'warning');
     return;
   }
 
   if (password !== confirmPassword) {
-    showToast('Passwords do not match', 'error');
+    showToast('Mật khẩu xác nhận không khớp', 'error');
     return;
   }
 
@@ -109,7 +109,7 @@ export default function RegisterScreen({navigation}: any) {
     console.log('CHECK USERNAME RESPONSE:', checkUsernameRes);
 
     if (!checkUsernameRes.data.data) {
-      showToast('Username is already in use', 'error');
+      showToast('Tên đăng nhập đã được sử dụng', 'error');
       return;
     }
 
@@ -118,7 +118,7 @@ export default function RegisterScreen({navigation}: any) {
     console.log('CHECK EMAIL RESPONSE:', checkRes);
 
     if (!checkRes.data.data) {
-      showToast('Email is already in use', 'error');
+      showToast('Email đã được sử dụng', 'error');
       return;
     }
 
@@ -129,7 +129,7 @@ export default function RegisterScreen({navigation}: any) {
     console.log('OTP SENT SUCCESS:', otpRes);
 
     setStep('otp');
-    showToast('OTP sent to your email', 'success');
+    showToast('Đã gửi OTP đến email của bạn', 'success');
 
   } catch (error: any) {
     console.log('SEND OTP ERROR:', error);
@@ -137,7 +137,7 @@ export default function RegisterScreen({navigation}: any) {
     console.log('ERROR DATA:', error?.response?.data);
 
     showToast(
-      error?.response?.data?.message || 'Failed to send OTP',
+      error?.response?.data?.message || 'Không thể gửi OTP',
       'error'
     );
   } finally {
@@ -151,9 +151,9 @@ export default function RegisterScreen({navigation}: any) {
     try {
       console.log('RESENDING OTP TO:', email);
       await AuthAPI.sendOtp(email);
-      showToast('OTP resent to your email', 'success');
+      showToast('Đã gửi lại OTP đến email của bạn', 'success');
     } catch (error: any) {
-      showToast(error?.response?.data?.message || 'Failed to resend OTP', 'error');
+      showToast(error?.response?.data?.message || 'Không thể gửi lại OTP', 'error');
     } finally {
       setLoading(false);
     }
@@ -161,7 +161,7 @@ export default function RegisterScreen({navigation}: any) {
 
   const handleVerifyOtp = async () => {
     if (!otp.trim()) {
-      showToast('Please enter OTP', 'warning');
+      showToast('Vui lòng nhập OTP', 'warning');
       return;
     }
     setLoading(true);
@@ -190,15 +190,15 @@ export default function RegisterScreen({navigation}: any) {
 
         console.log('REGISTER SUCCESS:', registerRes);
 
-        showToast('Account created successfully!', 'success');
+        showToast('Tạo tài khoản thành công!', 'success');
         navigation.navigate('Login');
       } else {
         console.log('OTP VERIFICATION FAILED:', verifyRes.data.message);
-        showToast(verifyRes.data.message || 'Invalid OTP', 'error');
+        showToast(verifyRes.data.message || 'OTP không hợp lệ', 'error');
       }
     } catch (error: any) {
       console.log('VERIFY OTP OR REGISTER ERROR:', error);
-      showToast(error?.response?.data?.message || 'Verification failed', 'error');
+      showToast(error?.response?.data?.message || 'Xác minh thất bại', 'error');
     } finally {
       setLoading(false);
     }
@@ -226,12 +226,12 @@ export default function RegisterScreen({navigation}: any) {
           </View>
 
           <Text style={[styles.title, {color: colors.heading}]}>
-            {step === 'info' ? 'Create Account' : 'Verify Email'}
+            {step === 'info' ? 'Tạo tài khoản' : 'Xác minh email'}
           </Text>
           <Text style={[styles.subtitle, {color: colors.textSecondary}]}>
             {step === 'info'
-              ? 'Start your learning journey'
-              : `Enter the code sent to ${email}`}
+              ? 'Bắt đầu hành trình học tập của bạn'
+              : `Nhập mã đã gửi đến ${email}`}
           </Text>
 
           {step === 'info' ? (
@@ -294,14 +294,14 @@ export default function RegisterScreen({navigation}: any) {
                 style={styles.resendBtn}
                 disabled={loading}>
                 <Text style={[styles.resendText, {color: Colors.primary}]}>
-                  Resend OTP
+                  Gửi lại OTP
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setStep('info')}
                 style={styles.backBtn}>
                 <Text style={[styles.backText, {color: Colors.primary}]}>
-                  Back to registration
+                  Quay lại đăng ký
                 </Text>
               </TouchableOpacity>
             </View>
@@ -311,11 +311,11 @@ export default function RegisterScreen({navigation}: any) {
             <View style={styles.signInRow}>
               <Text
                 style={[styles.signInText, {color: colors.textSecondary}]}>
-                Already have an account?{' '}
+                Đã có tài khoản?{' '}
               </Text>
               <TouchableOpacity onPress={() => navigation.navigate('Login')}>
                 <Text style={[styles.signInLink, {color: Colors.accent}]}>
-                  Sign in
+                  Đăng nhập
                 </Text>
               </TouchableOpacity>
             </View>

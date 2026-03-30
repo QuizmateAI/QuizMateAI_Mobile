@@ -25,16 +25,16 @@ import Button from '../../components/ui/Button';
 import ActionSheet from '../../components/ui/ActionSheet';
 import GroupAPI from '../../api/GroupAPI';
 const TABS = [
-  {key: 'dashboard', label: 'Dashboard'},
-  {key: 'members', label: 'Members'},
-  {key: 'settings', label: 'Settings'},
+  {key: 'dashboard', label: 'Tổng quan'},
+  {key: 'members', label: 'Thành viên'},
+  {key: 'settings', label: 'Cài đặt'},
 ];
 
 const ROLE_FILTER_TABS = [
-  {key: 'all', label: 'All'},
-  {key: 'LEADER', label: 'Leader'},
-  {key: 'CONTRIBUTOR', label: 'Contributor'},
-  {key: 'MEMBER', label: 'Member'},
+  {key: 'all', label: 'Tất cả'},
+  {key: 'LEADER', label: 'Trưởng nhóm'},
+  {key: 'CONTRIBUTOR', label: 'Cộng tác viên'},
+  {key: 'MEMBER', label: 'Thành viên'},
 ];
 
 export default function GroupManagementScreen({navigation, route}: any) {
@@ -95,7 +95,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
       setEditGroupName(title || '');
       setEditDescription('');
       setMembers([]);
-      showToast('Failed to load group details', 'error');
+      showToast('Không thể tải chi tiết nhóm', 'error');
     } finally {
       setLoading(false);
     }
@@ -131,7 +131,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
     // Toggle upload
     actions.push({
       key: 'toggleUpload',
-      label: member.canUpload ? 'Revoke Upload' : 'Grant Upload',
+      label: member.canUpload ? 'Thu hồi quyền tải lên' : 'Cấp quyền tải lên',
       icon: member.canUpload ? 'upload-off' : 'upload',
     });
 
@@ -139,13 +139,13 @@ export default function GroupManagementScreen({navigation, route}: any) {
     if (member.role === 'MEMBER') {
       actions.push({
         key: 'promote',
-        label: 'Promote to Contributor',
+        label: 'Nâng lên cộng tác viên',
         icon: 'shield-account',
       });
     } else if (member.role === 'CONTRIBUTOR') {
       actions.push({
         key: 'demote',
-        label: 'Demote to Member',
+        label: 'Hạ xuống thành viên',
         icon: 'shield-off-outline',
       });
     }
@@ -153,7 +153,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
     // Remove
     actions.push({
       key: 'remove',
-      label: 'Remove Member',
+      label: 'Xóa thành viên',
       icon: 'account-remove',
       destructive: true,
     });
@@ -171,36 +171,36 @@ export default function GroupManagementScreen({navigation, route}: any) {
         case 'toggleUpload':
           if (selectedMember.canUpload) {
             await GroupAPI.revokeUpload(groupId, memberId);
-            showToast('Upload revoked', 'success');
+            showToast('Đã thu hồi quyền tải lên', 'success');
           } else {
             await GroupAPI.grantUpload(groupId, memberId);
-            showToast('Upload granted', 'success');
+            showToast('Đã cấp quyền tải lên', 'success');
           }
           break;
         case 'promote':
           await GroupAPI.updateRole(groupId, memberId, 'CONTRIBUTOR');
-          showToast('Member promoted!', 'success');
+          showToast('Đã thăng quyền thành viên!', 'success');
           break;
         case 'demote':
           await GroupAPI.updateRole(groupId, memberId, 'MEMBER');
-          showToast('Member demoted', 'success');
+          showToast('Đã hạ quyền thành viên', 'success');
           break;
         case 'remove':
           Alert.alert(
-            'Remove Member',
-            `Remove ${selectedMember.fullName || selectedMember.username}?`,
+            'Xóa thành viên',
+            `Xóa ${selectedMember.fullName || selectedMember.username}?`,
             [
-              {text: 'Cancel', style: 'cancel'},
+              {text: 'Hủy', style: 'cancel'},
               {
-                text: 'Remove',
+                text: 'Xóa',
                 style: 'destructive',
                 onPress: async () => {
                   try {
                     await GroupAPI.removeMember(groupId, memberId);
-                    showToast('Member removed', 'success');
+                    showToast('Đã xóa thành viên', 'success');
                     fetchData();
                   } catch {
-                    showToast('Failed to remove member', 'error');
+                    showToast('Không thể xóa thành viên', 'error');
                   }
                 },
               },
@@ -211,7 +211,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
       }
       fetchData();
     } catch {
-      showToast('Action failed', 'error');
+      showToast('Thao tác thất bại', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -223,11 +223,11 @@ export default function GroupManagementScreen({navigation, route}: any) {
     setInviting(true);
     try {
       await GroupAPI.sendInvitation(groupId, {email: inviteEmail});
-      showToast('Invitation sent!', 'success');
+      showToast('Đã gửi lời mời!', 'success');
       setInviteVisible(false);
       setInviteEmail('');
     } catch {
-      showToast('Failed to send invitation', 'error');
+      showToast('Không thể gửi lời mời', 'error');
     } finally {
       setInviting(false);
     }
@@ -236,7 +236,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
   // ──── Settings: Save ────
   const handleSaveGroup = async () => {
     if (!editGroupName.trim()) {
-      showToast('Group name is required', 'error');
+      showToast('Vui lòng nhập tên nhóm', 'error');
       return;
     }
     showToast('Backend chưa hỗ trợ cập nhật thông tin group', 'info');
@@ -252,11 +252,11 @@ export default function GroupManagementScreen({navigation, route}: any) {
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'LEADER':
-        return {variant: 'warning' as const, icon: 'crown', label: 'Leader'};
+        return {variant: 'warning' as const, icon: 'crown', label: 'Trưởng nhóm'};
       case 'CONTRIBUTOR':
-        return {variant: 'info' as const, icon: 'shield-account', label: 'Contributor'};
+        return {variant: 'info' as const, icon: 'shield-account', label: 'Cộng tác viên'};
       default:
-        return {variant: 'default' as const, icon: 'account', label: 'Member'};
+        return {variant: 'default' as const, icon: 'account', label: 'Thành viên'};
     }
   };
 
@@ -286,7 +286,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
             {group?.groupName || title}
           </Text>
           <Text style={[styles.headerSub, {color: colors.textSecondary}]}>
-            Group Management
+            Quản lý nhóm
           </Text>
         </View>
         {isLeader && (
@@ -332,7 +332,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
                 </Text>
                 <Text
                   style={[styles.infoCardDesc, {color: colors.textSecondary}]}>
-                  {group?.description || 'No description'}
+                  {group?.description || 'Chưa có mô tả'}
                 </Text>
               </View>
             </View>
@@ -341,7 +341,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
             <View style={styles.statsGrid}>
               <StatCard
                 icon="account-multiple"
-                label="Members"
+                label="Thành viên"
                 value={members.length}
                 color="#2563EB"
                 colors={colors}
@@ -349,7 +349,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
               />
               <StatCard
                 icon="shield-account"
-                label="Contributors"
+                label="Cộng tác viên"
                 value={contributors.length}
                 color="#7C3AED"
                 colors={colors}
@@ -357,7 +357,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
               />
               <StatCard
                 icon="upload"
-                label="Can Upload"
+                label="Có thể tải lên"
                 value={canUploadCount}
                 color="#059669"
                 colors={colors}
@@ -365,7 +365,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
               />
               <StatCard
                 icon="crown"
-                label="Leaders"
+                label="Trưởng nhóm"
                 value={leaders.length}
                 color="#F59E0B"
                 colors={colors}
@@ -386,7 +386,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
                   color={colors.textSecondary}
                 />
                 <Text style={[styles.distTitle, {color: colors.heading}]}>
-                  Role Distribution
+                  Phân bổ vai trò
                 </Text>
               </View>
               {members.length > 0 && (
@@ -431,17 +431,17 @@ export default function GroupManagementScreen({navigation, route}: any) {
               <View style={styles.distLegend}>
                 {[
                   {
-                    label: 'Leader',
+                    label: 'Trưởng nhóm',
                     count: leaders.length,
                     color: '#F59E0B',
                   },
                   {
-                    label: 'Contributor',
+                    label: 'Cộng tác viên',
                     count: contributors.length,
                     color: '#7C3AED',
                   },
                   {
-                    label: 'Member',
+                    label: 'Thành viên',
                     count:
                       members.length - leaders.length - contributors.length,
                     color: '#94A3B8',
@@ -481,7 +481,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
               <TextInput
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                placeholder="Search members..."
+                placeholder="Tìm kiếm thành viên..."
                 placeholderTextColor={colors.placeholder}
                 style={[styles.searchInput, {color: colors.text}]}
               />
@@ -541,7 +541,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
             {/* Member Count */}
             <Text
               style={[styles.memberCountText, {color: colors.textTertiary}]}>
-              Showing {filteredMembers.length} of {members.length} members
+              Hiển thị {filteredMembers.length}/{members.length} thành viên
             </Text>
 
             {/* Members list */}
@@ -646,13 +646,13 @@ export default function GroupManagementScreen({navigation, route}: any) {
                           styles.settingsCardTitle,
                           {color: colors.heading},
                         ]}>
-                        Group Info
+                        Thông tin nhóm
                       </Text>
                     </View>
                     {!isEditing && (
                       <TouchableOpacity onPress={() => setIsEditing(true)}>
                         <Text style={[styles.editLink, {color: Colors.primary}]}>
-                          Edit
+                          Sửa
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -704,7 +704,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
                             styles.infoLabel,
                             {color: colors.textSecondary},
                           ]}>
-                          Name
+                          Tên
                         </Text>
                         <Text
                           style={[styles.infoValue, {color: colors.heading}]}>
@@ -717,11 +717,11 @@ export default function GroupManagementScreen({navigation, route}: any) {
                             styles.infoLabel,
                             {color: colors.textSecondary},
                           ]}>
-                          Description
+                          Mô tả
                         </Text>
                         <Text
                           style={[styles.infoValue, {color: colors.heading}]}>
-                          {group?.description || 'No description'}
+                          {group?.description || 'Chưa có mô tả'}
                         </Text>
                       </View>
                       {group?.topicName && (
@@ -731,7 +731,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
                               styles.infoLabel,
                               {color: colors.textSecondary},
                             ]}>
-                            Topic
+                            Chủ đề
                           </Text>
                           <Text
                             style={[styles.infoValue, {color: colors.heading}]}>
@@ -756,14 +756,14 @@ export default function GroupManagementScreen({navigation, route}: any) {
                   ]}>
                   <View style={styles.dangerHeader}>
                     <Icon name="alert-outline" size={18} color={Colors.error} />
-                    <Text style={styles.dangerTitle}>Danger Zone</Text>
+                    <Text style={styles.dangerTitle}>Vùng nguy hiểm</Text>
                   </View>
                   <Text
                     style={[
                       styles.dangerDesc,
                       {color: colors.textSecondary},
                     ]}>
-                    Deleting a group is permanent. All data will be lost.
+                    Xóa nhóm là thao tác vĩnh viễn. Toàn bộ dữ liệu sẽ bị mất.
                   </Text>
                   <Button
                     title="Delete Group"
@@ -784,7 +784,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
                     styles.emptySettingsText,
                     {color: colors.textSecondary},
                   ]}>
-                  Only group leaders can manage settings
+                    Chỉ trưởng nhóm mới có quyền quản lý cài đặt
                 </Text>
               </View>
             )}
@@ -807,7 +807,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
       <Dialog
         visible={inviteVisible}
         onClose={() => setInviteVisible(false)}
-        title="Invite Member">
+        title="Mời thành viên">
         <FloatingInput
           label="Email"
           value={inviteEmail}
@@ -839,7 +839,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
       <Dialog
         visible={deleteDialogVisible}
         onClose={() => setDeleteDialogVisible(false)}
-        title="Delete Group">
+        title="Xóa nhóm">
         <View style={styles.deleteContent}>
           <View
             style={[
@@ -849,8 +849,8 @@ export default function GroupManagementScreen({navigation, route}: any) {
             <Icon name="alert-outline" size={28} color={Colors.error} />
           </View>
           <Text style={[styles.deleteMessage, {color: colors.text}]}>
-            Are you sure you want to delete "{group?.groupName}"? This
-            action cannot be undone and all group data will be lost.
+            Bạn có chắc muốn xóa "{group?.groupName}" không? Hành động này
+            không thể hoàn tác và toàn bộ dữ liệu nhóm sẽ bị mất.
           </Text>
         </View>
         <View style={styles.dialogActions}>

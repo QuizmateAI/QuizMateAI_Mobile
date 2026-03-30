@@ -42,15 +42,15 @@ export default function CreateAIFlashcardScreen({navigation, route}: any) {
 
   const handleGenerate = async () => {
     if (!workspaceId) {
-      showToast('Missing workspace id', 'error');
+      showToast('Thiếu workspace id', 'error');
       return;
     }
     if (!selectedMaterialId) {
-      showToast('Please choose one material', 'error');
+      showToast('Vui lòng chọn một tài liệu', 'error');
       return;
     }
     if (percentSum !== 100) {
-      showToast('Type percentages must sum to 100', 'error');
+      showToast('Tổng phần trăm các loại thẻ phải bằng 100', 'error');
       return;
     }
 
@@ -67,10 +67,10 @@ export default function CreateAIFlashcardScreen({navigation, route}: any) {
         additionalPrompt: prompt.trim() || null,
       });
 
-      showToast('AI flashcard generation started', 'success');
+      showToast('Đã bắt đầu tạo flashcard AI', 'success');
       navigation.goBack();
     } catch {
-      showToast('Failed to generate flashcards', 'error');
+      showToast('Không thể tạo flashcard', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -82,12 +82,12 @@ export default function CreateAIFlashcardScreen({navigation, route}: any) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, {color: colors.heading}]}>Create AI Flashcards</Text>
+        <Text style={[styles.headerTitle, {color: colors.heading}]}>Tạo flashcard AI</Text>
         <View style={styles.backBtn} />
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Material</Text>
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Tài liệu</Text>
         <View style={styles.listWrap}>
           {materials.map((material: any) => {
             const id = material.materialId || material.id;
@@ -121,28 +121,28 @@ export default function CreateAIFlashcardScreen({navigation, route}: any) {
         </View>
 
         <View style={styles.spaceMd} />
-        <FloatingInput label="Quantity" value={quantity} onChangeText={setQuantity} keyboardType="number-pad" />
+        <FloatingInput label="Số lượng" value={quantity} onChangeText={setQuantity} keyboardType="number-pad" />
         <View style={styles.spaceMd} />
-        <FloatingInput label="Term %" value={termPercent} onChangeText={setTermPercent} keyboardType="number-pad" />
+        <FloatingInput label="Thẻ thuật ngữ %" value={termPercent} onChangeText={setTermPercent} keyboardType="number-pad" />
         <View style={styles.spaceMd} />
-        <FloatingInput label="Q&A %" value={qaPercent} onChangeText={setQaPercent} keyboardType="number-pad" />
+        <FloatingInput label="Thẻ hỏi đáp %" value={qaPercent} onChangeText={setQaPercent} keyboardType="number-pad" />
         <View style={styles.spaceMd} />
-        <FloatingInput label="Cloze %" value={clozePercent} onChangeText={setClozePercent} keyboardType="number-pad" />
+        <FloatingInput label="Thẻ điền khuyết %" value={clozePercent} onChangeText={setClozePercent} keyboardType="number-pad" />
         <View style={styles.spaceMd} />
-        <FloatingInput label="Image %" value={imagePercent} onChangeText={setImagePercent} keyboardType="number-pad" />
+        <FloatingInput label="Thẻ hình ảnh %" value={imagePercent} onChangeText={setImagePercent} keyboardType="number-pad" />
         <View style={styles.spaceMd} />
-        <FloatingInput label="Prompt (optional)" value={prompt} onChangeText={setPrompt} multiline />
+        <FloatingInput label="Prompt (tùy chọn)" value={prompt} onChangeText={setPrompt} multiline />
 
         <Text
           style={[
             styles.sumText,
             {color: percentSum === 100 ? Colors.success : Colors.error},
           ]}>
-          Percentage total: {percentSum}%
+          Tổng phần trăm: {percentSum}%
         </Text>
 
         <Button
-          title={submitting ? 'Generating...' : 'Generate Flashcards'}
+          title={submitting ? 'Đang tạo...' : 'Tạo flashcard'}
           onPress={handleGenerate}
           loading={submitting}
           icon="cards-outline"

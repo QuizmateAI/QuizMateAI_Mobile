@@ -40,10 +40,10 @@ export default function SettingsScreen({navigation}: any) {
       if (user) {
         await updateUser({...user, fullName, email});
       }
-      showToast('Profile updated!', 'success');
+      showToast('Đã cập nhật hồ sơ!', 'success');
       setEditVisible(false);
     } catch {
-      showToast('Failed to update profile', 'error');
+      showToast('Không thể cập nhật hồ sơ', 'error');
     } finally {
       setSaving(false);
     }
@@ -51,19 +51,19 @@ export default function SettingsScreen({navigation}: any) {
 
   const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) {
-      showToast('Passwords do not match', 'error');
+      showToast('Mật khẩu xác nhận không khớp', 'error');
       return;
     }
     setSaving(true);
     try {
       await ProfileAPI.changePassword({oldPassword, newPassword});
-      showToast('Password changed!', 'success');
+      showToast('Đổi mật khẩu thành công!', 'success');
       setPasswordVisible(false);
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch {
-      showToast('Failed to change password', 'error');
+      showToast('Không thể đổi mật khẩu', 'error');
     } finally {
       setSaving(false);
     }
@@ -89,7 +89,7 @@ export default function SettingsScreen({navigation}: any) {
           <Icon name="chevron-left" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, {color: colors.heading}]}>
-          Settings
+          Cài đặt
         </Text>
         <View style={styles.backBtn} />
       </View>
@@ -99,7 +99,7 @@ export default function SettingsScreen({navigation}: any) {
         showsVerticalScrollIndicator={false}>
         {/* Appearance */}
         <Text style={[styles.sectionTitle, {color: colors.textSecondary}]}>
-          APPEARANCE
+          GIAO DIỆN
         </Text>
         <View
           style={[
@@ -113,7 +113,7 @@ export default function SettingsScreen({navigation}: any) {
               color={colors.icon}
             />
             <Text style={[styles.settingLabel, {color: colors.text}]}>
-              Dark Mode
+              Chế độ tối
             </Text>
             <SwitchComponent value={isDark} onValueChange={toggleTheme} />
           </View>
@@ -121,7 +121,7 @@ export default function SettingsScreen({navigation}: any) {
 
         {/* Account */}
         <Text style={[styles.sectionTitle, {color: colors.textSecondary}]}>
-          ACCOUNT
+          TÀI KHOẢN
         </Text>
         <View
           style={[
@@ -134,7 +134,7 @@ export default function SettingsScreen({navigation}: any) {
             <Icon name="account-outline" size={20} color={colors.icon} />
             <View style={styles.settingContent}>
               <Text style={[styles.settingLabel, {color: colors.text}]}>
-                Edit Profile
+                Chỉnh sửa hồ sơ
               </Text>
               <Text style={[styles.settingSub, {color: colors.textSecondary}]}>
                 {user?.fullName}
@@ -150,7 +150,7 @@ export default function SettingsScreen({navigation}: any) {
             style={styles.settingRow}>
             <Icon name="lock-outline" size={20} color={colors.icon} />
             <Text style={[styles.settingLabel, {color: colors.text}]}>
-              Change Password
+              Đổi mật khẩu
             </Text>
             <Icon name="chevron-right" size={20} color={colors.textTertiary} />
           </TouchableOpacity>
@@ -162,7 +162,7 @@ export default function SettingsScreen({navigation}: any) {
             style={styles.settingRow}>
             <Icon name="crown-outline" size={20} color="#F59E0B" />
             <Text style={[styles.settingLabel, {color: colors.text}]}>
-              Subscription
+              Gói đăng ký
             </Text>
             <Icon name="chevron-right" size={20} color={colors.textTertiary} />
           </TouchableOpacity>
@@ -176,7 +176,7 @@ export default function SettingsScreen({navigation}: any) {
             {backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : '#FEF2F2'},
           ]}>
           <Icon name="logout" size={20} color={Colors.error} />
-          <Text style={styles.logoutText}>Log Out</Text>
+          <Text style={styles.logoutText}>Đăng xuất</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -184,7 +184,7 @@ export default function SettingsScreen({navigation}: any) {
       <Dialog
         visible={editVisible}
         onClose={() => setEditVisible(false)}
-        title="Edit Profile">
+        title="Chỉnh sửa hồ sơ">
         <View style={styles.dialogForm}>
           <FloatingInput
             label="Full Name"
@@ -222,7 +222,7 @@ export default function SettingsScreen({navigation}: any) {
       <Dialog
         visible={passwordVisible}
         onClose={() => setPasswordVisible(false)}
-        title="Change Password">
+        title="Đổi mật khẩu">
         <View style={styles.dialogForm}>
           <FloatingInput
             label="Current Password"

@@ -3,6 +3,7 @@ import {Animated, StyleSheet, Text, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Colors} from '../theme/colors';
 import {useTheme} from './ThemeContext';
+import {localizeUiText} from '../utils/uiText';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -29,7 +30,7 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      setToast({message, type});
+      setToast({message: localizeUiText(message), type});
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 300,

@@ -43,7 +43,7 @@ export default function PaymentScreen({navigation, route}: any) {
         setPlan(planRes.data);
       } catch {
         setPlan(null);
-        showToast('Failed to load plan details', 'error');
+        showToast('Không thể tải chi tiết gói', 'error');
       }
 
       // Load groups for GROUP plans
@@ -65,12 +65,12 @@ export default function PaymentScreen({navigation, route}: any) {
 
   const handlePayment = async () => {
     if (!plan) {
-      showToast('Plan is unavailable', 'error');
+      showToast('Gói hiện không khả dụng', 'error');
       return;
     }
 
     if (isGroupPlan && !selectedGroupId) {
-      showToast('Please select a group first', 'warning');
+      showToast('Vui lòng chọn nhóm trước', 'warning');
       return;
     }
     setProcessing(true);
@@ -84,10 +84,10 @@ export default function PaymentScreen({navigation, route}: any) {
       if (payUrl) {
         await Linking.openURL(payUrl);
       } else {
-        showToast('Payment URL was not returned', 'error');
+        showToast('Không nhận được đường dẫn thanh toán', 'error');
       }
     } catch {
-      showToast('Failed to create payment', 'error');
+      showToast('Không thể tạo thanh toán', 'error');
     } finally {
       setProcessing(false);
     }
@@ -112,7 +112,7 @@ export default function PaymentScreen({navigation, route}: any) {
           <Icon name="chevron-left" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, {color: colors.heading}]}>
-          Payment
+          Thanh toán
         </Text>
         <View style={styles.backBtn} />
       </View>
@@ -185,12 +185,12 @@ export default function PaymentScreen({navigation, route}: any) {
                 color={isDark ? '#F59E0B' : '#D97706'}
               />
               <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-                Select Group
+                Chọn nhóm
               </Text>
             </View>
             <Text
               style={[styles.groupSelectDesc, {color: colors.textSecondary}]}>
-              Choose a group to apply this plan to
+              Chọn nhóm để áp dụng gói này
             </Text>
 
             {groups.length === 0 ? (
@@ -214,7 +214,7 @@ export default function PaymentScreen({navigation, route}: any) {
                     styles.noGroupsText,
                     {color: colors.textSecondary},
                   ]}>
-                  You must be a leader of at least one group to buy this plan
+                  Bạn phải là trưởng nhóm của ít nhất một nhóm để mua gói này
                 </Text>
               </View>
             ) : (
@@ -256,7 +256,7 @@ export default function PaymentScreen({navigation, route}: any) {
                         styles.groupMemberCount,
                         {color: colors.textTertiary},
                       ]}>
-                      {g.memberCount || 0} members
+                      {g.memberCount || 0} thành viên
                     </Text>
                     {isSelected && (
                       <Icon
@@ -274,7 +274,7 @@ export default function PaymentScreen({navigation, route}: any) {
 
         {/* Payment Methods */}
         <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-          Payment Method
+          Phương thức thanh toán
         </Text>
 
         <TouchableOpacity
@@ -296,7 +296,7 @@ export default function PaymentScreen({navigation, route}: any) {
               MoMo
             </Text>
             <Text style={[styles.methodSub, {color: colors.textSecondary}]}>
-              Pay with MoMo e-wallet
+              Thanh toán bằng ví MoMo
             </Text>
           </View>
           <Icon
@@ -331,7 +331,7 @@ export default function PaymentScreen({navigation, route}: any) {
               VNPay
             </Text>
             <Text style={[styles.methodSub, {color: colors.textSecondary}]}>
-              Pay with VNPay
+              Thanh toán bằng VNPay
             </Text>
           </View>
           <Icon
@@ -354,7 +354,7 @@ export default function PaymentScreen({navigation, route}: any) {
             {backgroundColor: colors.surface, borderColor: colors.border},
           ]}>
           <Text style={[styles.summaryTitle, {color: colors.heading}]}>
-            Order Summary
+            Tóm tắt đơn hàng
           </Text>
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, {color: colors.textSecondary}]}>
@@ -369,7 +369,7 @@ export default function PaymentScreen({navigation, route}: any) {
           />
           <View style={styles.summaryRow}>
             <Text style={[styles.totalLabel, {color: colors.heading}]}>
-              Total
+              Tổng cộng
             </Text>
             <Text style={[styles.totalValue, {color: Colors.primary}]}>
               {plan?.price?.toLocaleString() || '0'}đ
@@ -378,7 +378,7 @@ export default function PaymentScreen({navigation, route}: any) {
         </View>
 
         <Button
-          title={`Pay ${plan?.price?.toLocaleString() || '0'}đ`}
+          title={`Thanh toán ${plan?.price?.toLocaleString() || '0'}đ`}
           onPress={handlePayment}
           loading={processing}
           disabled={isGroupPlan && !selectedGroupId}
@@ -389,7 +389,7 @@ export default function PaymentScreen({navigation, route}: any) {
         <View style={styles.secureRow}>
           <Icon name="lock" size={14} color={colors.textTertiary} />
           <Text style={[styles.secureText, {color: colors.textTertiary}]}>
-            Secured by SSL encryption
+            Bảo mật bằng mã hóa SSL
           </Text>
         </View>
       </ScrollView>

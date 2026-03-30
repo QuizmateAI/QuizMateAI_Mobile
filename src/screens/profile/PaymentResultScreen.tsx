@@ -31,12 +31,12 @@ export default function PaymentResultScreen({navigation, route}: any) {
     : '';
 
   const infoRows = [
-    {label: 'Order ID', value: orderId},
-    {label: 'Transaction ID', value: transId},
-    {label: 'Amount', value: amount ? `${formattedAmount}₫` : ''},
-    {label: 'Description', value: orderInfo},
-    {label: 'Payment Type', value: payType === 'qr' ? 'QR Code' : payType},
-    {label: 'Time', value: formattedTime},
+    {label: 'Mã đơn hàng', value: orderId},
+    {label: 'Mã giao dịch', value: transId},
+    {label: 'Số tiền', value: amount ? `${formattedAmount}₫` : ''},
+    {label: 'Mô tả', value: orderInfo},
+    {label: 'Loại thanh toán', value: payType === 'qr' ? 'Mã QR' : payType},
+    {label: 'Thời gian', value: formattedTime},
   ].filter(row => row.value);
 
   return (
@@ -78,12 +78,12 @@ export default function PaymentResultScreen({navigation, route}: any) {
             />
           </View>
           <Text style={[styles.statusTitle, {color: colors.heading}]}>
-            {isSuccess ? 'Payment Successful!' : 'Payment Failed'}
+            {isSuccess ? 'Thanh toán thành công!' : 'Thanh toán thất bại'}
           </Text>
           <Text style={[styles.statusDesc, {color: colors.textSecondary}]}>
             {isSuccess
-              ? 'Your subscription has been activated'
-              : 'Something went wrong with your payment'}
+              ? 'Gói đăng ký của bạn đã được kích hoạt'
+              : 'Có lỗi xảy ra trong quá trình thanh toán'}
           </Text>
         </View>
 
@@ -101,7 +101,7 @@ export default function PaymentResultScreen({navigation, route}: any) {
                 color={colors.textTertiary}
               />
               <Text style={[styles.detailsLabel, {color: colors.textTertiary}]}>
-                TRANSACTION DETAILS
+                CHI TIẾT GIAO DỊCH
               </Text>
             </View>
             {infoRows.map((row, idx) => (

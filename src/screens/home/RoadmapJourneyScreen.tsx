@@ -35,14 +35,14 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     (quiz: any) => {
       const quizId = Number(quiz?.quizId || quiz?.id);
       if (!quizId) {
-        showToast('Quiz ID is missing', 'error');
+        showToast('Thiếu Quiz ID', 'error');
         return;
       }
 
       const quizTitle = quiz?.title || quiz?.name;
-      Alert.alert('Choose quiz mode', 'How would you like to take this quiz?', [
+      Alert.alert('Chọn chế độ làm quiz', 'Bạn muốn làm quiz theo cách nào?', [
         {
-          text: 'Practice',
+          text: 'Luyện tập',
           onPress: () =>
             navigation.navigate('Quiz', {
               screen: 'PracticeQuiz',
@@ -59,7 +59,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
             }),
         },
         {
-          text: 'Exam',
+          text: 'Thi thử',
           onPress: () =>
             navigation.navigate('Quiz', {
               screen: 'ExamQuiz',
@@ -75,7 +75,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
               },
             }),
         },
-        {text: 'Cancel', style: 'cancel'},
+        {text: 'Hủy', style: 'cancel'},
       ]);
     },
     [contextId, contextType, navigation, showToast, title],
@@ -135,9 +135,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     setRunningAction(key);
     try {
       await AIAPI.generateRoadmapPreLearning({roadmapId, phaseId});
-      showToast('Pre-learning generation started', 'success');
+      showToast('Đã bắt đầu tạo quiz trước học', 'success');
     } catch {
-      showToast('Failed to generate pre-learning', 'error');
+      showToast('Không thể tạo quiz trước học', 'error');
     } finally {
       setRunningAction(null);
     }
@@ -152,9 +152,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         phaseId,
         skipPreLearning: false,
       });
-      showToast('Phase content generation started', 'success');
+      showToast('Đã bắt đầu tạo nội dung giai đoạn', 'success');
     } catch {
-      showToast('Failed to generate phase content', 'error');
+      showToast('Không thể tạo nội dung giai đoạn', 'error');
     } finally {
       setRunningAction(null);
     }
@@ -165,9 +165,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     setRunningAction(key);
     try {
       await AIAPI.generateRoadmapKnowledgeQuiz({roadmapId, knowledgeId});
-      showToast('Knowledge quiz generation started', 'success');
+      showToast('Đã bắt đầu tạo quiz kiến thức', 'success');
     } catch {
-      showToast('Failed to generate knowledge quiz', 'error');
+      showToast('Không thể tạo quiz kiến thức', 'error');
     } finally {
       setRunningAction(null);
     }
@@ -180,9 +180,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         roadmapId,
         materialIds: selectedMaterialIds,
       });
-      showToast('Roadmap phase generation started', 'success');
+      showToast('Đã bắt đầu tạo các giai đoạn lộ trình', 'success');
     } catch {
-      showToast('Failed to generate roadmap phases', 'error');
+      showToast('Không thể tạo các giai đoạn lộ trình', 'error');
     } finally {
       setRunningAction(null);
     }
@@ -208,20 +208,20 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, {color: colors.heading}]}>Roadmap Journey</Text>
+          <Text style={[styles.headerTitle, {color: colors.heading}]}>Hành trình lộ trình</Text>
           <Text style={[styles.headerSub, {color: colors.textSecondary}]}>
-            {title || (contextType === 'GROUP' ? 'Group' : 'Workspace')}
+            {title || (contextType === 'GROUP' ? 'Nhóm' : 'Workspace')}
           </Text>
         </View>
         <View style={styles.backBtn} />
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Roadmaps</Text>
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Lộ trình</Text>
         {roadmaps.length === 0 ? (
           <View style={[styles.emptyBox, {borderColor: colors.border, backgroundColor: colors.surface}]}>
             <Icon name="map-outline" size={28} color={colors.textTertiary} />
-            <Text style={[styles.emptyText, {color: colors.textSecondary}]}>No roadmap found yet</Text>
+            <Text style={[styles.emptyText, {color: colors.textSecondary}]}>Chưa có lộ trình nào</Text>
           </View>
         ) : (
           <View style={styles.chipsWrap}>
@@ -248,7 +248,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                       color: selected ? Colors.primary : colors.textSecondary,
                       fontWeight: '600',
                     }}>
-                    {item.title || item.name || `Roadmap #${roadmapId}`}
+                    {item.title || item.name || `Lộ trình #${roadmapId}`}
                   </Text>
                 </TouchableOpacity>
               );
@@ -258,10 +258,10 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
         {!!activeRoadmapId && (
           <View style={styles.phaseWrap}>
-            <Text style={[styles.sectionTitle, {color: colors.heading}]}>Phases</Text>
+            <Text style={[styles.sectionTitle, {color: colors.heading}]}>Giai đoạn</Text>
             {contextType === 'WORKSPACE' && materials.length > 0 && (
               <>
-                <Text style={[styles.materialTitle, {color: colors.textSecondary}]}>Materials for phase generation</Text>
+                <Text style={[styles.materialTitle, {color: colors.textSecondary}]}>Tài liệu dùng để tạo giai đoạn</Text>
                 <View style={styles.materialWrap}>
                   {materials.map((material: any) => {
                     const materialId = material.materialId || material.id;
@@ -296,7 +296,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
               </>
             )}
             <Button
-              title="Generate Phases"
+              title="Tạo giai đoạn"
               onPress={() => handleGenerateRoadmapPhases(activeRoadmapId)}
               loading={runningAction === 'phases'}
               icon="timeline-plus-outline"
@@ -305,7 +305,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
               style={styles.generatePhasesBtn}
             />
             {phases.length === 0 ? (
-              <Text style={{color: colors.textSecondary}}>No phase data available.</Text>
+              <Text style={{color: colors.textSecondary}}>Chưa có dữ liệu giai đoạn.</Text>
             ) : (
               phases.map((phase: any, index: number) => {
                 const phaseId = phase.phaseId;
@@ -321,7 +321,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                       {borderColor: colors.border, backgroundColor: colors.surface},
                     ]}>
                     <Text style={[styles.phaseTitle, {color: colors.heading}]}>
-                      {phase.title || `Phase ${index + 1}`}
+                      {phase.title || `Giai đoạn ${index + 1}`}
                     </Text>
                     {!!phase.description && (
                       <Text style={[styles.phaseDesc, {color: colors.textSecondary}]}>
@@ -331,7 +331,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
                     {(phase.preLearningQuizzes || []).length > 0 && (
                       <View style={styles.quizListWrap}>
-                        <Text style={[styles.quizListTitle, {color: colors.heading}]}>Pre-learning quiz</Text>
+                        <Text style={[styles.quizListTitle, {color: colors.heading}]}>Quiz trước học</Text>
                         {(phase.preLearningQuizzes || []).map((quiz: any) => (
                           <TouchableOpacity
                             key={quiz.quizId}
@@ -348,7 +348,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
                     <View style={styles.phaseActions}>
                       <Button
-                        title="Pre-learning"
+                        title="Trước học"
                         onPress={() => handleGeneratePreLearning(activeRoadmapId, phaseId)}
                         loading={runningAction === preKey}
                         size="sm"
@@ -357,7 +357,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                         style={styles.actionBtn}
                       />
                       <Button
-                        title="Phase Content"
+                        title="Nội dung giai đoạn"
                         onPress={() => handleGeneratePhaseContent(activeRoadmapId, phaseId)}
                         loading={runningAction === contentKey}
                         size="sm"
@@ -385,7 +385,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                                 ]}>
                                 <View style={{flex: 1}}>
                                   <Text style={[styles.knowledgeTitle, {color: colors.heading}]}>
-                                    {knowledge.title || 'Knowledge'}
+                                    {knowledge.title || 'Kiến thức'}
                                   </Text>
                                   {!!knowledge.description && (
                                     <Text
@@ -429,7 +429,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
                     {(phase.postLearningQuizzes || []).length > 0 && (
                       <View style={styles.quizListWrap}>
-                        <Text style={[styles.quizListTitle, {color: colors.heading}]}>Post-learning quiz</Text>
+                        <Text style={[styles.quizListTitle, {color: colors.heading}]}>Quiz sau học</Text>
                         {(phase.postLearningQuizzes || []).map((quiz: any) => (
                           <TouchableOpacity
                             key={quiz.quizId}
@@ -453,7 +453,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         {runningAction && (
           <View style={styles.runningRow}>
             <ActivityIndicator size="small" color={Colors.primary} />
-            <Text style={[styles.runningText, {color: colors.textSecondary}]}>Running action...</Text>
+            <Text style={[styles.runningText, {color: colors.textSecondary}]}>Đang chạy tác vụ...</Text>
           </View>
         )}
       </ScrollView>

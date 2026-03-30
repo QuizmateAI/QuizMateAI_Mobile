@@ -29,7 +29,7 @@ export default function QuizListScreen({navigation}: any) {
       setQuizzes(res.data || []);
     } catch {
       setQuizzes([]);
-      showToast('Failed to load quizzes', 'error');
+      showToast('Không thể tải danh sách quiz', 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -54,7 +54,7 @@ export default function QuizListScreen({navigation}: any) {
           {backgroundColor: colors.surface, borderBottomColor: colors.border},
         ]}>
         <Text style={[styles.headerTitle, {color: colors.heading}]}>
-          My Quizzes
+          Quiz của tôi
         </Text>
       </View>
 
@@ -66,7 +66,7 @@ export default function QuizListScreen({navigation}: any) {
             onPress={() => {
               const quizId = item.id || item.quizId;
               if (!quizId) {
-                showToast('Quiz ID is missing', 'error');
+                showToast('Thiếu Quiz ID', 'error');
                 return;
               }
               navigation.navigate('PracticeQuiz', {
@@ -102,7 +102,7 @@ export default function QuizListScreen({navigation}: any) {
                   {item.name}
                 </Text>
                 <Text style={[styles.quizMeta, {color: colors.textSecondary}]}>
-                  {item.questionCount || 0} questions
+                  {item.questionCount || 0} câu hỏi
                 </Text>
               </View>
             </View>
@@ -112,7 +112,7 @@ export default function QuizListScreen({navigation}: any) {
                   onPress={() => {
                     const quizId = item.id || item.quizId;
                     if (!quizId) {
-                      showToast('Quiz ID is missing', 'error');
+                      showToast('Thiếu Quiz ID', 'error');
                       return;
                     }
                     navigation.navigate('PracticeQuiz', {
@@ -126,14 +126,14 @@ export default function QuizListScreen({navigation}: any) {
                   ]}>
                   <Icon name="play-outline" size={14} color={Colors.primary} />
                   <Text style={[styles.actionText, {color: Colors.primary}]}>
-                    Practice
+                    Luyện tập
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => {
                     const quizId = item.id || item.quizId;
                     if (!quizId) {
-                      showToast('Quiz ID is missing', 'error');
+                      showToast('Thiếu Quiz ID', 'error');
                       return;
                     }
                     navigation.navigate('ExamQuiz', {
@@ -147,7 +147,7 @@ export default function QuizListScreen({navigation}: any) {
                   ]}>
                   <Icon name="timer-outline" size={14} color="#EA580C" />
                   <Text style={[styles.actionText, {color: '#EA580C'}]}>
-                    Exam
+                    Thi thử
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -164,10 +164,10 @@ export default function QuizListScreen({navigation}: any) {
               color={colors.textTertiary}
             />
             <Text style={[styles.emptyTitle, {color: colors.textSecondary}]}>
-              No quizzes yet
+              Chưa có quiz nào
             </Text>
             <Text style={[styles.emptySubtitle, {color: colors.textTertiary}]}>
-              Create quizzes from your workspaces
+              Hãy tạo quiz từ các workspace của bạn
             </Text>
           </View>
         }

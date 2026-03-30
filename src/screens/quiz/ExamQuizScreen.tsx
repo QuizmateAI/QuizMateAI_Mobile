@@ -228,7 +228,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
       })
       .catch((error: any) =>
         showToast(
-          error?.response?.data?.message || error?.message || 'Failed to load quiz',
+          error?.response?.data?.message || error?.message || 'Không thể tải quiz',
           'error',
         ),
       )
@@ -434,13 +434,13 @@ export default function ExamQuizScreen({navigation, route}: any) {
             setStarted(true);
             startTimer();
           }
-          showToast('Quiz activated. Starting now...', 'success');
+          showToast('Quiz đã được kích hoạt. Bắt đầu ngay...', 'success');
           return;
         } catch (retryError: any) {
           showToast(
             retryError?.response?.data?.message ||
               retryError?.message ||
-              'Failed to activate quiz',
+              'Không thể kích hoạt quiz',
             'error',
           );
           return;
@@ -448,7 +448,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
       }
 
       showToast(
-        error?.response?.data?.message || error?.message || 'Failed to start exam',
+        error?.response?.data?.message || error?.message || 'Không thể bắt đầu bài thi',
         'error',
       );
     }
@@ -502,7 +502,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
 
   const handleSubmit = async () => {
     if (!attemptId) {
-      showToast('Exam attempt is missing', 'error');
+      showToast('Thiếu lượt làm bài thi', 'error');
       return;
     }
     stopTimer();
@@ -511,7 +511,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
       navigation.replace('QuizResult', {attemptId, backContext});
     } catch (error: any) {
       showToast(
-        error?.response?.data?.message || error?.message || 'Failed to submit',
+        error?.response?.data?.message || error?.message || 'Không thể nộp bài',
         'error',
       );
     }
@@ -551,25 +551,25 @@ export default function ExamQuizScreen({navigation, route}: any) {
               <View style={styles.startInfoItem}>
                 <Icon name="help-circle-outline" size={16} color={colors.textSecondary} />
                 <Text style={[styles.startInfoText, {color: colors.textSecondary}]}>
-                  {questions.length} questions
+                  {questions.length} câu hỏi
                 </Text>
               </View>
               <View style={styles.startInfoItem}>
                 <Icon name="clock-outline" size={16} color={colors.textSecondary} />
                 <Text style={[styles.startInfoText, {color: colors.textSecondary}]}>
                   {isPerQuestionMode
-                    ? `${getPerQuestionDuration(questions[0])}s/question`
+                    ? `${getPerQuestionDuration(questions[0])} giây/câu`
                     : formatTime(quiz?.timeLimitSeconds || 30 * 60)}
                 </Text>
               </View>
             </View>
             <Button
-              title="Start Exam"
+              title="Bắt đầu thi"
               onPress={handleStart}
               style={{...styles.startBtn, backgroundColor: '#EA580C'}}
             />
             <Button
-              title="Go Back"
+              title="Quay lại"
               variant="ghost"
               onPress={() => navigation.goBack()}
             />
@@ -598,7 +598,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
           <Icon name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, {color: colors.heading}]} numberOfLines={1}>
-          Exam
+          Thi thử
         </Text>
         <View
           style={[
@@ -647,7 +647,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
           {formatTime(timeLeft)}
         </Text>
         <Text style={[styles.timerPanelSub, {color: colors.textSecondary}]}>
-          {answeredCount}/{questions.length} answered
+          Đã trả lời {answeredCount}/{questions.length}
         </Text>
       </View>
 
@@ -731,7 +731,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
         ]}>
         {!isPerQuestionMode && (
           <Button
-            title="Previous"
+            title="Trước"
             variant="outline"
             size="md"
             onPress={() => {
@@ -745,7 +745,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
         )}
         {currentIndex === questions.length - 1 ? (
           <Button
-            title="Submit Exam"
+            title="Nộp bài thi"
             size="md"
             onPress={handleSubmit}
             fullWidth={false}
@@ -758,8 +758,8 @@ export default function ExamQuizScreen({navigation, route}: any) {
           <Button
             title={
               currentQuestion && isTextAnswerQuestion(currentQuestion)
-                ? 'Save & Next'
-                : 'Next'
+                ? 'Lưu và tiếp theo'
+                : 'Tiếp theo'
             }
             size="md"
             onPress={() => {

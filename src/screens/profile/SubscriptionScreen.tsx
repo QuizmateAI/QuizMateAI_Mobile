@@ -18,8 +18,8 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import PaymentAPI from '../../api/PaymentAPI';
 
 const PLAN_TABS = [
-  {key: 'individual', label: 'Individual'},
-  {key: 'group', label: 'Group'},
+  {key: 'individual', label: 'Cá nhân'},
+  {key: 'group', label: 'Nhóm'},
 ];
 
 export default function SubscriptionScreen({navigation}: any) {
@@ -35,7 +35,7 @@ export default function SubscriptionScreen({navigation}: any) {
       .then(res => setPlans(res.data || []))
       .catch(() => {
         setPlans([]);
-        setLoadError('Failed to load subscription plans');
+        setLoadError('Không thể tải danh sách gói đăng ký');
       })
       .finally(() => setLoading(false));
   }, [planType]);
@@ -64,7 +64,7 @@ export default function SubscriptionScreen({navigation}: any) {
           <Icon name="chevron-left" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, {color: colors.heading}]}>
-          Subscription
+          Gói đăng ký
         </Text>
         <View style={styles.backBtn} />
       </View>
@@ -99,14 +99,14 @@ export default function SubscriptionScreen({navigation}: any) {
                   styles.currentPlanTitle,
                   {color: colors.heading},
                 ]}>
-                Current Plan
+                Gói hiện tại
               </Text>
               <Text
                 style={[
                   styles.currentPlanDesc,
                   {color: colors.textSecondary},
                 ]}>
-                Your active subscription
+                Gói đăng ký đang hoạt động của bạn
               </Text>
             </View>
           </View>
@@ -127,11 +127,11 @@ export default function SubscriptionScreen({navigation}: any) {
                   styles.currentPlanBadgeText,
                   {color: colors.textSecondary},
                 ]}>
-                Basic features with limited usage
+                Tính năng cơ bản với giới hạn sử dụng
               </Text>
             </View>
             <Text style={[styles.activeLabel, {color: colors.textTertiary}]}>
-              Active
+              Đang hoạt động
             </Text>
           </View>
         </View>
@@ -145,7 +145,7 @@ export default function SubscriptionScreen({navigation}: any) {
             <View style={styles.emptyPlans}>
               <Icon name="tag-outline" size={40} color={colors.textTertiary} />
               <Text style={[styles.emptyText, {color: colors.textSecondary}]}>
-                No plans available
+                Không có gói khả dụng
               </Text>
             </View>
           ) : (
@@ -180,7 +180,7 @@ export default function SubscriptionScreen({navigation}: any) {
                       styles.planPeriod,
                       {color: colors.textSecondary},
                     ]}>
-                    /{plan.duration || 'month'}
+                    /{plan.duration || 'tháng'}
                   </Text>
                 </View>
 
@@ -240,14 +240,14 @@ export default function SubscriptionScreen({navigation}: any) {
                 styles.guaranteeTitle,
                 {color: isDark ? '#34D399' : '#059669'},
               ]}>
-              30-day money-back guarantee
+              Cam kết hoàn tiền trong 30 ngày
             </Text>
             <Text
               style={[
                 styles.guaranteeDesc,
                 {color: isDark ? '#6EE7B7' : '#047857'},
               ]}>
-              No questions asked, hassle-free refund
+              Hoàn tiền nhanh gọn, không rườm rà
             </Text>
           </View>
         </View>
