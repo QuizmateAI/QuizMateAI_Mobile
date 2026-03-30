@@ -30,6 +30,7 @@ export default function SubscriptionScreen({navigation}: any) {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
     setLoadError(null);
     PaymentAPI.getPurchasablePlans(planType === 'group' ? 'GROUP' : 'INDIVIDUAL')
       .then(res => setPlans(res.data || []))

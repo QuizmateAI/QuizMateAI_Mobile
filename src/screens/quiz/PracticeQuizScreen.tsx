@@ -24,10 +24,12 @@ import {
   createDefaultVoicePracticeConfig,
   detectVoicePracticePresetId,
   isMultipleChoiceQuestion,
+  isMatchingQuestion,
   isTextAnswerQuestion,
   resolveVoicePracticeConfig,
   type VoicePracticeConfig,
 } from '../../utils/voicePractice';
+import {MatchingPair} from '../../components/features/MatchingQuestion';
 
 const VOICE_SETTING_FIELDS: Array<{
   key: keyof VoicePracticeConfig;
@@ -149,6 +151,9 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     Record<number, number[]>
   >({});
   const [textAnswers, setTextAnswers] = useState<Record<number, string>>({});
+  const [matchingPairsByQuestion, setMatchingPairsByQuestion] = useState<
+    Record<number, MatchingPair[]>
+  >({});
   const [submittedQuestionIds, setSubmittedQuestionIds] = useState<
     Record<number, boolean>
   >({});
@@ -354,6 +359,31 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     setTextAnswers(prev => ({...prev, [questionId]: text}));
   };
 
+  const handleMatchingPairChange = (questionId: number, pairs: MatchingPair[]) => {
+    if (submittedQuestionIds[questionId]) {
+      return;
+    }
+    setMatchingPairsByQuestion(prev => ({...prev, [questionId]: pairs}));
+  };
+
+  const getMatchingItems = (question: any) => {
+    if (!isMatchingQuestion(question)) {
+      return {
+        leftItems: [],
+        rightItems: [],
+      };
+    }
+
+    const answers = question?.answers || [];
+    const correctAnswer = answers.find((a: any) => a.isCorrect);
+    const pairs: Array<{leftKey: string; rightKey: string}> =
+      Array.isArray(correctAnswer?.matchingPairs) ? correctAnswer.matchingPairs : [];
+    return {
+      leftItems: pairs.map((p: any) => p.leftKey),
+      rightItems: pairs.map((p: any) => p.rightKey),
+    };
+  };
+
   const handleViewResult = async () => {
     if (!attemptId) {
       showToast('Không tìm thấy lượt làm bài', 'error');
@@ -375,7 +405,8 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     const selectedAnswerIds = Array.isArray(selectedAnswerIdsByQuestion[questionId])
       ? selectedAnswerIdsByQuestion[questionId]
       : [];
-    if (!text && selectedAnswerIds.length === 0) {
+    const matchingPairs = matchingPairsByQuestion[questionId] || [];
+    if (!text && selectedAnswerIds.length === 0 && matchingPairs.length === 0) {
       showToast('Hãy chọn câu trả lời để xem đáp án', 'error');
       return;
     }
@@ -385,6 +416,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
         questionId,
         selectedAnswerIds,
         textAnswer: text || null,
+        matchingPairs: matchingPairs.length > 0 ? matchingPairs : null,
       });
 
       const feedback = res.data || {};
@@ -932,6 +964,17 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             }
             showResult={isCurrentSubmitted}
             isMultiChoice={isMultipleChoiceQuestion(currentQuestion)}
+            matchedPairs={matchingPairsByQuestion[currentQuestion.id] || []}
+            onMatchingPairChange={pairs =>
+              handleMatchingPairChange(currentQuestion.id, pairs)
+            }
+            matchingLeftItems={getMatchingItems(currentQuestion).leftItems}
+            matchingRightItems={getMatchingItems(currentQuestion).rightItems}
+            correctMatchingPairs={
+              isCurrentSubmitted
+                ? currentFeedback?.correctMatchingPairs || []
+                : []
+            }
           />
         )}
       </ScrollView>

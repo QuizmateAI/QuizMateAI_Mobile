@@ -18,8 +18,10 @@ import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
 import {
   isMultipleChoiceQuestion,
+  isMatchingQuestion,
   isTextAnswerQuestion,
 } from '../../utils/voicePractice';
+import {MatchingPair} from '../../components/features/MatchingQuestion';
 
 export default function ExamQuizScreen({navigation, route}: any) {
   const {quizId, title, backContext} = route.params;
@@ -34,6 +36,9 @@ export default function ExamQuizScreen({navigation, route}: any) {
     Record<number, number[]>
   >({});
   const [textAnswers, setTextAnswers] = useState<Record<number, string>>({});
+  const [matchingPairsByQuestion, setMatchingPairsByQuestion] = useState<
+    Record<number, MatchingPair[]>
+  >({});
   const [attemptId, setAttemptId] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
@@ -301,6 +306,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
         : [];
       const restoredSelectedAnswerIds: Record<number, number[]> = {};
       const restoredTextAnswers: Record<number, string> = {};
+      const restoredMatchingPairs: Record<number, MatchingPair[]> = {};
 
       savedAnswers.forEach((item: any) => {
         const qid = Number(item?.questionId);
@@ -321,10 +327,15 @@ export default function ExamQuizScreen({navigation, route}: any) {
         if (typeof item?.textAnswer === 'string' && item.textAnswer.trim()) {
           restoredTextAnswers[qid] = item.textAnswer;
         }
+
+        if (Array.isArray(item?.matchingPairs) && item.matchingPairs.length > 0) {
+          restoredMatchingPairs[qid] = item.matchingPairs;
+        }
       });
 
       setSelectedAnswerIdsByQuestion(restoredSelectedAnswerIds);
       setTextAnswers(restoredTextAnswers);
+      setMatchingPairsByQuestion(restoredMatchingPairs);
 
       const allQuestions = questionsRef.current;
       if (isPerQuestionMode) {
@@ -379,6 +390,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
             : [];
           const restoredSelectedAnswerIds: Record<number, number[]> = {};
           const restoredTextAnswers: Record<number, string> = {};
+          const restoredMatchingPairs: Record<number, MatchingPair[]> = {};
 
           savedAnswers.forEach((item: any) => {
             const qid = Number(item?.questionId);
@@ -399,10 +411,15 @@ export default function ExamQuizScreen({navigation, route}: any) {
             if (typeof item?.textAnswer === 'string' && item.textAnswer.trim()) {
               restoredTextAnswers[qid] = item.textAnswer;
             }
+
+            if (Array.isArray(item?.matchingPairs) && item.matchingPairs.length > 0) {
+              restoredMatchingPairs[qid] = item.matchingPairs;
+            }
           });
 
           setSelectedAnswerIdsByQuestion(restoredSelectedAnswerIds);
           setTextAnswers(restoredTextAnswers);
+          setMatchingPairsByQuestion(restoredMatchingPairs);
 
           const allQuestions = questionsRef.current;
           if (isPerQuestionMode) {
@@ -490,7 +507,8 @@ export default function ExamQuizScreen({navigation, route}: any) {
     }
     const hasChoiceAnswer = (selectedAnswerIdsByQuestion[question?.id] || []).length > 0;
     const hasTextAnswer = (textAnswers[question?.id] || '').trim().length > 0;
-    return hasChoiceAnswer || hasTextAnswer;
+    const hasMatchingAnswer = (matchingPairsByQuestion[question?.id] || []).length > 0;
+    return hasChoiceAnswer || hasTextAnswer || hasMatchingAnswer;
   };
 
   const handleChangeTextAnswer = (questionId: number, text: string) => {
@@ -498,6 +516,31 @@ export default function ExamQuizScreen({navigation, route}: any) {
     if (attemptId) {
       QuizAPI.saveAnswer(attemptId, {questionId, textAnswer: text}).catch(() => {});
     }
+  };
+
+  const handleMatchingPairChange = (questionId: number, pairs: MatchingPair[]) => {
+    setMatchingPairsByQuestion(prev => ({...prev, [questionId]: pairs}));
+    if (attemptId) {
+      QuizAPI.saveAnswer(attemptId, {questionId, matchingPairs: pairs}).catch(() => {});
+    }
+  };
+
+  const getMatchingItems = (question: any) => {
+    if (!isMatchingQuestion(question)) {
+      return {
+        leftItems: [],
+        rightItems: [],
+      };
+    }
+
+    const answers = question?.answers || [];
+    const correctAnswer = answers.find((a: any) => a.isCorrect);
+    const pairs: Array<{leftKey: string; rightKey: string}> =
+      Array.isArray(correctAnswer?.matchingPairs) ? correctAnswer.matchingPairs : [];
+    return {
+      leftItems: pairs.map((p: any) => p.leftKey),
+      rightItems: pairs.map((p: any) => p.rightKey),
+    };
   };
 
   const handleSubmit = async () => {
@@ -719,6 +762,12 @@ export default function ExamQuizScreen({navigation, route}: any) {
             }
             difficulty={currentQuestion.difficulty}
             isMultiChoice={isMultipleChoiceQuestion(currentQuestion)}
+            matchedPairs={matchingPairsByQuestion[currentQuestion.id] || []}
+            onMatchingPairChange={pairs =>
+              handleMatchingPairChange(currentQuestion.id, pairs)
+            }
+            matchingLeftItems={getMatchingItems(currentQuestion).leftItems}
+            matchingRightItems={getMatchingItems(currentQuestion).rightItems}
           />
         )}
       </ScrollView>

@@ -1,5 +1,24 @@
 import api from './api';
 
+const normalizePlanType = (type: any) => {
+  const rawType = typeof type === 'string' ? type.toUpperCase() : '';
+
+  if (rawType === 'WORKSPACE') {
+    return 'GROUP';
+  }
+
+  if (rawType === 'USER') {
+    return 'INDIVIDUAL';
+  }
+
+  return rawType || type;
+};
+
+const unwrapApiData = (response: any) => ({
+  ...response,
+  data: response?.data?.data ?? response?.data,
+});
+
 const mapPlan = (plan: any) => {
   const entitlement = plan?.entitlement || {};
   const features = [
@@ -19,7 +38,7 @@ const mapPlan = (plan: any) => {
     ...plan,
     id: plan?.planCatalogId ?? plan?.planId ?? plan?.id,
     name: plan?.displayName ?? plan?.planName ?? plan?.name,
-    type: plan?.planScope ?? plan?.type,
+    type: normalizePlanType(plan?.planScope ?? plan?.type),
     duration: plan?.duration ?? 'month',
     features,
   };
@@ -28,7 +47,7 @@ const mapPlan = (plan: any) => {
 const PaymentAPI = {
   getPlan: (id: number) =>
     api.get(`/api/plan-catalog/${id}`).then(res => ({
-      ...res,
+      ...unwrapApiData(res),
       data: mapPlan(res.data?.data),
     })),
   getPurchasablePlans: (type: 'INDIVIDUAL' | 'GROUP') =>
@@ -39,18 +58,20 @@ const PaymentAPI = {
       const raw = res.data?.data;
       const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
       return {
-        ...res,
+        ...unwrapApiData(res),
         data: list.map(mapPlan),
       };
     }),
   createMomoPayment: (planId: number, groupId?: number) =>
-    api.post(
-      `/api/momo/create/${planId}${groupId ? `?groupId=${groupId}` : ''}`,
-    ),
+    (groupId
+      ? api.post(`/api/momo/create-workspace/${groupId}`)
+      : api.post(`/api/momo/create/${planId}`)
+    ).then(unwrapApiData),
   createVnpayPayment: (planId: number, groupId?: number) =>
-    api.post(
-      `/api/vnpay/create/${planId}${groupId ? `?groupId=${groupId}` : ''}`,
-    ),
+    (groupId
+      ? api.post(`/api/vnpay/create-workspace/${groupId}`)
+      : api.post(`/api/vnpay/create/${planId}`)
+    ).then(unwrapApiData),
 };
 
 export default PaymentAPI;

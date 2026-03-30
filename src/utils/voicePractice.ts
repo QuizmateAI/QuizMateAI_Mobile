@@ -199,12 +199,40 @@ const TEXT_QUESTION_TYPES = new Set([
 export const getQuestionId = (question: any) =>
   Number(question?.id ?? question?.questionId ?? 0);
 
+const extractQuestionTypeValue = (questionType: any): string => {
+  if (typeof questionType === 'string') {
+    return questionType;
+  }
+
+  if (questionType && typeof questionType === 'object') {
+    const nestedValue =
+      questionType.questionType ??
+      questionType.name ??
+      questionType.type ??
+      questionType.value;
+
+    return typeof nestedValue === 'string' ? nestedValue : '';
+  }
+
+  return '';
+};
+
 export const normalizeQuestionType = (question: any) =>
-  String(question?.questionType || '')
+  extractQuestionTypeValue(question?.questionType)
     .trim()
     .toUpperCase()
     .replace(/-/g, '_')
     .replace(/\s+/g, '_');
+
+const hasMatchingPayload = (question: any) =>
+  (Array.isArray(question?.matchingPairs) && question.matchingPairs.length > 0) ||
+  (Array.isArray(question?.correctMatchingPairs) &&
+    question.correctMatchingPairs.length > 0) ||
+  (Array.isArray(question?.answers) &&
+    question.answers.some(
+      (answer: any) =>
+        Array.isArray(answer?.matchingPairs) && answer.matchingPairs.length > 0,
+    ));
 
 export const isTextAnswerQuestion = (question: any) => {
   const type = normalizeQuestionType(question);
@@ -216,7 +244,7 @@ export const isTextAnswerQuestion = (question: any) => {
 };
 
 export const isMatchingQuestion = (question: any) =>
-  normalizeQuestionType(question) === 'MATCHING';
+  normalizeQuestionType(question) === 'MATCHING' || hasMatchingPayload(question);
 
 export const isMultipleChoiceQuestion = (question: any) =>
   ['MULTIPLE_CHOICE', 'MULTIPLE_ANSWERS', 'MULTIPLE ANSWERS', 'MULTI_CHOICE', 'MULTI_SELECT', 'MULTI SELECT'].includes(
