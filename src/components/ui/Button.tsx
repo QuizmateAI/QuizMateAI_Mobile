@@ -11,6 +11,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {Colors} from '../../theme/colors';
 import {useTheme} from '../../context/ThemeContext';
 import {BorderRadius, Spacing} from '../../theme/spacing';
+import {localizeUiText} from '../../utils/uiText';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive';
 type ButtonSize = 'sm' | 'md' | 'lg';
@@ -43,6 +44,7 @@ export default function Button({
   fullWidth = true,
 }: ButtonProps) {
   const {isDark, colors} = useTheme();
+  const localizedTitle = localizeUiText(title);
 
   const getVariantStyles = (): {container: ViewStyle; text: TextStyle} => {
     switch (variant) {
@@ -148,7 +150,7 @@ export default function Button({
               sizeStyles.text,
               textStyle,
             ]}>
-            {title}
+            {localizedTitle}
           </Text>
           {icon && iconPosition === 'right' && (
             <Icon

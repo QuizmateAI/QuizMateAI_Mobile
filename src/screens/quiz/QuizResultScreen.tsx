@@ -114,23 +114,23 @@ export default function QuizResultScreen({navigation, route}: any) {
       ? failColors
       : neutralColors;
   const primaryMetricLabel =
-    score === 0 && accuracyPercent > 0 ? 'Accuracy' : 'Score';
+    score === 0 && accuracyPercent > 0 ? 'Độ chính xác' : 'Điểm';
 
   const stats = [
     {icon: 'percent', label: primaryMetricLabel, value: `${displayPercent}%`},
-    {icon: 'check-circle-outline', label: 'Correct', value: `${correctCount}/${totalQuestions}`},
-    {icon: 'clock-outline', label: 'Time', value: timeTaken},
-    {icon: 'help-circle-outline', label: 'Questions', value: totalQuestions},
+    {icon: 'check-circle-outline', label: 'Đúng', value: `${correctCount}/${totalQuestions}`},
+    {icon: 'clock-outline', label: 'Thời gian', value: timeTaken},
+    {icon: 'help-circle-outline', label: 'Câu hỏi', value: totalQuestions},
   ];
 
   const backButtonTitle =
     backContext?.type === 'workspace'
-      ? 'Back to Workspace'
+      ? 'Về workspace'
       : backContext?.type === 'group'
-      ? 'Back to Group'
+      ? 'Về nhóm'
       : backContext?.type === 'roadmap'
-      ? 'Back to Roadmap'
-      : 'Back to Quizzes';
+      ? 'Về lộ trình'
+      : 'Về danh sách quiz';
 
   const handleBack = () => {
     if (
@@ -226,17 +226,17 @@ export default function QuizResultScreen({navigation, route}: any) {
           </View>
           <Text style={[styles.scoreTitle, {color: c.title}]}>
             {statusVariant === 'pass'
-              ? 'Congratulations!'
+              ? 'Chúc mừng!'
               : statusVariant === 'fail'
-              ? 'Keep Trying!'
-              : 'Quiz Completed'}
+              ? 'Cố gắng thêm!'
+              : 'Hoàn thành quiz'}
           </Text>
           <Text style={[styles.scoreSubtitle, {color: c.title}]}>
             {statusVariant === 'pass'
-              ? 'You passed the quiz!'
+              ? 'Bạn đã vượt qua bài quiz!'
               : statusVariant === 'fail'
-              ? "Don't give up, practice makes perfect!"
-              : 'This quiz has no pass threshold. Showing your result by accuracy.'}
+              ? 'Đừng bỏ cuộc, luyện tập sẽ giúp bạn tiến bộ!'
+              : 'Quiz này không có ngưỡng đậu. Kết quả được hiển thị theo độ chính xác.'}
           </Text>
 
           <Text style={[styles.scoreValue, {color: c.title}]}>
@@ -272,7 +272,7 @@ export default function QuizResultScreen({navigation, route}: any) {
         {/* Actions */}
         <View style={styles.actions}>
           <Button
-            title={showReview ? 'Hide Review' : 'Review Answers'}
+            title={showReview ? 'Ẩn phần xem lại' : 'Xem lại đáp án'}
             variant="outline"
             icon={showReview ? 'eye-off-outline' : 'eye-outline'}
             onPress={() => setShowReview(!showReview)}
@@ -288,7 +288,7 @@ export default function QuizResultScreen({navigation, route}: any) {
         {showReview && result?.questions && (
           <View style={styles.reviewSection}>
             <Text style={[styles.reviewTitle, {color: colors.heading}]}>
-              Review
+              Xem lại
             </Text>
             {result.questions.map((q: any, i: number) => (
               <QuestionCard

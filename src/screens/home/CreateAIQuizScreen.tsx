@@ -510,7 +510,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
         }
       } catch {
         if (!cancelled) {
-          showToast('Failed to load AI config metadata', 'error');
+          showToast('Không thể tải metadata cấu hình AI', 'error');
         }
       } finally {
         if (!cancelled) {
@@ -604,13 +604,13 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
     const sum = items.reduce((acc, item) => acc + (Number(item?.ratio) || 0), 0);
 
     if (items.length === 0) {
-      return `${label} is required`;
+      return `${label} là bắt buộc`;
     }
     if (!nearlyEqual(sum, target)) {
       if (unitByCount) {
-        return `${label} total count must be exactly ${totalQuestions}`;
+        return `Tổng số lượng ${label} phải đúng bằng ${totalQuestions}`;
       }
-      return `${label} total ratio must be exactly 100%`;
+      return `Tổng tỷ lệ ${label} phải đúng bằng 100%`;
     }
 
     return '';
@@ -618,15 +618,15 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
 
   const handleGenerate = async () => {
     if (!workspaceId) {
-      showToast('Missing workspaceId', 'error');
+      showToast('Thiếu workspaceId', 'error');
       return;
     }
     if (!title.trim()) {
-      showToast('Please enter quiz title', 'error');
+      showToast('Vui lòng nhập tiêu đề quiz', 'error');
       return;
     }
     if (parsedTotalQuestion < 1) {
-      showToast('Question count must be at least 1', 'error');
+      showToast('Số lượng câu hỏi phải lớn hơn hoặc bằng 1', 'error');
       return;
     }
 
@@ -635,26 +635,26 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
     );
 
     if (selectedMaterialIdsSafe.length === 0 && !prompt.trim()) {
-      setFieldError('Please select at least one valid material or provide a prompt');
+      setFieldError('Vui lòng chọn ít nhất một tài liệu hợp lệ hoặc nhập prompt');
       return;
     }
 
     if (timerMode) {
       if (parsedDurationMinutes < 1) {
-        setFieldError('Duration must be at least 1 minute in timed mode');
+        setFieldError('Thời lượng phải ít nhất 1 phút khi bật chế độ tính giờ tổng');
         return;
       }
 
       const totalDurationInSeconds = parsedDurationMinutes * 60;
       if (totalDurationInSeconds < parsedTotalQuestion * MIN_SECONDS_PER_QUESTION) {
         setFieldError(
-          `Each question needs at least ${MIN_SECONDS_PER_QUESTION}s, increase duration`,
+          `Mỗi câu cần ít nhất ${MIN_SECONDS_PER_QUESTION} giây, vui lòng tăng thời lượng`,
         );
         return;
       }
     } else {
       if (parsedEasyDuration < 1 || parsedMediumDuration < 1 || parsedHardDuration < 1) {
-        setFieldError('All per-question durations are required');
+        setFieldError('Vui lòng nhập đầy đủ thời lượng cho từng mức độ');
         return;
       }
       if (
@@ -663,16 +663,16 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
         parsedHardDuration < MIN_PER_DIFFICULTY_DURATION_SECONDS
       ) {
         setFieldError(
-          `Each per-question duration must be at least ${MIN_PER_DIFFICULTY_DURATION_SECONDS}s`,
+          `Mỗi thời lượng theo từng câu phải ít nhất ${MIN_PER_DIFFICULTY_DURATION_SECONDS} giây`,
         );
         return;
       }
       if (parsedMediumDuration <= parsedEasyDuration) {
-        setFieldError('Medium duration must be greater than Easy');
+        setFieldError('Thời lượng Trung bình phải lớn hơn Dễ');
         return;
       }
       if (parsedHardDuration <= parsedMediumDuration) {
-        setFieldError('Hard duration must be greater than Medium');
+        setFieldError('Thời lượng Khó phải lớn hơn Trung bình');
         return;
       }
     }
@@ -684,8 +684,8 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
     if (!nearlyEqual(difficultySum, difficultyTarget)) {
       setFieldError(
         questionUnit
-          ? `Difficulty count must be exactly ${parsedTotalQuestion}`
-          : 'Difficulty ratio must be exactly 100%',
+          ? `Tổng số lượng độ khó phải đúng bằng ${parsedTotalQuestion}`
+          : 'Tổng tỷ lệ độ khó phải đúng bằng 100%',
       );
       return;
     }
@@ -764,10 +764,10 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
       };
 
       await AIAPI.generateAIQuiz(payload);
-      showToast('AI quiz is being generated', 'success');
+      showToast('Quiz AI đang được tạo', 'success');
       navigation.goBack();
     } catch {
-      showToast('Failed to generate quiz', 'error');
+      showToast('Không thể tạo quiz', 'error');
     } finally {
       setGenerating(false);
     }
@@ -779,7 +779,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, {color: colors.heading}]}>Create AI Quiz</Text>
+        <Text style={[styles.headerTitle, {color: colors.heading}]}>Tạo quiz AI</Text>
         <View style={styles.backBtn} />
       </View>
 
@@ -787,11 +787,11 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}>
-        <FloatingInput label="Quiz title" value={title} onChangeText={setTitle} />
+        <FloatingInput label="Tiêu đề quiz" value={title} onChangeText={setTitle} />
 
         <View style={styles.spaceMd} />
         <FloatingInput
-          label="Question count"
+          label="Số lượng câu hỏi"
           value={totalQuestion}
           onChangeText={value => setTotalQuestion(normalizeIntegerInput(value))}
           keyboardType="number-pad"
@@ -799,15 +799,15 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
 
         <View style={styles.spaceMd} />
         <FloatingInput
-          label="Prompt (optional)"
+          label="Prompt (tùy chọn)"
           value={prompt}
           onChangeText={setPrompt}
           multiline
         />
 
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>General Config</Text>
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Cấu hình chung</Text>
 
-        <Text style={[styles.label, {color: colors.textSecondary}]}>Output Language</Text>
+        <Text style={[styles.label, {color: colors.textSecondary}]}>Ngôn ngữ đầu ra</Text>
         <View style={styles.segmentRow}>
           {OUTPUT_LANGUAGES.map(language => {
             const active = outputLanguage === language;
@@ -838,7 +838,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           })}
         </View>
 
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Timing</Text>
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Thời gian</Text>
         <View style={styles.segmentRow}>
           <TouchableOpacity
             onPress={() => setTimerMode(true)}
@@ -853,7 +853,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
                   : colors.surface,
               },
             ]}>
-            <Text style={[styles.segmentText, {color: timerMode ? Colors.primary : colors.textSecondary}]}>Timed</Text>
+            <Text style={[styles.segmentText, {color: timerMode ? Colors.primary : colors.textSecondary}]}>Tính giờ tổng</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setTimerMode(false)}
@@ -868,7 +868,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
                   : colors.surface,
               },
             ]}>
-            <Text style={[styles.segmentText, {color: !timerMode ? Colors.primary : colors.textSecondary}]}>Per Question</Text>
+            <Text style={[styles.segmentText, {color: !timerMode ? Colors.primary : colors.textSecondary}]}>Theo từng câu</Text>
           </TouchableOpacity>
         </View>
 
@@ -876,7 +876,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           <>
             <View style={styles.spaceMd} />
             <FloatingInput
-              label="Total duration (minutes)"
+              label="Tổng thời lượng (phút)"
               value={durationMinutes}
               onChangeText={value => setDurationMinutes(normalizeIntegerInput(value))}
               keyboardType="number-pad"
@@ -886,7 +886,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           <View style={styles.threeColumnRow}>
             <View style={styles.flexItem}>
               <FloatingInput
-                label="Easy (s)"
+                label="Dễ (giây)"
                 value={easyDurationSeconds}
                 onChangeText={value => setEasyDurationSeconds(normalizeIntegerInput(value))}
                 keyboardType="number-pad"
@@ -894,7 +894,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
             </View>
             <View style={styles.flexItem}>
               <FloatingInput
-                label="Medium (s)"
+                label="Trung bình (giây)"
                 value={mediumDurationSeconds}
                 onChangeText={value => setMediumDurationSeconds(normalizeIntegerInput(value))}
                 keyboardType="number-pad"
@@ -902,7 +902,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
             </View>
             <View style={styles.flexItem}>
               <FloatingInput
-                label="Hard (s)"
+                label="Khó (giây)"
                 value={hardDurationSeconds}
                 onChangeText={value => setHardDurationSeconds(normalizeIntegerInput(value))}
                 keyboardType="number-pad"
@@ -911,8 +911,8 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           </View>
         )}
 
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Difficulty Profile</Text>
-        <Text style={[styles.label, {color: colors.textSecondary}]}>Preset</Text>
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Cấu hình độ khó</Text>
+        <Text style={[styles.label, {color: colors.textSecondary}]}>Mẫu cài đặt</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -975,7 +975,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
         </ScrollView>
 
         <View style={styles.toggleRow}>
-          <Text style={[styles.label, {color: colors.textSecondary}]}>Difficulty by count</Text>
+          <Text style={[styles.label, {color: colors.textSecondary}]}>Độ khó theo số lượng</Text>
           <TouchableOpacity onPress={() => setQuestionUnit(prev => !prev)}>
             <Icon
               name={questionUnit ? 'checkbox-marked' : 'checkbox-blank-outline'}
@@ -989,7 +989,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           <View style={styles.flexItem}>
             {selectedDifficultyId === 'CUSTOM' ? (
               <FloatingInput
-                label={`Easy (${questionUnit ? 'count' : '%'})`}
+                label={`Dễ (${questionUnit ? 'số lượng' : '%'})`}
                 value={customDifficulty.easy}
                 onChangeText={value =>
                   setCustomDifficulty(prev => ({
@@ -1003,7 +1003,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
               />
             ) : (
               <View style={[styles.ratioCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-                <Text style={[styles.ratioCardLabel, {color: colors.textSecondary}]}>Easy (%)</Text>
+                <Text style={[styles.ratioCardLabel, {color: colors.textSecondary}]}>Dễ (%)</Text>
                 <Text style={[styles.ratioCardValue, {color: colors.text}]}>
                   {formatDifficultyValue(selectedDifficultyRatios.easy)}
                 </Text>
@@ -1013,7 +1013,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           <View style={styles.flexItem}>
             {selectedDifficultyId === 'CUSTOM' ? (
               <FloatingInput
-                label={`Medium (${questionUnit ? 'count' : '%'})`}
+                label={`Trung bình (${questionUnit ? 'số lượng' : '%'})`}
                 value={customDifficulty.medium}
                 onChangeText={value =>
                   setCustomDifficulty(prev => ({
@@ -1027,7 +1027,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
               />
             ) : (
               <View style={[styles.ratioCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-                <Text style={[styles.ratioCardLabel, {color: colors.textSecondary}]}>Medium (%)</Text>
+                <Text style={[styles.ratioCardLabel, {color: colors.textSecondary}]}>Trung bình (%)</Text>
                 <Text style={[styles.ratioCardValue, {color: colors.text}]}>
                   {formatDifficultyValue(selectedDifficultyRatios.medium)}
                 </Text>
@@ -1037,7 +1037,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           <View style={styles.flexItem}>
             {selectedDifficultyId === 'CUSTOM' ? (
               <FloatingInput
-                label={`Hard (${questionUnit ? 'count' : '%'})`}
+                label={`Khó (${questionUnit ? 'số lượng' : '%'})`}
                 value={customDifficulty.hard}
                 onChangeText={value =>
                   setCustomDifficulty(prev => ({
@@ -1051,7 +1051,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
               />
             ) : (
               <View style={[styles.ratioCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-                <Text style={[styles.ratioCardLabel, {color: colors.textSecondary}]}>Hard (%)</Text>
+                <Text style={[styles.ratioCardLabel, {color: colors.textSecondary}]}>Khó (%)</Text>
                 <Text style={[styles.ratioCardValue, {color: colors.text}]}>
                   {formatDifficultyValue(selectedDifficultyRatios.hard)}
                 </Text>
@@ -1060,9 +1060,9 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           </View>
         </View>
 
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Question Types</Text>
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Loại câu hỏi</Text>
         <View style={styles.toggleRow}>
-          <Text style={[styles.label, {color: colors.textSecondary}]}>Use count unit</Text>
+          <Text style={[styles.label, {color: colors.textSecondary}]}>Dùng đơn vị số lượng</Text>
           <TouchableOpacity onPress={() => setQuestionTypeUnit(prev => !prev)}>
             <Icon
               name={questionTypeUnit ? 'checkbox-marked' : 'checkbox-blank-outline'}
@@ -1126,9 +1126,9 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           })}
         </View>
 
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Bloom Skills</Text>
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Kỹ năng Bloom</Text>
         <View style={styles.toggleRow}>
-          <Text style={[styles.label, {color: colors.textSecondary}]}>Use count unit</Text>
+          <Text style={[styles.label, {color: colors.textSecondary}]}>Dùng đơn vị số lượng</Text>
           <TouchableOpacity onPress={() => setBloomUnit(prev => !prev)}>
             <Icon
               name={bloomUnit ? 'checkbox-marked' : 'checkbox-blank-outline'}
@@ -1187,12 +1187,12 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           })}
         </View>
 
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Materials</Text>
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Tài liệu</Text>
         {metadataLoading && (
-          <Text style={[styles.helperText, {color: colors.textSecondary}]}>Loading AI metadata...</Text>
+          <Text style={[styles.helperText, {color: colors.textSecondary}]}>Đang tải metadata AI...</Text>
         )}
         {materials.length === 0 ? (
-          <Text style={[styles.helperText, {color: colors.textSecondary}]}>No materials available. Quiz can still be generated from prompt.</Text>
+          <Text style={[styles.helperText, {color: colors.textSecondary}]}>Chưa có tài liệu. Vẫn có thể tạo quiz từ prompt.</Text>
         ) : (
           <View style={styles.materialList}>
             {normalizedMaterials.map((material: any) => {
@@ -1254,7 +1254,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
                         styles.materialStatusText,
                         {color: disabled ? Colors.error : colors.textSecondary},
                       ]}>
-                      {disabled ? 'Rejected - cannot select' : material.normalizedStatus || 'ACTIVE'}
+                      {disabled ? 'Bị từ chối - không thể chọn' : material.normalizedStatus || 'ACTIVE'}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -1269,7 +1269,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
 
         <View style={styles.spaceXl} />
         <Button
-          title={generating ? 'Generating...' : 'Generate Quiz'}
+          title={generating ? 'Đang tạo...' : 'Tạo quiz'}
           onPress={handleGenerate}
           loading={generating}
           icon="magic-staff"

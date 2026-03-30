@@ -12,6 +12,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import {Colors} from '../../theme/colors';
+import {localizeUiText} from '../../utils/uiText';
 
 interface ActionSheetItem {
   key: string;
@@ -37,6 +38,7 @@ export default function ActionSheet({
   onSelect,
 }: ActionSheetProps) {
   const {isDark, colors} = useTheme();
+  const localizedTitle = title ? localizeUiText(title) : '';
 
   return (
     <Modal
@@ -62,7 +64,7 @@ export default function ActionSheet({
                     {borderBottomColor: colors.border},
                   ]}>
                   <Text style={[styles.title, {color: colors.heading}]}>
-                    {title}
+                    {localizedTitle}
                   </Text>
                 </View>
               )}
@@ -92,7 +94,7 @@ export default function ActionSheet({
                         {color: itemColor},
                         item.destructive && styles.destructiveLabel,
                       ]}>
-                      {item.label}
+                      {localizeUiText(item.label)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -111,7 +113,7 @@ export default function ActionSheet({
                   },
                 ]}>
                 <Text style={[styles.cancelText, {color: colors.textSecondary}]}>
-                  Cancel
+                  {localizeUiText('Cancel')}
                 </Text>
               </TouchableOpacity>
             </View>

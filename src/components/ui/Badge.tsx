@@ -2,6 +2,7 @@ import React from 'react';
 import {View, Text, StyleSheet, ViewStyle} from 'react-native';
 import {Colors} from '../../theme/colors';
 import {useTheme} from '../../context/ThemeContext';
+import {localizeUiText} from '../../utils/uiText';
 
 type BadgeVariant = 'default' | 'success' | 'error' | 'warning' | 'info' | 'outline';
 
@@ -19,6 +20,7 @@ export default function Badge({
   size = 'md',
 }: BadgeProps) {
   const {isDark} = useTheme();
+  const localizedLabel = localizeUiText(label);
 
   const getColors = () => {
     const map: Record<BadgeVariant, {bg: string; text: string}> = {
@@ -70,7 +72,7 @@ export default function Badge({
           size === 'sm' && styles.textSm,
           {color: c.text},
         ]}>
-        {label}
+        {localizedLabel}
       </Text>
     </View>
   );

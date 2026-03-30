@@ -47,8 +47,8 @@ export default function MaterialDetailScreen({navigation, route}: any) {
         if (!mounted) {
           return;
         }
-        setSummary('No summary available yet.');
-        setExtractedText('No extracted text available yet.');
+        setSummary('Chưa có tóm tắt.');
+        setExtractedText('Chưa có nội dung trích xuất.');
       } finally {
         if (mounted) {
           setLoading(false);
@@ -82,14 +82,14 @@ export default function MaterialDetailScreen({navigation, route}: any) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, {color: colors.heading}]}>Material Detail</Text>
+        <Text style={[styles.headerTitle, {color: colors.heading}]}>Chi tiết tài liệu</Text>
         <View style={styles.backBtn} />
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <View style={[styles.card, {borderColor: colors.border, backgroundColor: colors.surface}]}>
           <Text style={[styles.fileName, {color: colors.heading}]}>
-            {material?.title || material?.fileName || material?.name || 'Material'}
+            {material?.title || material?.fileName || material?.name || 'Tài liệu'}
           </Text>
           <View style={styles.metaRow}>
             <Badge label={normalizedStatus} variant={statusVariant as any} size="sm" />
@@ -99,22 +99,22 @@ export default function MaterialDetailScreen({navigation, route}: any) {
           </View>
           {!!material?.uploadedAt && (
             <Text style={[styles.metaText, {color: colors.textTertiary}]}>
-              Uploaded: {new Date(material.uploadedAt).toLocaleString()}
+              Đã tải lên: {new Date(material.uploadedAt).toLocaleString()}
             </Text>
           )}
         </View>
 
         <View style={[styles.card, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-          <Text style={[styles.sectionTitle, {color: colors.heading}]}>Summary</Text>
+          <Text style={[styles.sectionTitle, {color: colors.heading}]}>Tóm tắt</Text>
           <Text style={[styles.bodyText, {color: colors.textSecondary}]}>
-            {summary || 'Summary is not ready yet.'}
+            {summary || 'Bản tóm tắt chưa sẵn sàng.'}
           </Text>
         </View>
 
         <View style={[styles.card, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-          <Text style={[styles.sectionTitle, {color: colors.heading}]}>Extracted Text</Text>
+          <Text style={[styles.sectionTitle, {color: colors.heading}]}>Văn bản trích xuất</Text>
           <Text style={[styles.bodyText, {color: colors.textSecondary}]}>
-            {extractedText || 'Extracted text is not ready yet.'}
+            {extractedText || 'Văn bản trích xuất chưa sẵn sàng.'}
           </Text>
         </View>
 
@@ -122,7 +122,7 @@ export default function MaterialDetailScreen({navigation, route}: any) {
           <View style={[styles.tipCard, {backgroundColor: isDark ? '#1E293B' : '#EFF6FF'}]}>
             <Icon name="information-outline" size={18} color={Colors.primary} />
             <Text style={[styles.tipText, {color: colors.textSecondary}]}>
-              Material is still processing. Pull to refresh from source list later.
+              Tài liệu vẫn đang xử lý. Hãy quay lại danh sách tài liệu để làm mới sau.
             </Text>
           </View>
         )}

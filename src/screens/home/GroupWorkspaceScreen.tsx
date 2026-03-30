@@ -31,10 +31,10 @@ const {width: SCREEN_WIDTH} = Dimensions.get('window');
 type BottomTab = 'chat' | 'sources' | 'studio';
 
 const QUICK_ACTIONS = [
-  {icon: 'map-outline', label: 'Roadmap', key: 'roadmap', color: '#059669'},
+  {icon: 'map-outline', label: 'Lộ trình', key: 'roadmap', color: '#059669'},
   {icon: 'head-question-outline', label: 'Quiz', key: 'quiz', color: '#2563EB'},
   {icon: 'cards-outline', label: 'Flashcard', key: 'flashcard', color: '#EA580C'},
-  {icon: 'clipboard-text-outline', label: 'Mock Test', key: 'mockTest', color: '#7C3AED'},
+  {icon: 'clipboard-text-outline', label: 'Thi thử', key: 'mockTest', color: '#7C3AED'},
 ];
 
 export default function GroupWorkspaceScreen({navigation, route}: any) {
@@ -66,14 +66,14 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     (quiz: any) => {
       const quizId = Number(quiz?.id || quiz?.quizId);
       if (!quizId) {
-        showToast('Quiz ID is missing', 'error');
+        showToast('Thiếu Quiz ID', 'error');
         return;
       }
 
       const quizTitle = quiz?.name || quiz?.title;
-      Alert.alert('Choose quiz mode', 'How would you like to take this quiz?', [
+      Alert.alert('Chọn chế độ làm quiz', 'Bạn muốn làm quiz theo cách nào?', [
         {
-          text: 'Practice',
+          text: 'Luyện tập',
           onPress: () =>
             navigation.navigate('Quiz', {
               screen: 'PracticeQuiz',
@@ -89,7 +89,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
             }),
         },
         {
-          text: 'Exam',
+          text: 'Thi thử',
           onPress: () =>
             navigation.navigate('Quiz', {
               screen: 'ExamQuiz',
@@ -104,7 +104,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
               },
             }),
         },
-        {text: 'Cancel', style: 'cancel'},
+        {text: 'Hủy', style: 'cancel'},
       ]);
     },
     [groupId, navigation, showToast, title],
@@ -149,7 +149,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       setQuizzes([]);
       setFlashcards([]);
       setRoadmaps([]);
-      showToast('Failed to load group data', 'error');
+      showToast('Không thể tải dữ liệu nhóm', 'error');
     } finally {
       if (requestId === latestFetchRequestIdRef.current) {
         setLoading(false);
@@ -212,11 +212,11 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     setInviting(true);
     try {
       await GroupAPI.sendInvitation(groupId, {email: inviteEmail});
-      showToast('Invitation sent!', 'success');
+      showToast('Đã gửi lời mời!', 'success');
       setInviteVisible(false);
       setInviteEmail('');
     } catch {
-      showToast('Failed to send invitation', 'error');
+      showToast('Không thể gửi lời mời', 'error');
     } finally {
       setInviting(false);
     }
@@ -232,11 +232,11 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       return;
     }
     if (key === 'flashcard') {
-      showToast('AI flashcard creation is workspace-only currently', 'info');
+      showToast('Tạo flashcard AI hiện chỉ hỗ trợ trong workspace cá nhân', 'info');
       return;
     }
     if (key === 'quiz' || key === 'mockTest') {
-      showToast('Use existing quizzes from this group for now', 'info');
+      showToast('Hiện tại hãy dùng các quiz sẵn có trong nhóm này', 'info');
       setActiveBottomTab('studio');
       return;
     }
@@ -278,7 +278,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
             <Text style={[styles.wsText, {color: colors.textSecondary}]}>Live</Text>
           </View>
           <Text style={[styles.memberCount, {color: colors.textSecondary}]}>
-            {members.length} members
+            {members.length} thành viên
           </Text>
         </View>
         <TouchableOpacity
@@ -305,7 +305,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
           <View>
             {/* Quick Actions */}
             <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-              Quick Actions
+              Tác vụ nhanh
             </Text>
             <View style={styles.quickActions}>
               {QUICK_ACTIONS.map(action => (
@@ -332,26 +332,26 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
 
             {/* Overview */}
             <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-              Overview
+              Tổng quan
             </Text>
             <View style={styles.overviewRow}>
               <OverviewCard
                 icon="account-multiple"
-                label="Members"
+                label="Thành viên"
                 value={members.length}
                 color="#2563EB"
                 colors={colors}
               />
               <OverviewCard
                 icon="head-question-outline"
-                label="Quizzes"
+                label="Quiz"
                 value={quizzes.length}
                 color="#7C3AED"
                 colors={colors}
               />
               <OverviewCard
                 icon="cards-outline"
-                label="Cards"
+                label="Thẻ"
                 value={flashcards.length}
                 color="#EA580C"
                 colors={colors}
@@ -385,7 +385,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                         {quiz.name || quiz.title}
                       </Text>
                       <Text style={[styles.listItemSub, {color: colors.textSecondary}]}>
-                        {quiz.questionCount || 0} questions
+                        {quiz.questionCount || 0} câu hỏi
                       </Text>
                     </View>
                     <Icon name="chevron-right" size={20} color={colors.textTertiary} />
@@ -433,13 +433,14 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
           <View>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-                Group Sources ({sources.length})
+                Tài liệu nhóm ({sources.length})
               </Text>
               <TouchableOpacity
                 onPress={() => showToast('File upload coming soon', 'info')}
+                onPress={() => showToast('Tính năng tải file sẽ sớm ra mắt', 'info')}
                 style={[styles.addSourceBtn, {backgroundColor: Colors.primary}]}>
                 <Icon name="plus" size={16} color="#FFFFFF" />
-                <Text style={styles.addSourceText}>Add</Text>
+                <Text style={styles.addSourceText}>Thêm</Text>
               </TouchableOpacity>
             </View>
 
@@ -453,20 +454,20 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                   <Icon name="folder-outline" size={36} color={colors.textTertiary} />
                 </View>
                 <Text style={[styles.emptyTitle, {color: colors.textSecondary}]}>
-                  No sources yet
+                  Chưa có tài liệu
                 </Text>
                 <Text style={[styles.emptySubtitle, {color: colors.textTertiary}]}>
-                  Upload documents to share with your group
+                  Tải tài liệu lên để chia sẻ với nhóm
                 </Text>
                 <TouchableOpacity
-                  onPress={() => showToast('File upload coming soon', 'info')}
+                  onPress={() => showToast('Tính năng tải file sẽ sớm ra mắt', 'info')}
                   style={[
                     styles.uploadBtn,
                     {backgroundColor: isDark ? Colors.dark.surfaceVariant : Colors.primaryLight},
                   ]}>
                   <Icon name="upload" size={18} color={Colors.primary} />
                   <Text style={[styles.uploadBtnText, {color: Colors.primary}]}>
-                    Upload Sources
+                    Tải tài liệu lên
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -499,21 +500,21 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
               Studio
             </Text>
             <Text style={[styles.studioSubtitle, {color: colors.textSecondary}]}>
-              Group learning materials
+              Tài nguyên học tập của nhóm
             </Text>
 
             <View style={styles.studioGrid}>
               {[
-                {icon: 'map-outline', label: 'Roadmaps', count: roadmaps.length, color: '#059669'},
-                {icon: 'head-question-outline', label: 'Quizzes', count: quizzes.length, color: '#2563EB'},
-                {icon: 'cards-outline', label: 'Flashcards', count: flashcards.length, color: '#EA580C'},
-                {icon: 'account-multiple', label: 'Members', count: members.length, color: '#7C3AED'},
+                {icon: 'map-outline', label: 'Lộ trình', count: roadmaps.length, color: '#059669'},
+                {icon: 'head-question-outline', label: 'Quiz', count: quizzes.length, color: '#2563EB'},
+                {icon: 'cards-outline', label: 'Flashcard', count: flashcards.length, color: '#EA580C'},
+                {icon: 'account-multiple', label: 'Thành viên', count: members.length, color: '#7C3AED'},
               ].map(item => (
                 <TouchableOpacity
                   key={item.label}
                   activeOpacity={0.7}
                   onPress={() => {
-                    if (item.label === 'Roadmaps') {
+                    if (item.label === 'Lộ trình') {
                       navigation.navigate('RoadmapJourney', {
                         contextType: 'GROUP',
                         contextId: groupId,
@@ -542,7 +543,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
             {(quizzes.length > 0 || flashcards.length > 0) && (
               <>
                 <Text style={[styles.sectionTitle, {color: colors.heading, marginTop: Spacing.xl}]}>
-                  Recent Items
+                  Mục gần đây
                 </Text>
                 {quizzes.slice(0, 3).map((quiz: any) => (
                   <TouchableOpacity
@@ -601,7 +602,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
             <TextInput
               value={chatMessage}
               onChangeText={setChatMessage}
-              placeholder="Ask AI about your group materials..."
+              placeholder="Hỏi AI về tài liệu của nhóm..."
               placeholderTextColor={colors.placeholder}
               style={[styles.chatInput, {color: colors.text}]}
               multiline
@@ -610,7 +611,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
             <TouchableOpacity
               onPress={() => {
                 if (chatMessage.trim()) {
-                  showToast('AI chat coming soon', 'info');
+                  showToast('Tính năng chat AI sẽ sớm ra mắt', 'info');
                   setChatMessage('');
                 }
               }}
@@ -666,7 +667,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                   fontWeight: activeBottomTab === tab ? '600' : '400',
                 },
               ]}>
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'chat' ? 'Trò chuyện' : tab === 'sources' ? 'Tài liệu' : 'Công cụ'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -676,7 +677,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       <Dialog
         visible={inviteVisible}
         onClose={() => setInviteVisible(false)}
-        title="Invite Member">
+        title="Mời thành viên">
         <FloatingInput
           label="Email"
           value={inviteEmail}

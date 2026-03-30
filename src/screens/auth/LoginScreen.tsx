@@ -52,7 +52,7 @@ export default function LoginScreen({navigation}: any) {
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
-      showToast('Please fill in all fields', 'warning');
+      showToast('Vui lòng điền đầy đủ thông tin', 'warning');
       return;
     }
     setLoading(true);
@@ -63,7 +63,7 @@ export default function LoginScreen({navigation}: any) {
       const profile = payload?.user ?? {};
 
       if (!token) {
-        throw new Error('Login response does not contain access token');
+        throw new Error('Phản hồi đăng nhập không chứa access token');
       }
 
       const authUser = {
@@ -80,13 +80,13 @@ export default function LoginScreen({navigation}: any) {
       };
 
       if (!authUser.email) {
-        throw new Error('Login response does not contain user profile');
+        throw new Error('Phản hồi đăng nhập không chứa thông tin người dùng');
       }
 
       await login(token, authUser);
-      showToast('Login successful!', 'success');
+      showToast('Đăng nhập thành công!', 'success');
     } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || 'Login failed';
+      const msg = error?.response?.data?.message || error?.message || 'Đăng nhập thất bại';
       showToast(msg, 'error');
     } finally {
       setLoading(false);
@@ -111,7 +111,7 @@ export default function LoginScreen({navigation}: any) {
       const idToken = signInResponse.data?.idToken;
 
       if (!idToken) {
-        throw new Error('No ID token received from Google');
+        throw new Error('Không nhận được ID token từ Google');
       }
 
       const googleCredential = auth.GoogleAuthProvider.credential(idToken);
@@ -124,7 +124,7 @@ export default function LoginScreen({navigation}: any) {
       const profile = payload?.user ?? {};
 
       if (!token) {
-        throw new Error('Google login response does not contain access token');
+        throw new Error('Phản hồi đăng nhập Google không chứa access token');
       }
 
       const authUser = {
@@ -141,22 +141,22 @@ export default function LoginScreen({navigation}: any) {
       };
 
       if (!authUser.email) {
-        throw new Error('Google login response does not contain user profile');
+        throw new Error('Phản hồi đăng nhập Google không chứa thông tin người dùng');
       }
 
       await login(token, authUser);
-      showToast('Login successful!', 'success');
+      showToast('Đăng nhập thành công!', 'success');
     } catch (error: any) {
       if (error?.code === statusCodes.SIGN_IN_CANCELLED) {
         return;
       }
 
       if (error?.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        showToast('Google Play Services not available', 'error');
+        showToast('Google Play Services không khả dụng', 'error');
         return;
       }
 
-      const msg = error?.response?.data?.message || error?.message || 'Google login failed';
+      const msg = error?.response?.data?.message || error?.message || 'Đăng nhập Google thất bại';
       showToast(msg, 'error');
     } finally {
       setGoogleLoading(false);
@@ -197,10 +197,10 @@ export default function LoginScreen({navigation}: any) {
 
           {/* Title */}
           <Text style={[styles.title, {color: colors.heading}]}>
-            Welcome back
+            Chào mừng bạn quay lại
           </Text>
           <Text style={[styles.subtitle, {color: colors.textSecondary}]}>
-            Sign in to continue learning
+            Đăng nhập để tiếp tục học
           </Text>
 
           {/* Form */}
@@ -226,7 +226,7 @@ export default function LoginScreen({navigation}: any) {
               onPress={() => navigation.navigate('ForgotPassword')}
               style={styles.forgotBtn}>
               <Text style={[styles.forgotText, {color: Colors.accent}]}>
-                Forgot password?
+                Quên mật khẩu?
               </Text>
             </TouchableOpacity>
 
@@ -242,7 +242,7 @@ export default function LoginScreen({navigation}: any) {
                 style={[styles.dividerLine, {backgroundColor: colors.border}]}
               />
               <Text style={[styles.dividerText, {color: colors.textTertiary}]}>
-                or
+                hoặc
               </Text>
               <View
                 style={[styles.dividerLine, {backgroundColor: colors.border}]}
@@ -268,7 +268,7 @@ export default function LoginScreen({navigation}: any) {
                     color={colors.text}
                     style={styles.googleIcon}
                   />
-                  <Text style={[styles.googleText, {color: colors.text}]}>Continue with Google</Text>
+                  <Text style={[styles.googleText, {color: colors.text}]}>Tiếp tục với Google</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -277,11 +277,11 @@ export default function LoginScreen({navigation}: any) {
           {/* Sign Up Link */}
           <View style={styles.signUpRow}>
             <Text style={[styles.signUpText, {color: colors.textSecondary}]}>
-              Don't have an account?{' '}
+              Chưa có tài khoản?{' '}
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Register')}>
               <Text style={[styles.signUpLink, {color: Colors.accent}]}>
-                Sign up
+                Đăng ký
               </Text>
             </TouchableOpacity>
           </View>

@@ -25,12 +25,12 @@ const validateEmail = (email: string): boolean => {
 
 const validatePassword = (password: string): {isValid: boolean; message?: string} => {
   if (password.length < 9) {
-    return {isValid: false, message: 'Password must be at least 9 characters long'};
+    return {isValid: false, message: 'Mật khẩu phải có ít nhất 9 ký tự'};
   }
   const hasLetter = /[a-zA-Z]/.test(password);
   const hasNumber = /\d/.test(password);
   if (!hasLetter || !hasNumber) {
-    return {isValid: false, message: 'Password must contain both letters and numbers'};
+    return {isValid: false, message: 'Mật khẩu phải có cả chữ và số'};
   }
   return {isValid: true};
 };
@@ -48,20 +48,20 @@ export default function ForgotPasswordScreen({navigation}: any) {
 
   const handleSendOtp = async () => {
     if (!email.trim()) {
-      showToast('Please enter your email', 'warning');
+      showToast('Vui lòng nhập email', 'warning');
       return;
     }
     if (!validateEmail(email)) {
-      showToast('Please enter a valid email address', 'error');
+      showToast('Vui lòng nhập địa chỉ email hợp lệ', 'error');
       return;
     }
     setLoading(true);
     try {
       await AuthAPI.sendOtp(email);
       setStep('otp');
-      showToast('OTP sent to your email', 'success');
+      showToast('Đã gửi OTP đến email của bạn', 'success');
     } catch (error: any) {
-      showToast(error?.response?.data?.message || 'Failed to send OTP', 'error');
+      showToast(error?.response?.data?.message || 'Không thể gửi OTP', 'error');
     } finally {
       setLoading(false);
     }
@@ -69,7 +69,7 @@ export default function ForgotPasswordScreen({navigation}: any) {
 
   const handleVerifyOtp = async () => {
     if (!otp.trim()) {
-      showToast('Please enter OTP', 'warning');
+      showToast('Vui lòng nhập OTP', 'warning');
       return;
     }
     setLoading(true);
@@ -78,10 +78,10 @@ export default function ForgotPasswordScreen({navigation}: any) {
       if (verifyRes.data.message === 'Xác thực thành công') {
         setStep('reset');
       } else {
-        showToast(verifyRes.data.message || 'Invalid OTP', 'error');
+        showToast(verifyRes.data.message || 'OTP không hợp lệ', 'error');
       }
     } catch (error: any) {
-      showToast(error?.response?.data?.message || 'Invalid OTP', 'error');
+      showToast(error?.response?.data?.message || 'OTP không hợp lệ', 'error');
     } finally {
       setLoading(false);
     }
@@ -89,20 +89,20 @@ export default function ForgotPasswordScreen({navigation}: any) {
 
   const handleResetPassword = async () => {
     if (!newPassword.trim()) {
-      showToast('Please enter new password', 'warning');
+      showToast('Vui lòng nhập mật khẩu mới', 'warning');
       return;
     }
     if (!confirmPassword.trim()) {
-      showToast('Please confirm new password', 'warning');
+      showToast('Vui lòng xác nhận mật khẩu mới', 'warning');
       return;
     }
     const passwordValidation = validatePassword(newPassword);
     if (!passwordValidation.isValid) {
-      showToast(passwordValidation.message || 'Invalid password', 'error');
+      showToast(passwordValidation.message || 'Mật khẩu không hợp lệ', 'error');
       return;
     }
     if (newPassword !== confirmPassword) {
-      showToast('Passwords do not match', 'error');
+      showToast('Mật khẩu xác nhận không khớp', 'error');
       return;
     }
     setLoading(true);
@@ -110,14 +110,14 @@ export default function ForgotPasswordScreen({navigation}: any) {
       console.log('CALLING RESET PASSWORD API:', {email, newPassword});
       const resetRes = await AuthAPI.resetPassword(email, newPassword);
       console.log('RESET PASSWORD RESPONSE:', resetRes);
-      showToast('Password reset successfully!', 'success');
+      showToast('Đặt lại mật khẩu thành công!', 'success');
       navigation.navigate('Login');
     } catch (error: any) {
       console.log('RESET PASSWORD ERROR:', error);
       console.log('ERROR RESPONSE:', error?.response);
       console.log('ERROR DATA:', error?.response?.data);
       showToast(
-        error?.response?.data?.message || 'Reset failed',
+        error?.response?.data?.message || 'Đặt lại mật khẩu thất bại',
         'error',
       );
     } finally {
@@ -127,11 +127,11 @@ export default function ForgotPasswordScreen({navigation}: any) {
 
   const titles: Record<Step, {title: string; subtitle: string}> = {
     email: {
-      title: 'Forgot Password',
-      subtitle: 'Enter your email to receive a reset code',
+      title: 'Quên mật khẩu',
+      subtitle: 'Nhập email để nhận mã đặt lại mật khẩu',
     },
-    otp: {title: 'Verify Code', subtitle: `Enter the code sent to ${email}`},
-    reset: {title: 'New Password', subtitle: 'Create a strong password'},
+    otp: {title: 'Xác minh mã', subtitle: `Nhập mã đã gửi đến ${email}`},
+    reset: {title: 'Mật khẩu mới', subtitle: 'Tạo mật khẩu đủ mạnh'},
   };
 
   return (

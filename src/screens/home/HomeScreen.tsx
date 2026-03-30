@@ -29,14 +29,14 @@ import GroupAPI from '../../api/GroupAPI';
 
 const TABS = [
   { key: 'workspace', label: 'Workspace' },
-  { key: 'group', label: 'Group' },
+  { key: 'group', label: 'Nhóm' },
 ];
 
 const WORKSPACE_ACTIONS = [
-  { key: 'edit', label: 'Edit Workspace', icon: 'pencil-outline' },
+  { key: 'edit', label: 'Sửa workspace', icon: 'pencil-outline' },
   {
     key: 'delete',
-    label: 'Delete Workspace',
+    label: 'Xóa workspace',
     icon: 'delete-outline',
     destructive: true,
   },
@@ -83,7 +83,7 @@ export default function HomeScreen({ navigation }: any) {
     } catch {
       setWorkspaces([]);
       setGroups([]);
-      showToast('Failed to load workspaces/groups', 'error');
+      showToast('Không thể tải danh sách workspace/nhóm', 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -110,14 +110,14 @@ export default function HomeScreen({ navigation }: any) {
         await GroupAPI.create({ name: newName });
       }
       showToast(
-        `${activeTab === 'workspace' ? 'Workspace' : 'Group'} created!`,
+        `${activeTab === 'workspace' ? 'Workspace' : 'Nhóm'} đã được tạo!`,
         'success',
       );
       setCreateDialogVisible(false);
       setNewName('');
       fetchData();
     } catch {
-      showToast('Failed to create', 'error');
+      showToast('Không thể tạo mới', 'error');
     } finally {
       setCreating(false);
     }
@@ -152,11 +152,11 @@ export default function HomeScreen({ navigation }: any) {
         name: editTitle.trim() || undefined,
         description: editDescription.trim() || undefined,
       });
-      showToast('Workspace updated!', 'success');
+      showToast('Đã cập nhật workspace!', 'success');
       setEditDialogVisible(false);
       fetchData();
     } catch {
-      showToast('Failed to update workspace', 'error');
+      showToast('Không thể cập nhật workspace', 'error');
     } finally {
       setSaving(false);
     }
@@ -170,12 +170,12 @@ export default function HomeScreen({ navigation }: any) {
       const workspaceId =
         selectedWorkspace.workspaceId || selectedWorkspace.id;
       await WorkspaceAPI.delete(workspaceId);
-      showToast('Workspace deleted!', 'success');
+      showToast('Đã xóa workspace!', 'success');
       setDeleteDialogVisible(false);
       setSelectedWorkspace(null);
       fetchData();
     } catch {
-      showToast('Failed to delete workspace', 'error');
+      showToast('Không thể xóa workspace', 'error');
     } finally {
       setDeleting(false);
     }
@@ -196,10 +196,10 @@ export default function HomeScreen({ navigation }: any) {
         color={colors.textTertiary}
       />
       <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
-        No {activeTab === 'workspace' ? 'workspaces' : 'groups'} yet
+        Chưa có {activeTab === 'workspace' ? 'workspace' : 'nhóm'} nào
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-        Tap the + button to create one
+        Nhấn nút + để tạo mới
       </Text>
     </View>
   );
@@ -338,7 +338,7 @@ export default function HomeScreen({ navigation }: any) {
       <ActionSheet
         visible={actionSheetVisible}
         onClose={() => setActionSheetVisible(false)}
-        title={selectedWorkspace?.name || selectedWorkspace?.title || 'Actions'}
+        title={selectedWorkspace?.name || selectedWorkspace?.title || 'Tác vụ'}
         items={WORKSPACE_ACTIONS}
         onSelect={handleActionSelect}
       />
@@ -347,7 +347,7 @@ export default function HomeScreen({ navigation }: any) {
       <Dialog
         visible={createDialogVisible}
         onClose={() => setCreateDialogVisible(false)}
-        title={`New ${activeTab === 'workspace' ? 'Workspace' : 'Group'}`}>
+        title={`Tạo mới ${activeTab === 'workspace' ? 'workspace' : 'nhóm'}`}>
         <FloatingInput
           label="Name"
           value={newName}
@@ -377,7 +377,7 @@ export default function HomeScreen({ navigation }: any) {
       <Dialog
         visible={editDialogVisible}
         onClose={() => setEditDialogVisible(false)}
-        title="Edit Workspace">
+        title="Sửa workspace">
         <View style={styles.editForm}>
           <FloatingInput
             label="Title"
@@ -415,7 +415,7 @@ export default function HomeScreen({ navigation }: any) {
       <Dialog
         visible={deleteDialogVisible}
         onClose={() => setDeleteDialogVisible(false)}
-        title="Delete Workspace">
+        title="Xóa workspace">
         <View style={styles.deleteContent}>
           <View
             style={[
@@ -425,8 +425,8 @@ export default function HomeScreen({ navigation }: any) {
             <Icon name="alert-outline" size={28} color={Colors.error} />
           </View>
           <Text style={[styles.deleteMessage, { color: colors.text }]}>
-            Are you sure you want to delete this workspace? This action cannot
-            be undone.
+            Bạn có chắc muốn xóa workspace này không? Hành động này không thể
+            hoàn tác.
           </Text>
 
           {selectedWorkspace && (
@@ -450,7 +450,7 @@ export default function HomeScreen({ navigation }: any) {
                 numberOfLines={1}>
                 {selectedWorkspace.name ||
                   selectedWorkspace.title ||
-                  'Workspace'}
+                  'workspace'}
               </Text>
             </View>
           )}

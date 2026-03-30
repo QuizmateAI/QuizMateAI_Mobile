@@ -21,9 +21,46 @@ import WorkspaceProfileAPI from '../../api/WorkspaceProfileAPI';
 type LearningMode = 'STUDY_NEW' | 'REVIEW' | 'MOCK_TEST';
 
 const LEARNING_MODES: LearningMode[] = ['STUDY_NEW', 'REVIEW', 'MOCK_TEST'];
-const STEP_TITLES = ['Foundation', 'Personalization', 'Validation'];
+const STEP_TITLES = ['Nền tảng', 'Cá nhân hóa', 'Kiểm tra'];
 const ADAPTATION_MODES = ['STRICT', 'FLEXIBLE'] as const;
 const SPEED_MODES = ['STANDARD', 'SLOW', 'FAST'] as const;
+const LEARNING_MODE_LABELS: Record<LearningMode, string> = {
+  STUDY_NEW: 'Học mới',
+  REVIEW: 'Ôn tập',
+  MOCK_TEST: 'Thi thử',
+};
+const SPEED_MODE_LABELS: Record<'STANDARD' | 'SLOW' | 'FAST', string> = {
+  STANDARD: 'Tiêu chuẩn',
+  SLOW: 'Chậm',
+  FAST: 'Nhanh',
+};
+const ADAPTATION_MODE_LABELS: Record<'STRICT' | 'FLEXIBLE', string> = {
+  STRICT: 'Nghiêm ngặt',
+  FLEXIBLE: 'Linh hoạt',
+};
+const STEP_GUIDES: Record<number, {title: string; lines: string[]}> = {
+  1: {
+    title: 'Bước 1: Xác định nền tảng',
+    lines: [
+      'Mô tả rõ phần kiến thức bạn muốn học để AI phân tích đúng domain.',
+      'Chọn 1 domain từ gợi ý AI để mở khóa các bước tiếp theo.',
+    ],
+  },
+  2: {
+    title: 'Bước 2: Cá nhân hóa hồ sơ',
+    lines: [
+      'Điền trình độ hiện tại, mục tiêu, điểm mạnh và điểm yếu của bạn.',
+      'Bạn có thể nhấn gợi ý AI để điền nhanh các trường hồ sơ.',
+    ],
+  },
+  3: {
+    title: 'Bước 3: Kiểm tra và hoàn tất',
+    lines: [
+      'Tạo mẫu đề thi và chạy kiểm tra nhất quán trước khi lưu.',
+      'Thiết lập lộ trình (thời lượng, tốc độ, mức thích ứng) cho phù hợp.',
+    ],
+  },
+};
 const ANALYSIS_DEBOUNCE_MS = 800;
 const FIELDS_SUGGEST_DEBOUNCE_MS = 700;
 const EXAM_TEMPLATE_SUGGEST_DEBOUNCE_MS = 750;
@@ -169,7 +206,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
   const requestSuggestFields = useCallback(async ({silent = false, signal}: {silent?: boolean; signal?: AbortSignal} = {}) => {
     if (!knowledge.trim() || !domain.trim()) {
       if (!silent) {
-        showToast('Please fill knowledge and domain first', 'error');
+        showToast('Vui lòng nhập kiến thức và domain trước', 'error');
       }
       return;
     }
@@ -198,17 +235,17 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         data.summary ||
         data.reasoning ||
         (Array.isArray(data.warnings) ? data.warnings.join('. ') : '') ||
-        'AI field suggestion completed';
+        'AI đã gợi ý trường hồ sơ';
       setSuggestFieldsNote(note);
       if (!silent) {
-        showToast('AI suggestions applied', 'success');
+        showToast('Đã áp dụng gợi ý AI', 'success');
       }
     } catch {
       if (signal?.aborted) {
         return;
       }
       if (!silent) {
-        showToast('Failed to suggest profile fields', 'error');
+        showToast('Không thể gợi ý trường hồ sơ', 'error');
       }
     } finally {
       if (!silent) {
@@ -251,18 +288,18 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         data.message ||
         data.summary ||
         (Array.isArray(data.warnings) ? data.warnings.join('. ') : '') ||
-        'Profile looks consistent';
+        'Hồ sơ có vẻ nhất quán';
       setConsistencyNote(note);
       if (!silent) {
-        showToast('Validation completed', 'success');
+        showToast('Đã kiểm tra xong', 'success');
       }
     } catch {
       if (signal?.aborted) {
         return;
       }
       if (!silent) {
-        setConsistencyNote('Could not validate consistency. Please review manually.');
-        showToast('Validation failed', 'error');
+        setConsistencyNote('Không thể kiểm tra tính nhất quán. Vui lòng rà soát thủ công.');
+        showToast('Kiểm tra thất bại', 'error');
       }
     } finally {
       if (!silent) {
@@ -285,7 +322,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
   const requestSuggestTemplates = useCallback(async ({silent = false, signal}: {silent?: boolean; signal?: AbortSignal} = {}) => {
     if (!knowledge.trim() || !domain.trim()) {
       if (!silent) {
-        showToast('Please fill knowledge and domain first', 'error');
+        showToast('Vui lòng nhập kiến thức và domain trước', 'error');
       }
       return;
     }
@@ -312,14 +349,14 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         .slice(0, 5);
       setTemplateNames(names);
       if (!silent) {
-        showToast('Exam templates generated', 'success');
+        showToast('Đã tạo mẫu đề thi', 'success');
       }
     } catch {
       if (signal?.aborted) {
         return;
       }
       if (!silent) {
-        showToast('Failed to suggest exam templates', 'error');
+        showToast('Không thể gợi ý mẫu đề thi', 'error');
       }
     } finally {
       if (!silent) {
@@ -495,7 +532,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
           nextOptions = data.domainSuggestions
             .map((item: any) => ({
               label: String(item || '').trim(),
-              reason: 'Suggested by AI based on your knowledge context.',
+              reason: 'AI gợi ý dựa trên ngữ cảnh kiến thức của bạn.',
             }))
             .filter((item: any) => item.label)
             .slice(0, 5);
@@ -508,8 +545,8 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             data.advice ||
             data.warning ||
             (nextOptions.length > 0
-              ? 'AI suggested domains based on your knowledge input.'
-              : 'AI analyzed your knowledge input.'),
+              ? 'AI đã gợi ý domain dựa trên kiến thức bạn nhập.'
+              : 'AI đã phân tích phần kiến thức bạn nhập.'),
         );
 
         if (nextOptions.length > 0) {
@@ -535,7 +572,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         setDomainOptions([]);
         setDomain('');
         setFieldSuggestions(emptyFieldSuggestions);
-        setKnowledgeAnalysisNote('AI analysis failed. Please retry.');
+        setKnowledgeAnalysisNote('Phân tích AI thất bại. Vui lòng thử lại.');
       }
     }, ANALYSIS_DEBOUNCE_MS);
 
@@ -728,7 +765,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         }
       } catch {
         if (mounted) {
-          showToast('Could not load current workspace profile', 'warning');
+          showToast('Không thể tải hồ sơ workspace hiện tại', 'warning');
         }
       } finally {
         if (mounted) {
@@ -760,26 +797,27 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
     domain.trim().length > 0 &&
     analysisStatus === 'success' &&
     domainOptions.some(option => option.label === domain);
+  const activeGuide = STEP_GUIDES[step] || STEP_GUIDES[1];
 
   const handleSubmitProfile = async () => {
     if (!workspaceId) {
-      showToast('Missing workspace id', 'error');
+      showToast('Thiếu workspace id', 'error');
       return;
     }
     if (!knowledge.trim() || !domain.trim()) {
-      showToast('Knowledge and domain are required', 'error');
+      showToast('Bắt buộc nhập kiến thức và domain', 'error');
       return;
     }
     if (!domainOptions.some(option => option.label === domain)) {
-      showToast('Please select a domain from AI suggestions', 'error');
+      showToast('Vui lòng chọn domain từ gợi ý AI', 'error');
       return;
     }
     if (!currentLevel.trim() || !learningGoal.trim()) {
-      showToast('Current level and learning goal are required', 'error');
+      showToast('Bắt buộc nhập trình độ hiện tại và mục tiêu học', 'error');
       return;
     }
     if (learningMode === 'MOCK_TEST' && !examName.trim()) {
-      showToast('Exam name is required for mock test mode', 'error');
+      showToast('Bắt buộc nhập tên kỳ thi cho chế độ thi thử', 'error');
       return;
     }
 
@@ -811,7 +849,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
       const message =
         confirmRes.data?.message ||
         confirmRes.data?.data?.message ||
-        'Workspace profile configured successfully';
+        'Cấu hình hồ sơ workspace thành công';
       showToast(message, 'success');
       navigation.goBack();
     } catch (error: any) {
@@ -819,7 +857,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         error?.response?.data?.message ||
         error?.response?.data?.error ||
         error?.message ||
-        'Failed to save workspace profile';
+        'Không thể lưu hồ sơ workspace';
       showToast(message, 'error');
     } finally {
       setSaving(false);
@@ -842,9 +880,9 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
-        <View style={{flex: 1}}>
-          <Text style={[styles.headerTitle, {color: colors.heading}]}>Study Profile Wizard</Text>
-          <Text style={[styles.stepText, {color: colors.textSecondary}]}>Step {step}/3 • {STEP_TITLES[step - 1]}</Text>
+        <View>
+          <Text style={[styles.headerTitle, {color: colors.heading}]}>Thiết lập hồ sơ học tập</Text>
+          <Text style={[styles.stepText, {color: colors.textSecondary}]}>Bước {step}/3 • {STEP_TITLES[step - 1]}</Text>
         </View>
       </View>
 
@@ -876,10 +914,42 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
           })}
         </View>
 
+        <View
+          style={[
+            styles.guideHero,
+            {
+              borderColor: colors.border,
+              backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+            },
+          ]}>
+          <View style={styles.guideHeroHead}>
+            <Icon name="lightbulb-on-outline" size={16} color={Colors.primary} />
+            <Text style={[styles.guideHeroTitle, {color: colors.heading}]}>Hướng dẫn nhanh</Text>
+          </View>
+          <Text style={[styles.guideHeroText, {color: colors.textSecondary}]}>Hoàn thành hồ sơ để hệ thống tạo lộ trình, quiz AI và thi thử sát với mục tiêu học của bạn.</Text>
+        </View>
+
+        <View
+          style={[
+            styles.guideCard,
+            {
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
+            },
+          ]}>
+          <Text style={[styles.guideCardTitle, {color: colors.heading}]}>{activeGuide.title}</Text>
+          {activeGuide.lines.map(line => (
+            <View key={line} style={styles.guideLineRow}>
+              <View style={[styles.guideDot, {backgroundColor: Colors.primary}]} />
+              <Text style={[styles.guideLineText, {color: colors.textSecondary}]}>{line}</Text>
+            </View>
+          ))}
+        </View>
+
         {step === 1 && (
           <View>
             <FloatingInput
-              label="Knowledge you want to learn"
+              label="Kiến thức bạn muốn học"
               value={knowledge}
               onChangeText={setKnowledge}
               multiline
@@ -893,7 +963,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                 ]}>
                 <View style={styles.domainPreviewHead}>
                   <Icon name="compass-outline" size={16} color={Colors.primary} />
-                  <Text style={[styles.domainPreviewTitle, {color: colors.heading}]}>Primary Domain (AI selected)</Text>
+                  <Text style={[styles.domainPreviewTitle, {color: colors.heading}]}>Domain chính (AI đã chọn)</Text>
                 </View>
                 <Text style={[styles.domainPreviewValue, {color: colors.text}]}>{domain}</Text>
               </View>
@@ -902,7 +972,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             {analysisStatus === 'loading' && (
               <View style={styles.inlineStatusRow}>
                 <ActivityIndicator size="small" color={Colors.primary} />
-                <Text style={[styles.inlineStatusText, {color: colors.textSecondary}]}>AI is analyzing your knowledge...</Text>
+                <Text style={[styles.inlineStatusText, {color: colors.textSecondary}]}>AI đang phân tích phần kiến thức của bạn...</Text>
               </View>
             )}
 
@@ -914,13 +984,13 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                   {borderColor: colors.border, backgroundColor: colors.surface},
                 ]}>
                 <Icon name="refresh" size={16} color={Colors.primary} />
-                <Text style={[styles.retryText, {color: colors.textSecondary}]}>Retry AI domain suggestion</Text>
+                <Text style={[styles.retryText, {color: colors.textSecondary}]}>Thử lại gợi ý domain từ AI</Text>
               </TouchableOpacity>
             )}
 
             {domainOptions.length > 0 ? (
               <>
-                <Text style={[styles.sectionTitle, {color: colors.heading}]}>AI suggested domains</Text>
+                <Text style={[styles.sectionTitle, {color: colors.heading}]}>Domain AI gợi ý</Text>
                 <View style={styles.chipsWrap}>
                   {domainOptions.map(option => {
                     const active = option.label === domain;
@@ -967,7 +1037,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                   {borderColor: colors.border, backgroundColor: colors.surface},
                 ]}>
                 <Icon name="alert-circle-outline" size={16} color={colors.textSecondary} />
-                <Text style={[styles.noDomainText, {color: colors.textSecondary}]}>AI could not suggest a clear domain. Please refine your knowledge description.</Text>
+                <Text style={[styles.noDomainText, {color: colors.textSecondary}]}>AI chưa thể gợi ý domain rõ ràng. Vui lòng mô tả kiến thức cụ thể hơn.</Text>
               </View>
             ) : null}
 
@@ -978,11 +1048,11 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                   {borderColor: colors.border, backgroundColor: colors.surface},
                 ]}>
                 <Icon name="gesture-tap-button" size={16} color={Colors.primary} />
-                <Text style={[styles.noDomainText, {color: colors.textSecondary}]}>AI found multiple possible domains. Please pick one domain to continue.</Text>
+                <Text style={[styles.noDomainText, {color: colors.textSecondary}]}>AI tìm thấy nhiều domain phù hợp. Vui lòng chọn một domain để tiếp tục.</Text>
               </View>
             )}
 
-            <Text style={[styles.sectionTitle, {color: colors.heading}]}>Learning mode</Text>
+            <Text style={[styles.sectionTitle, {color: colors.heading}]}>Chế độ học</Text>
             <View style={styles.segmentRow}>
               {LEARNING_MODES.map(mode => {
                 const active = learningMode === mode;
@@ -1006,7 +1076,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                         styles.segmentText,
                         {color: active ? Colors.primary : colors.textSecondary},
                       ]}>
-                      {mode}
+                      {LEARNING_MODE_LABELS[mode]}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -1015,7 +1085,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
 
             {!!knowledgeAnalysisNote && (
               <View style={[styles.card, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-                <Text style={[styles.cardTitle, {color: colors.heading}]}>AI analysis response</Text>
+                <Text style={[styles.cardTitle, {color: colors.heading}]}>Phản hồi phân tích AI</Text>
                 <Text style={[styles.cardLine, {color: colors.textSecondary}]}> {knowledgeAnalysisNote}</Text>
               </View>
             )}
@@ -1025,13 +1095,13 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         {step === 2 && (
           <View>
             <FloatingInput
-              label="Current level"
+              label="Trình độ hiện tại"
               value={currentLevel}
               onChangeText={setCurrentLevel}
             />
             {fieldSuggestions.currentLevelSuggestions.length > 0 && (
               <View style={styles.aiSuggestionsWrap}>
-                <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>AI suggestions</Text>
+                <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>Gợi ý AI</Text>
                 <View style={styles.chipsWrap}>
                   {fieldSuggestions.currentLevelSuggestions.map(item => (
                     <TouchableOpacity
@@ -1047,14 +1117,14 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             )}
             <View style={styles.spaceMd} />
             <FloatingInput
-              label="Learning goal"
+              label="Mục tiêu học tập"
               value={learningGoal}
               onChangeText={setLearningGoal}
               multiline
             />
             {fieldSuggestions.learningGoalSuggestions.length > 0 && (
               <View style={styles.aiSuggestionsWrap}>
-                <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>AI suggestions</Text>
+                <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>Gợi ý AI</Text>
                 <View style={styles.chipsWrap}>
                   {fieldSuggestions.learningGoalSuggestions.map(item => (
                     <TouchableOpacity
@@ -1070,13 +1140,13 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             )}
             <View style={styles.spaceMd} />
             <FloatingInput
-              label="Strong areas (comma separated)"
+              label="Điểm mạnh (ngăn cách bằng dấu phẩy)"
               value={strongAreas}
               onChangeText={setStrongAreas}
             />
             {fieldSuggestions.strongAreaSuggestions.length > 0 && (
               <View style={styles.aiSuggestionsWrap}>
-                <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>AI suggestions (tap to add)</Text>
+                <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>Gợi ý AI (nhấn để thêm)</Text>
                 <View style={styles.chipsWrap}>
                   {fieldSuggestions.strongAreaSuggestions.map(item => (
                     <TouchableOpacity
@@ -1092,13 +1162,13 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             )}
             <View style={styles.spaceMd} />
             <FloatingInput
-              label="Weak areas (comma separated)"
+              label="Điểm yếu (ngăn cách bằng dấu phẩy)"
               value={weakAreas}
               onChangeText={setWeakAreas}
             />
             {fieldSuggestions.weakAreaSuggestions.length > 0 && (
               <View style={styles.aiSuggestionsWrap}>
-                <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>AI suggestions (tap to add)</Text>
+                <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>Gợi ý AI (nhấn để thêm)</Text>
                 <View style={styles.chipsWrap}>
                   {fieldSuggestions.weakAreaSuggestions.map(item => (
                     <TouchableOpacity
@@ -1116,13 +1186,13 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
               <>
                 <View style={styles.spaceMd} />
                 <FloatingInput
-                  label="Target exam name"
+                  label="Tên kỳ thi mục tiêu"
                   value={examName}
                   onChangeText={setExamName}
                 />
                 {fieldSuggestions.examNameSuggestions.length > 0 && (
                   <View style={styles.aiSuggestionsWrap}>
-                    <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>AI suggestions</Text>
+                    <Text style={[styles.aiSuggestionsLabel, {color: colors.textSecondary}]}>Gợi ý AI</Text>
                     <View style={styles.chipsWrap}>
                       {fieldSuggestions.examNameSuggestions.map(item => (
                         <TouchableOpacity
@@ -1141,7 +1211,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
 
             <View style={styles.spaceLg} />
             <Button
-              title="AI suggest profile fields"
+              title="AI gợi ý trường hồ sơ"
               onPress={handleSuggestFields}
               loading={suggesting}
               variant="secondary"
@@ -1151,13 +1221,13 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             {autoSuggestingFields && (
               <View style={styles.inlineStatusRow}>
                 <ActivityIndicator size="small" color={Colors.primary} />
-                <Text style={[styles.inlineStatusText, {color: colors.textSecondary}]}>AI is refining profile fields...</Text>
+                <Text style={[styles.inlineStatusText, {color: colors.textSecondary}]}>AI đang tinh chỉnh các trường hồ sơ...</Text>
               </View>
             )}
 
             {!!suggestFieldsNote && (
               <View style={[styles.card, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-                <Text style={[styles.cardTitle, {color: colors.heading}]}>AI suggestion response</Text>
+                <Text style={[styles.cardTitle, {color: colors.heading}]}>Phản hồi gợi ý AI</Text>
                 <Text style={[styles.cardLine, {color: colors.textSecondary}]}>{suggestFieldsNote}</Text>
               </View>
             )}
@@ -1167,7 +1237,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         {step === 3 && (
           <View>
             <Button
-              title="Generate exam templates"
+              title="Tạo mẫu đề thi"
               onPress={handleSuggestTemplates}
               loading={suggesting}
               variant="secondary"
@@ -1177,13 +1247,13 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             {autoSuggestingTemplates && (
               <View style={styles.inlineStatusRow}>
                 <ActivityIndicator size="small" color={Colors.primary} />
-                <Text style={[styles.inlineStatusText, {color: colors.textSecondary}]}>AI is generating exam templates...</Text>
+                <Text style={[styles.inlineStatusText, {color: colors.textSecondary}]}>AI đang tạo mẫu đề thi...</Text>
               </View>
             )}
 
             <View style={styles.spaceLg} />
             <Button
-              title="Validate consistency"
+              title="Kiểm tra tính nhất quán"
               onPress={handleValidate}
               loading={suggesting}
               icon="check-decagram-outline"
@@ -1192,13 +1262,13 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             {autoValidatingConsistency && (
               <View style={styles.inlineStatusRow}>
                 <ActivityIndicator size="small" color={Colors.primary} />
-                <Text style={[styles.inlineStatusText, {color: colors.textSecondary}]}>AI is checking consistency...</Text>
+                <Text style={[styles.inlineStatusText, {color: colors.textSecondary}]}>AI đang kiểm tra tính nhất quán...</Text>
               </View>
             )}
 
             {templateNames.length > 0 && (
               <View style={[styles.card, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-                <Text style={[styles.cardTitle, {color: colors.heading}]}>Suggested templates</Text>
+                <Text style={[styles.cardTitle, {color: colors.heading}]}>Mẫu đề thi gợi ý</Text>
                 {templateNames.map(name => (
                   <Text key={name} style={[styles.cardLine, {color: colors.textSecondary}]}>• {name}</Text>
                 ))}
@@ -1207,12 +1277,12 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
 
             {!!consistencyNote && (
               <View style={[styles.card, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-                <Text style={[styles.cardTitle, {color: colors.heading}]}>Validation result</Text>
+                <Text style={[styles.cardTitle, {color: colors.heading}]}>Kết quả kiểm tra</Text>
                 <Text style={[styles.cardLine, {color: colors.textSecondary}]}>{consistencyNote}</Text>
               </View>
             )}
 
-            <Text style={[styles.sectionTitle, {color: colors.heading}]}>Roadmap config</Text>
+            <Text style={[styles.sectionTitle, {color: colors.heading}]}>Cấu hình lộ trình</Text>
             {learningMode !== 'STUDY_NEW' && (
               <TouchableOpacity
                 onPress={() => setRoadmapEnabled(prev => !prev)}
@@ -1225,7 +1295,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                   size={20}
                   color={roadmapEnabled ? Colors.primary : colors.textSecondary}
                 />
-                <Text style={[styles.checkboxText, {color: colors.textSecondary}]}>Enable roadmap</Text>
+                <Text style={[styles.checkboxText, {color: colors.textSecondary}]}>Bật lộ trình</Text>
               </TouchableOpacity>
             )}
 
@@ -1233,20 +1303,20 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
               <>
                 <View style={styles.spaceMd} />
                 <FloatingInput
-                  label="Estimated total days"
+                  label="Tổng số ngày dự kiến"
                   value={estimatedTotalDays}
                   onChangeText={setEstimatedTotalDays}
                   keyboardType="number-pad"
                 />
                 <View style={styles.spaceMd} />
                 <FloatingInput
-                  label="Estimated minutes/day"
+                  label="Số phút học/ngày dự kiến"
                   value={estimatedMinutesPerDay}
                   onChangeText={setEstimatedMinutesPerDay}
                   keyboardType="number-pad"
                 />
 
-                <Text style={[styles.sectionTitle, {color: colors.heading}]}>Speed mode</Text>
+                <Text style={[styles.sectionTitle, {color: colors.heading}]}>Tốc độ học</Text>
                 <View style={styles.segmentRow}>
                   {SPEED_MODES.map(mode => {
                     const active = speedMode === mode;
@@ -1270,14 +1340,14 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                             styles.segmentText,
                             {color: active ? Colors.primary : colors.textSecondary},
                           ]}>
-                          {mode}
+                          {SPEED_MODE_LABELS[mode]}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
 
-                <Text style={[styles.sectionTitle, {color: colors.heading}]}>Adaptation mode</Text>
+                <Text style={[styles.sectionTitle, {color: colors.heading}]}>Mức độ thích ứng</Text>
                 <View style={styles.segmentRow}>
                   {ADAPTATION_MODES.map(mode => {
                     const active = adaptationMode === mode;
@@ -1301,7 +1371,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                             styles.segmentText,
                             {color: active ? Colors.primary : colors.textSecondary},
                           ]}>
-                          {mode}
+                          {ADAPTATION_MODE_LABELS[mode]}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1318,7 +1388,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
       <View style={[styles.footer, {borderTopColor: colors.border, backgroundColor: colors.surface}]}>
         {step > 1 ? (
           <Button
-            title="Back"
+            title="Quay lại"
             onPress={() => setStep(prev => Math.max(1, prev - 1))}
             variant="outline"
             size="md"
@@ -1331,10 +1401,10 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
 
         {step < 3 ? (
           <Button
-            title="Next"
+            title="Tiếp theo"
             onPress={() => {
               if (step === 1 && !canGoNextStep1) {
-                showToast('Please complete Step 1 first', 'error');
+                showToast('Vui lòng hoàn thành Bước 1 trước', 'error');
                 return;
               }
               setStep(prev => Math.min(3, prev + 1));
@@ -1345,7 +1415,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
           />
         ) : (
           <Button
-            title={saving ? 'Saving...' : 'Finish'}
+            title={saving ? 'Đang lưu...' : 'Hoàn tất'}
             onPress={handleSubmitProfile}
             loading={saving}
             size="md"
@@ -1366,11 +1436,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: Spacing.md,
   },
-  backBtn: {width: 32, alignItems: 'center', justifyContent: 'center'},
-  headerTitle: {fontSize: 17, fontWeight: '600', flex: 1},
-  stepText: {fontSize: 12, fontWeight: '500'},
+  backBtn: {width: 32, height: 32, alignItems: 'center', justifyContent: 'center'},
+  headerTitle: {fontSize: 16, fontWeight: '600'},
+  stepText: {fontSize: 11, fontWeight: '500'},
   content: {flex: 1},
   contentContainer: {padding: Spacing.lg},
   progressWrap: {
@@ -1388,6 +1458,27 @@ const styles = StyleSheet.create({
   },
   progressDotText: {fontSize: 11, color: '#FFFFFF', fontWeight: '700'},
   progressLabel: {fontSize: 11, marginTop: 4, textAlign: 'center'},
+  guideHero: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.xs,
+    marginBottom: Spacing.sm,
+  },
+  guideHeroHead: {flexDirection: 'row', alignItems: 'center', gap: Spacing.xs},
+  guideHeroTitle: {fontSize: 13, fontWeight: '700'},
+  guideHeroText: {fontSize: 12, lineHeight: 18},
+  guideCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.xs,
+    marginBottom: Spacing.sm,
+  },
+  guideCardTitle: {fontSize: 13, fontWeight: '700', marginBottom: 2},
+  guideLineRow: {flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs},
+  guideDot: {width: 6, height: 6, borderRadius: 99, marginTop: 6},
+  guideLineText: {fontSize: 12, lineHeight: 18, flex: 1},
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',

@@ -33,18 +33,18 @@ type BottomTab = 'chat' | 'sources' | 'studio';
 
 /* ──── Quick‑action data ──── */
 const QUICK_ACTIONS = [
-  {icon: 'map-outline', label: 'Roadmap', key: 'roadmap', color: '#059669'},
+  {icon: 'map-outline', label: 'Lộ trình', key: 'roadmap', color: '#059669'},
   {icon: 'head-question-outline', label: 'Quiz', key: 'quiz', color: '#2563EB'},
   {icon: 'cards-outline', label: 'Flashcard', key: 'flashcard', color: '#EA580C'},
-  {icon: 'clipboard-text-outline', label: 'Mock Test', key: 'mockTest', color: '#7C3AED'},
+  {icon: 'clipboard-text-outline', label: 'Thi thử', key: 'mockTest', color: '#7C3AED'},
 ];
 
 /* ──── Studio item data ──── */
 const STUDIO_ITEMS = (counts: {q: number; f: number; s: number; r: number}) => [
-  {icon: 'map-outline', label: 'Roadmaps', count: counts.r, color: '#059669', key: 'roadmap'},
-  {icon: 'head-question-outline', label: 'Quizzes', count: counts.q, color: '#2563EB', key: 'quiz'},
-  {icon: 'cards-outline', label: 'Flashcards', count: counts.f, color: '#EA580C', key: 'flashcard'},
-  {icon: 'file-document-outline', label: 'Sources', count: counts.s, color: '#64748B', key: 'sources'},
+  {icon: 'map-outline', label: 'Lộ trình', count: counts.r, color: '#059669', key: 'roadmap'},
+  {icon: 'head-question-outline', label: 'Quiz', count: counts.q, color: '#2563EB', key: 'quiz'},
+  {icon: 'cards-outline', label: 'Flashcard', count: counts.f, color: '#EA580C', key: 'flashcard'},
+  {icon: 'file-document-outline', label: 'Tài liệu', count: counts.s, color: '#64748B', key: 'sources'},
 ];
 
 export default function WorkspaceScreen({navigation, route}: any) {
@@ -80,14 +80,14 @@ export default function WorkspaceScreen({navigation, route}: any) {
     (quiz: any) => {
       const quizId = Number(quiz?.id || quiz?.quizId);
       if (!quizId) {
-        showToast('Quiz ID is missing', 'error');
+        showToast('Thiếu Quiz ID', 'error');
         return;
       }
 
       const quizTitle = quiz?.name || quiz?.title;
-      Alert.alert('Choose quiz mode', 'How would you like to take this quiz?', [
+      Alert.alert('Chọn chế độ làm quiz', 'Bạn muốn làm quiz theo cách nào?', [
         {
-          text: 'Practice',
+          text: 'Luyện tập',
           onPress: () =>
             navigation.navigate('Quiz', {
               screen: 'PracticeQuiz',
@@ -103,7 +103,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
             }),
         },
         {
-          text: 'Exam',
+          text: 'Thi thử',
           onPress: () =>
             navigation.navigate('Quiz', {
               screen: 'ExamQuiz',
@@ -118,7 +118,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
               },
             }),
         },
-        {text: 'Cancel', style: 'cancel'},
+        {text: 'Hủy', style: 'cancel'},
       ]);
     },
     [navigation, showToast, title, workspaceId],
@@ -198,7 +198,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
       setRoadmaps([]);
       setOnboardingCompleted(null);
       setProfileStatusLoading(false);
-      showToast('Failed to load workspace data', 'error');
+      showToast('Không thể tải dữ liệu workspace', 'error');
     } finally {
       if (requestId === latestFetchRequestIdRef.current) {
         setLoading(false);
@@ -323,8 +323,8 @@ export default function WorkspaceScreen({navigation, route}: any) {
           lastQuizProgressEventKeyRef.current = eventKey;
           showToast(
             status === 'MOCKTEST_COMPLETED'
-              ? 'AI mock test is ready'
-              : 'AI quiz is ready',
+              ? 'Bài thi thử AI đã sẵn sàng'
+              : 'Quiz AI đã sẵn sàng',
             'success',
           );
         }
@@ -411,21 +411,21 @@ export default function WorkspaceScreen({navigation, route}: any) {
   const handleDeleteMaterial = (mat: any) => {
     const matId = mat.materialId || mat.id;
     Alert.alert(
-      'Delete Source',
-      `Are you sure you want to delete "${mat.title || mat.fileName || mat.name}"?`,
+      'Xóa tài liệu',
+      `Bạn có chắc muốn xóa "${mat.title || mat.fileName || mat.name}" không?`,
       [
-        {text: 'Cancel', style: 'cancel'},
+        {text: 'Hủy', style: 'cancel'},
         {
-          text: 'Delete',
+          text: 'Xóa',
           style: 'destructive',
           onPress: async () => {
             setDeletingMaterial(matId);
             try {
               await MaterialAPI.delete(matId);
               setMaterials(prev => prev.filter(m => (m.materialId || m.id) !== matId));
-              showToast('Source deleted', 'success');
+              showToast('Đã xóa tài liệu', 'success');
             } catch {
-              showToast('Failed to delete source', 'error');
+              showToast('Không thể xóa tài liệu', 'error');
             } finally {
               setDeletingMaterial(null);
             }
@@ -456,13 +456,13 @@ export default function WorkspaceScreen({navigation, route}: any) {
       formData.append('workspaceID', String(workspaceId));
 
       await MaterialAPI.upload(formData);
-      showToast('Upload started, processing in background', 'success');
+      showToast('Đã bắt đầu tải lên, hệ thống đang xử lý nền', 'success');
       fetchData();
     } catch (error: any) {
       if (DocumentPicker.isCancel(error)) {
         return;
       }
-      showToast('Failed to upload material', 'error');
+      showToast('Không thể tải tài liệu lên', 'error');
     } finally {
       setUploading(false);
     }
@@ -501,22 +501,22 @@ export default function WorkspaceScreen({navigation, route}: any) {
       case 'ACTIVE':
       case 'READY':
       case 'COMPLETED':
-        return {variant: 'success' as const, label: 'Ready'};
+        return {variant: 'success' as const, label: 'Sẵn sàng'};
       case 'PROCESSING':
       case 'PROCECCSING':
       case 'PENDING':
-        return {variant: 'warning' as const, label: 'Processing'};
+        return {variant: 'warning' as const, label: 'Đang xử lý'};
       case 'REJECT':
       case 'REJECTED':
-        return {variant: 'error' as const, label: 'Rejected'};
+        return {variant: 'error' as const, label: 'Bị từ chối'};
       case 'WARN':
       case 'WARNED':
-        return {variant: 'warning' as const, label: 'Warning'};
+        return {variant: 'warning' as const, label: 'Cảnh báo'};
       case 'FAILED':
       case 'ERROR':
-        return {variant: 'error' as const, label: 'Failed'};
+        return {variant: 'error' as const, label: 'Thất bại'};
       default:
-        return {variant: 'default' as const, label: status || 'Unknown'};
+        return {variant: 'default' as const, label: status || 'Không xác định'};
     }
   };
 
@@ -611,7 +611,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
           <View style={styles.chatArea}>
             {/* Quick Actions */}
             <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-              Quick Actions
+              Tác vụ nhanh
             </Text>
             <View style={styles.quickActions}>
               {QUICK_ACTIONS.map(action => (
@@ -638,12 +638,12 @@ export default function WorkspaceScreen({navigation, route}: any) {
 
             {/* Overview cards */}
             <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-              Overview
+              Tổng quan
             </Text>
             <View style={styles.overviewRow}>
               <OverviewCard
                 icon="file-document-outline"
-                label="Sources"
+                label="Tài liệu"
                 value={materials.length}
                 color="#64748B"
                 colors={colors}
@@ -657,7 +657,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
               />
               <OverviewCard
                 icon="cards-outline"
-                label="Cards"
+                label="Thẻ"
                 value={flashcards.length}
                 color="#EA580C"
                 colors={colors}
@@ -711,7 +711,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                           {color: colors.textSecondary},
                         ]}>
                         {quiz.questionCount || quiz.totalQuestions || 0}{' '}
-                        questions
+                            câu hỏi
                       </Text>
                     </View>
                     <Icon
@@ -766,7 +766,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                             styles.listItemSub,
                             {color: colors.textSecondary},
                           ]}>
-                          {fc.itemCount} cards
+                          {fc.itemCount} thẻ
                         </Text>
                       )}
                     </View>
@@ -787,7 +787,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
           <View style={styles.sourcesArea}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-                Sources ({materials.length})
+                Tài liệu ({materials.length})
               </Text>
               <TouchableOpacity
                 onPress={handleUploadMaterial}
@@ -801,7 +801,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 ) : (
                   <>
                     <Icon name="plus" size={16} color="#FFFFFF" />
-                    <Text style={styles.addSourceText}>Add</Text>
+                    <Text style={styles.addSourceText}>Thêm</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -826,14 +826,14 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 </View>
                 <Text
                   style={[styles.emptyTitle, {color: colors.textSecondary}]}>
-                  No sources yet
+                  Chưa có tài liệu
                 </Text>
                 <Text
                   style={[
                     styles.emptySubtitle,
                     {color: colors.textTertiary},
                   ]}>
-                  Upload documents to get started with AI-powered learning
+                  Tải tài liệu lên để bắt đầu học cùng AI
                 </Text>
                 <TouchableOpacity
                   onPress={handleUploadMaterial}
@@ -848,7 +848,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                   ]}>
                   <Icon name="upload" size={18} color={Colors.primary} />
                   <Text style={[styles.uploadBtnText, {color: Colors.primary}]}>
-                    Upload Sources
+                    Tải tài liệu lên
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -947,7 +947,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
             </Text>
             <Text
               style={[styles.studioSubtitle, {color: colors.textSecondary}]}>
-              Create and manage your learning materials
+              Tạo và quản lý tài nguyên học tập
             </Text>
 
             <View style={styles.studioGrid}>
@@ -1018,7 +1018,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                     styles.sectionTitle,
                     {color: colors.heading, marginTop: Spacing.xl},
                   ]}>
-                  Recent Items
+                  Mục gần đây
                 </Text>
                 {quizzes.slice(0, 3).map((quiz: any) => (
                   <TouchableOpacity
@@ -1104,7 +1104,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
             <TextInput
               value={chatMessage}
               onChangeText={setChatMessage}
-              placeholder="Ask AI about your materials..."
+              placeholder="Hỏi AI về tài liệu của bạn..."
               placeholderTextColor={colors.placeholder}
               style={[styles.chatInput, {color: colors.text}]}
               multiline
@@ -1113,7 +1113,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
             <TouchableOpacity
               onPress={() => {
                 if (chatMessage.trim()) {
-                  showToast('AI chat coming soon', 'info');
+                  showToast('Tính năng chat AI sẽ sớm ra mắt', 'info');
                   setChatMessage('');
                 }
               }}
@@ -1149,14 +1149,14 @@ export default function WorkspaceScreen({navigation, route}: any) {
         ]}>
         <ToolbarTab
           icon="chat-outline"
-          label="Chat"
+          label="Trò chuyện"
           active={activeBottomTab === 'chat'}
           onPress={() => setActiveBottomTab('chat')}
           colors={colors}
         />
         <ToolbarTab
           icon="folder-outline"
-          label="Sources"
+          label="Tài liệu"
           active={activeBottomTab === 'sources'}
           onPress={() => setActiveBottomTab('sources')}
           colors={colors}
@@ -1164,7 +1164,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
         />
         <ToolbarTab
           icon="palette-outline"
-          label="Studio"
+          label="Công cụ"
           active={activeBottomTab === 'studio'}
           onPress={() => setActiveBottomTab('studio')}
           colors={colors}
@@ -1174,7 +1174,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
       {uploading && (
         <View style={styles.blockingOverlay}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.blockingText}>Uploading material...</Text>
+          <Text style={styles.blockingText}>Đang tải tài liệu lên...</Text>
         </View>
       )}
     </SafeAreaView>

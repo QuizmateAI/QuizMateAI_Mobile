@@ -70,7 +70,7 @@ export default function UserProfileMenu({
           <View style={styles.menuItems}>
             <MenuItem
               icon="account-outline"
-              label="Manage Account"
+              label="Quản lý tài khoản"
               onPress={() => {
                 onClose();
                 onNavigate('ProfileMain');
@@ -79,7 +79,7 @@ export default function UserProfileMenu({
             />
             <MenuItem
               icon="crown-outline"
-              label="Subscription"
+              label="Gói đăng ký"
               onPress={() => {
                 onClose();
                 onNavigate('Subscription');
@@ -88,7 +88,7 @@ export default function UserProfileMenu({
             />
             <MenuItem
               icon="cog-outline"
-              label="Settings"
+              label="Cài đặt"
               onPress={() => {
                 onClose();
                 onNavigate('Settings');
@@ -106,7 +106,7 @@ export default function UserProfileMenu({
             ]}>
             <Icon name="logout" size={20} color={Colors.error} />
             <Text style={[styles.logoutText, {color: Colors.error}]}>
-              Log out
+              Đăng xuất
             </Text>
           </TouchableOpacity>
         </View>

@@ -54,7 +54,7 @@ export default function ProfileScreen({navigation}: any) {
         });
         setEditName(user?.fullName || '');
         setEditBirthday('');
-        showToast('Failed to load profile', 'error');
+        showToast('Không thể tải hồ sơ', 'error');
       });
   }, [user, showToast]);
 
@@ -91,12 +91,12 @@ export default function ProfileScreen({navigation}: any) {
         if (user) {
           await updateUser({...user, avatarUrl: newUrl});
         }
-        showToast('Avatar updated!', 'success');
+        showToast('Đã cập nhật ảnh đại diện!', 'success');
       } catch {
-        showToast('Failed to upload avatar', 'error');
+        showToast('Không thể tải ảnh đại diện lên', 'error');
       }
     } catch (err: any) {
-      showToast('Failed to pick image', 'error');
+      showToast('Không thể chọn ảnh', 'error');
     } finally {
       setUploadingAvatar(false);
     }
@@ -105,7 +105,7 @@ export default function ProfileScreen({navigation}: any) {
   /* ──── Save Profile ──── */
   const handleSaveProfile = async () => {
     if (!editName.trim()) {
-      showToast('Name cannot be empty', 'warning');
+      showToast('Tên không được để trống', 'warning');
       return;
     }
     setSaving(true);
@@ -119,7 +119,7 @@ export default function ProfileScreen({navigation}: any) {
       if (user) {
         await updateUser({...user, fullName: editName});
       }
-      showToast('Profile updated!', 'success');
+      showToast('Đã cập nhật hồ sơ!', 'success');
     } catch {
       // Mock: update locally anyway
       setProfile((prev: any) => ({
@@ -130,7 +130,7 @@ export default function ProfileScreen({navigation}: any) {
       if (user) {
         await updateUser({...user, fullName: editName});
       }
-      showToast('Profile updated!', 'success');
+      showToast('Đã cập nhật hồ sơ!', 'success');
     } finally {
       setSaving(false);
       setIsEditing(false);
@@ -146,25 +146,25 @@ export default function ProfileScreen({navigation}: any) {
   const stats = [
     {
       icon: 'book-open-variant',
-      label: 'Topics',
+      label: 'Chủ đề',
       value: profile?.topicCount || 0,
       color: Colors.primary,
     },
     {
       icon: 'clock-outline',
-      label: 'Hours',
+      label: 'Giờ học',
       value: profile?.totalHours || 0,
       color: '#059669',
     },
     {
       icon: 'fire',
-      label: 'Streak',
+      label: 'Chuỗi ngày',
       value: profile?.streak || 0,
       color: '#EA580C',
     },
     {
       icon: 'star-outline',
-      label: 'Avg Score',
+      label: 'Điểm TB',
       value: profile?.avgScore ? `${profile.avgScore}%` : '0%',
       color: '#7C3AED',
     },
@@ -185,7 +185,7 @@ export default function ProfileScreen({navigation}: any) {
           {backgroundColor: colors.surface, borderBottomColor: colors.border},
         ]}>
         <Text style={[styles.headerTitle, {color: colors.heading}]}>
-          Profile
+          Hồ sơ
         </Text>
         <View style={styles.headerRight}>
           {!isEditing && (
@@ -322,7 +322,7 @@ export default function ProfileScreen({navigation}: any) {
               <View style={styles.levelBadge}>
                 <Icon name="lightning-bolt" size={14} color="#F59E0B" />
                 <Text style={[styles.xpLabel, {color: colors.textSecondary}]}>
-                  Level {profile?.level || 1}
+                  Cấp {profile?.level || 1}
                 </Text>
               </View>
               <Text style={[styles.xpValue, {color: colors.textSecondary}]}>
@@ -349,7 +349,7 @@ export default function ProfileScreen({navigation}: any) {
 
         {/* Stats Grid */}
         <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-          Statistics
+          Thống kê
         </Text>
         <View style={styles.statsGrid}>
           {stats.map(stat => (
@@ -381,7 +381,7 @@ export default function ProfileScreen({navigation}: any) {
 
         {/* Badges */}
         <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-          Badges
+          Huy hiệu
         </Text>
         <View style={styles.badgesRow}>
           {(profile?.badges || []).length > 0 ? (
@@ -408,7 +408,7 @@ export default function ProfileScreen({navigation}: any) {
                 color={colors.textTertiary}
               />
               <Text style={[styles.emptyText, {color: colors.textSecondary}]}>
-                No badges earned yet
+                Chưa có huy hiệu nào
               </Text>
             </View>
           )}
@@ -416,20 +416,20 @@ export default function ProfileScreen({navigation}: any) {
 
         {/* Quick Links */}
         <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-          Account
+          Tài khoản
         </Text>
         {[
           {
             icon: 'crown-outline',
-            label: 'Subscription',
-            desc: 'Manage your plan',
+            label: 'Gói đăng ký',
+            desc: 'Quản lý gói của bạn',
             screen: 'Subscription',
             color: '#F59E0B',
           },
           {
             icon: 'cog-outline',
-            label: 'Settings',
-            desc: 'App preferences',
+            label: 'Cài đặt',
+            desc: 'Tùy chọn ứng dụng',
             screen: 'Settings',
             color: colors.icon,
           },

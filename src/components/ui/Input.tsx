@@ -1,4 +1,4 @@
-import React, {useState, useRef} from 'react';
+import React, {useEffect, useState, useRef} from 'react';
 import {
   View,
   TextInput,
@@ -12,6 +12,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {Colors} from '../../theme/colors';
 import {useTheme} from '../../context/ThemeContext';
 import {BorderRadius} from '../../theme/spacing';
+import {localizeUiText} from '../../utils/uiText';
 
 interface FloatingInputProps extends Omit<TextInputProps, 'style'> {
   label: string;
@@ -34,6 +35,7 @@ export default function FloatingInput({
   ...rest
 }: FloatingInputProps) {
   const {isDark, colors} = useTheme();
+  const localizedLabel = localizeUiText(label);
   const [isFocused, setIsFocused] = useState(false);
   const animatedValue = useRef(
     new Animated.Value(value ? 1 : 0),
@@ -58,6 +60,14 @@ export default function FloatingInput({
       }).start();
     }
   };
+
+  useEffect(() => {
+    Animated.timing(animatedValue, {
+      toValue: value ? 1 : 0,
+      duration: 150,
+      useNativeDriver: false,
+    }).start();
+  }, [animatedValue, value]);
 
   const labelTop = animatedValue.interpolate({
     inputRange: [0, 1],
@@ -95,7 +105,7 @@ export default function FloatingInput({
         ]}>
         <Animated.Text
           style={[styles.label, {top: labelTop, fontSize: labelSize, color: labelColor}]}>
-          {label}
+          {localizedLabel}
         </Animated.Text>
         <TextInput
           value={value}
