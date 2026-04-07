@@ -9,6 +9,7 @@ import WorkspaceProfileWizardScreen from '../screens/home/WorkspaceProfileWizard
 import CreateAIFlashcardScreen from '../screens/home/CreateAIFlashcardScreen';
 import RoadmapJourneyScreen from '../screens/home/RoadmapJourneyScreen';
 import MaterialDetailScreen from '../screens/home/MaterialDetailScreen';
+import FlashcardStudyScreen from '../screens/home/FlashcardStudyScreen';
 
 export type HomeStackParamList = {
   HomeMain: undefined;
@@ -17,11 +18,14 @@ export type HomeStackParamList = {
   GroupManagement: {groupId: number; title?: string};
   CreateAIQuiz: {workspaceId: number; materials?: any[]};
   CreateAIFlashcard: {workspaceId: number; materials?: any[]};
+  FlashcardStudy: {flashcardId: number; title?: string; contextType?: 'WORKSPACE' | 'GROUP'};
   RoadmapJourney: {
     contextType: 'WORKSPACE' | 'GROUP';
     contextId: number;
     title?: string;
     materials?: any[];
+    roadmapId?: number;
+    phaseId?: number;
   };
   MaterialDetail: {material: any};
   WorkspaceProfileWizard: {workspaceId: number; title?: string};
@@ -41,6 +45,7 @@ export default function HomeStack() {
         name="CreateAIFlashcard"
         component={CreateAIFlashcardScreen}
       />
+      <Stack.Screen name="FlashcardStudy" component={FlashcardStudyScreen} />
       <Stack.Screen name="RoadmapJourney" component={RoadmapJourneyScreen} />
       <Stack.Screen
         name="WorkspaceProfileWizard"

@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,15 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
+import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Button from '../../components/ui/Button';
 import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
-import {isMatchingQuestion} from '../../utils/voicePractice';
+import AIAPI from '../../api/AIAPI';
+import RoadmapPhaseAPI from '../../api/RoadmapPhaseAPI';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -46,9 +48,15 @@ const getMatchingItemsFromResult = (question: any) => {
 export default function QuizResultScreen({navigation, route}: any) {
   const {attemptId, backContext} = route.params;
   const {isDark, colors} = useTheme();
+  const {showToast} = useToast();
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showReview, setShowReview] = useState(false);
+  const [loadingCurrentPhase, setLoadingCurrentPhase] = useState(false);
+  const [currentPhaseProgress, setCurrentPhaseProgress] = useState<any>(null);
+  const [submittingRoadmapDecision, setSubmittingRoadmapDecision] = useState(false);
+  const [triggeringKnowledge, setTriggeringKnowledge] = useState(false);
+  const [knowledgeGenerationTriggered, setKnowledgeGenerationTriggered] = useState(false);
 
   useEffect(() => {
     QuizAPI.getResult(attemptId)
@@ -91,6 +99,67 @@ export default function QuizResultScreen({navigation, route}: any) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [attemptId]);
+
+  const roadmapContext = useMemo(() => {
+    if (backContext?.type !== 'roadmap') {
+      return {
+        isRoadmap: false,
+        contextType: 'WORKSPACE',
+        contextId: 0,
+        roadmapId: null,
+        phaseId: null,
+        quizIntent: '',
+      };
+    }
+
+    const normalizedRoadmapId = Number(backContext?.roadmapId ?? result?.roadmapId ?? 0);
+    const normalizedPhaseId = Number(backContext?.phaseId ?? result?.phaseId ?? 0);
+    return {
+      isRoadmap: true,
+      contextType: backContext?.contextType,
+      contextId: Number(backContext?.contextId ?? 0),
+      roadmapId:
+        Number.isInteger(normalizedRoadmapId) && normalizedRoadmapId > 0
+          ? normalizedRoadmapId
+          : null,
+      phaseId:
+        Number.isInteger(normalizedPhaseId) && normalizedPhaseId > 0
+          ? normalizedPhaseId
+          : null,
+      quizIntent: String(backContext?.quizIntent || result?.quizIntent || '').toUpperCase(),
+    };
+  }, [backContext, result?.phaseId, result?.quizIntent, result?.roadmapId]);
+
+  const isRoadmapPreLearningQuiz =
+    roadmapContext.isRoadmap && roadmapContext.quizIntent === 'PRE_LEARNING';
+
+  const fetchCurrentRoadmapPhase = useCallback(async () => {
+    if (!roadmapContext.roadmapId || !isRoadmapPreLearningQuiz) {
+      setCurrentPhaseProgress(null);
+      return null;
+    }
+
+    setLoadingCurrentPhase(true);
+    try {
+      const response = await RoadmapPhaseAPI.getCurrentPhaseProgress(roadmapContext.roadmapId);
+      const payload = response?.data || null;
+      setCurrentPhaseProgress(payload);
+      return payload;
+    } catch {
+      setCurrentPhaseProgress(null);
+      return null;
+    } finally {
+      setLoadingCurrentPhase(false);
+    }
+  }, [isRoadmapPreLearningQuiz, roadmapContext.roadmapId]);
+
+  useEffect(() => {
+    if (!isRoadmapPreLearningQuiz) {
+      setCurrentPhaseProgress(null);
+      return;
+    }
+    fetchCurrentRoadmapPhase();
+  }, [fetchCurrentRoadmapPhase, isRoadmapPreLearningQuiz]);
 
   if (loading) {
     return <LoadingSpinner />;
@@ -157,6 +226,129 @@ export default function QuizResultScreen({navigation, route}: any) {
       ? 'Về lộ trình'
       : 'Về danh sách quiz';
 
+  const navigateBackToRoadmap = useCallback((phaseIdOverride?: number | null) => {
+    if (!roadmapContext.isRoadmap || roadmapContext.contextId <= 0) {
+      return false;
+    }
+
+    const fallbackPhaseId = Number(
+      phaseIdOverride ?? currentPhaseProgress?.phaseId ?? roadmapContext.phaseId ?? 0,
+    );
+
+    navigation.navigate('Home', {
+      screen: 'RoadmapJourney',
+      params: {
+        contextType: roadmapContext.contextType,
+        contextId: roadmapContext.contextId,
+        title: backContext?.title,
+        roadmapId: roadmapContext.roadmapId ?? undefined,
+        phaseId:
+          Number.isInteger(fallbackPhaseId) && fallbackPhaseId > 0
+            ? fallbackPhaseId
+            : undefined,
+      },
+    });
+
+    return true;
+  }, [
+    backContext?.title,
+    currentPhaseProgress?.phaseId,
+    navigation,
+    roadmapContext.contextId,
+    roadmapContext.contextType,
+    roadmapContext.isRoadmap,
+    roadmapContext.phaseId,
+    roadmapContext.roadmapId,
+  ]);
+
+  const handleGenerateKnowledgeAfterPreLearning = useCallback(async () => {
+    const roadmapId = Number(roadmapContext.roadmapId || 0);
+    const phaseId = Number(currentPhaseProgress?.phaseId ?? roadmapContext.phaseId ?? 0);
+    if (!Number.isInteger(roadmapId) || roadmapId <= 0) {
+      showToast('Không xác định được roadmap để tạo nội dung', 'error');
+      return;
+    }
+    if (!Number.isInteger(phaseId) || phaseId <= 0) {
+      showToast('Không xác định được phase để tạo nội dung', 'error');
+      return;
+    }
+
+    setTriggeringKnowledge(true);
+    try {
+      await AIAPI.generateRoadmapPhaseContent({
+        roadmapId,
+        phaseId,
+        skipPreLearning: false,
+      });
+      setKnowledgeGenerationTriggered(true);
+      showToast('Đã gửi yêu cầu tạo nội dung giai đoạn', 'success');
+      navigateBackToRoadmap(phaseId);
+    } catch (error: any) {
+      showToast(
+        error?.response?.data?.message || error?.message || 'Không thể tạo nội dung giai đoạn',
+        'error',
+      );
+    } finally {
+      setTriggeringKnowledge(false);
+    }
+  }, [
+    currentPhaseProgress?.phaseId,
+    navigateBackToRoadmap,
+    roadmapContext.phaseId,
+    roadmapContext.roadmapId,
+    showToast,
+  ]);
+
+  const handleSkipDecision = useCallback(
+    async (skipped: boolean) => {
+      const phaseId = Number(currentPhaseProgress?.phaseId ?? roadmapContext.phaseId ?? 0);
+      if (!Number.isInteger(phaseId) || phaseId <= 0) {
+        showToast('Không xác định được phase để cập nhật quyết định', 'error');
+        return;
+      }
+
+      setSubmittingRoadmapDecision(true);
+      try {
+        await RoadmapPhaseAPI.submitSkipDecision(phaseId, skipped);
+        if (skipped) {
+          showToast('Đã bỏ qua phase hiện tại', 'success');
+          const latest = await fetchCurrentRoadmapPhase();
+          const nextPhaseId = Number(latest?.phaseId || 0);
+          navigateBackToRoadmap(nextPhaseId > 0 ? nextPhaseId : phaseId);
+          return;
+        }
+
+        await handleGenerateKnowledgeAfterPreLearning();
+      } catch (error: any) {
+        showToast(
+          error?.response?.data?.message || error?.message || 'Không thể cập nhật quyết định',
+          'error',
+        );
+      } finally {
+        setSubmittingRoadmapDecision(false);
+      }
+    },
+    [
+      currentPhaseProgress?.phaseId,
+      fetchCurrentRoadmapPhase,
+      handleGenerateKnowledgeAfterPreLearning,
+      navigateBackToRoadmap,
+      roadmapContext.phaseId,
+      showToast,
+    ],
+  );
+
+  const canShowSkipDecision =
+    isRoadmapPreLearningQuiz &&
+    currentPhaseProgress?.skipable === true &&
+    !knowledgeGenerationTriggered;
+
+  const canShowGenerateKnowledgeFallback =
+    isRoadmapPreLearningQuiz &&
+    !loadingCurrentPhase &&
+    !canShowSkipDecision &&
+    !knowledgeGenerationTriggered;
+
   const handleBack = () => {
     if (
       backContext?.type === 'workspace' &&
@@ -193,14 +385,7 @@ export default function QuizResultScreen({navigation, route}: any) {
       Number.isInteger(backContext.contextId) &&
       backContext.contextId > 0
     ) {
-      navigation.navigate('Home', {
-        screen: 'RoadmapJourney',
-        params: {
-          contextType: backContext.contextType,
-          contextId: backContext.contextId,
-          title: backContext.title,
-        },
-      });
+      navigateBackToRoadmap();
       return;
     }
 
@@ -309,6 +494,49 @@ export default function QuizResultScreen({navigation, route}: any) {
           />
         </View>
 
+        {isRoadmapPreLearningQuiz && (
+          <View
+            style={[
+              styles.decisionCard,
+              {
+                borderColor: colors.border,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF',
+              },
+            ]}>
+            <Text style={[styles.decisionTitle, {color: colors.heading}]}>Lựa chọn cho giai đoạn hiện tại</Text>
+            <Text style={[styles.decisionText, {color: colors.textSecondary}]}>Sau quiz trước học, bạn có thể bỏ qua phase hoặc tiếp tục tạo nội dung để học sâu hơn.</Text>
+
+            {loadingCurrentPhase ? (
+              <Text style={[styles.decisionHint, {color: colors.textSecondary}]}>Đang tải trạng thái phase hiện tại...</Text>
+            ) : canShowSkipDecision ? (
+              <View style={styles.decisionActions}>
+                <Button
+                  title="Bỏ qua phase"
+                  variant="outline"
+                  onPress={() => handleSkipDecision(true)}
+                  loading={submittingRoadmapDecision}
+                  icon="skip-next"
+                />
+                <Button
+                  title="Tiếp tục học phase này"
+                  onPress={() => handleSkipDecision(false)}
+                  loading={submittingRoadmapDecision || triggeringKnowledge}
+                  icon="book-open-variant"
+                />
+              </View>
+            ) : canShowGenerateKnowledgeFallback ? (
+              <View style={styles.decisionActions}>
+                <Button
+                  title="Tạo nội dung cho phase"
+                  onPress={handleGenerateKnowledgeAfterPreLearning}
+                  loading={triggeringKnowledge}
+                  icon="lightning-bolt-outline"
+                />
+              </View>
+            ) : null}
+          </View>
+        )}
+
         {/* Review Questions */}
         {showReview && result?.questions && (
           <View style={styles.reviewSection}>
@@ -388,6 +616,28 @@ const styles = StyleSheet.create({
   actions: {
     gap: Spacing.sm,
     marginBottom: Spacing.xl,
+  },
+
+  decisionCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  decisionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  decisionText: {
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  decisionHint: {
+    fontSize: 12,
+  },
+  decisionActions: {
+    gap: Spacing.sm,
   },
 
   reviewSection: {marginTop: Spacing.sm},

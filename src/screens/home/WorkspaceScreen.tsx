@@ -124,6 +124,23 @@ export default function WorkspaceScreen({navigation, route}: any) {
     [navigation, showToast, title, workspaceId],
   );
 
+  const openFlashcardDetail = useCallback(
+    (flashcard: any) => {
+      const flashcardId = Number(flashcard?.id || flashcard?.flashcardSetId || 0);
+      if (!Number.isInteger(flashcardId) || flashcardId <= 0) {
+        showToast('Thiếu Flashcard ID', 'error');
+        return;
+      }
+
+      navigation.navigate('FlashcardStudy', {
+        flashcardId,
+        title: flashcard?.name || flashcard?.title,
+        contextType: 'WORKSPACE',
+      });
+    },
+    [navigation, showToast],
+  );
+
   const fetchData = useCallback(async () => {
     const requestId = ++latestFetchRequestIdRef.current;
 
@@ -740,6 +757,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 {flashcards.map((fc: any) => (
                   <TouchableOpacity
                     key={fc.id || fc.flashcardSetId}
+                    onPress={() => openFlashcardDetail(fc)}
                     style={[
                       styles.listItem,
                       {
@@ -1053,6 +1071,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 {flashcards.slice(0, 3).map((fc: any) => (
                   <TouchableOpacity
                     key={`f-${fc.id || fc.flashcardSetId}`}
+                    onPress={() => openFlashcardDetail(fc)}
                     style={[
                       styles.recentItem,
                       {

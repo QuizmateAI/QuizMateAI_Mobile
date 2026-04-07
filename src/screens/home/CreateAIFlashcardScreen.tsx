@@ -17,6 +17,19 @@ import FloatingInput from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import FlashcardAPI from '../../api/FlashcardAPI';
 
+const normalizeMaterialStatus = (material: any) =>
+  String(material?.final_status || material?.status || '').toUpperCase();
+
+const isBlockedMaterial = (material: any) => {
+  const status = normalizeMaterialStatus(material);
+  return (
+    status === 'REJECT' ||
+    status === 'REJECTED' ||
+    status === 'WARN' ||
+    status === 'WARNED'
+  );
+};
+
 export default function CreateAIFlashcardScreen({navigation, route}: any) {
   const {workspaceId, materials = []} = route.params || {};
   const {isDark, colors} = useTheme();
@@ -30,6 +43,15 @@ export default function CreateAIFlashcardScreen({navigation, route}: any) {
   const [prompt, setPrompt] = useState('');
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const normalizedMaterials = useMemo(() => {
+    return (Array.isArray(materials) ? materials : []).map((material: any) => ({
+      ...material,
+      normalizedId: Number(material.materialId || material.id),
+      normalizedStatus: normalizeMaterialStatus(material),
+      disabled: isBlockedMaterial(material),
+    }));
+  }, [materials]);
 
   const percentSum = useMemo(() => {
     return (
@@ -89,32 +111,64 @@ export default function CreateAIFlashcardScreen({navigation, route}: any) {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <Text style={[styles.sectionTitle, {color: colors.heading}]}>Tài liệu</Text>
         <View style={styles.listWrap}>
-          {materials.map((material: any) => {
-            const id = material.materialId || material.id;
+          {normalizedMaterials.map((material: any) => {
+            const id = material.normalizedId;
             const selected = selectedMaterialId === id;
+            const disabled = material.disabled;
             return (
               <TouchableOpacity
                 key={id}
-                onPress={() => setSelectedMaterialId(id)}
+                onPress={() => {
+                  if (!disabled) {
+                    setSelectedMaterialId(id);
+                  }
+                }}
+                disabled={disabled}
                 style={[
                   styles.materialItem,
                   {
-                    borderColor: selected ? Colors.primary : colors.border,
+                    borderColor: disabled
+                      ? colors.border
+                      : selected
+                      ? Colors.primary
+                      : colors.border,
                     backgroundColor: selected
                       ? isDark
                         ? '#1E3A8A30'
                         : '#EFF6FF'
+                      : disabled
+                      ? isDark
+                        ? '#33415555'
+                        : '#F1F5F9'
                       : colors.surface,
+                    opacity: disabled ? 0.7 : 1,
                   },
                 ]}>
                 <Icon
-                  name={selected ? 'radiobox-marked' : 'radiobox-blank'}
+                  name={
+                    disabled
+                      ? 'close-circle-outline'
+                      : selected
+                      ? 'radiobox-marked'
+                      : 'radiobox-blank'
+                  }
                   size={20}
-                  color={selected ? Colors.primary : colors.textTertiary}
+                  color={disabled ? Colors.error : selected ? Colors.primary : colors.textTertiary}
                 />
-                <Text style={[styles.materialName, {color: colors.text}]} numberOfLines={1}>
-                  {material.title || material.fileName || material.name}
-                </Text>
+                <View style={{flex: 1}}>
+                  <Text style={[styles.materialName, {color: colors.text}]} numberOfLines={1}>
+                    {material.title || material.fileName || material.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.materialStatusText,
+                      {color: disabled ? Colors.error : colors.textSecondary},
+                    ]}>
+                    {disabled
+                      ? 'Tài liệu bị cảnh báo/từ chối - không thể chọn'
+                      : material.normalizedStatus || 'ACTIVE'}
+                  </Text>
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -184,6 +238,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   materialName: {fontSize: 13, flex: 1},
+  materialStatusText: {fontSize: 11, marginTop: 2},
   spaceMd: {height: Spacing.md},
   sumText: {
     marginTop: Spacing.sm,

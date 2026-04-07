@@ -110,6 +110,23 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     [groupId, navigation, showToast, title],
   );
 
+  const openFlashcardDetail = useCallback(
+    (flashcard: any) => {
+      const flashcardId = Number(flashcard?.id || flashcard?.flashcardSetId || 0);
+      if (!Number.isInteger(flashcardId) || flashcardId <= 0) {
+        showToast('Thiếu Flashcard ID', 'error');
+        return;
+      }
+
+      navigation.navigate('FlashcardStudy', {
+        flashcardId,
+        title: flashcard?.name || flashcard?.title,
+        contextType: 'GROUP',
+      });
+    },
+    [navigation, showToast],
+  );
+
   const fetchData = useCallback(async () => {
     const requestId = ++latestFetchRequestIdRef.current;
 
@@ -406,6 +423,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 {flashcards.map((fc: any) => (
                   <TouchableOpacity
                     key={fc.id || fc.flashcardSetId}
+                    onPress={() => openFlashcardDetail(fc)}
                     style={[
                       styles.listItem,
                       {backgroundColor: colors.surface, borderColor: colors.border},
@@ -565,6 +583,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 {flashcards.slice(0, 3).map((fc: any) => (
                   <TouchableOpacity
                     key={`f-${fc.id || fc.flashcardSetId}`}
+                    onPress={() => openFlashcardDetail(fc)}
                     style={[
                       styles.recentItem,
                       {backgroundColor: colors.surface, borderColor: colors.border},

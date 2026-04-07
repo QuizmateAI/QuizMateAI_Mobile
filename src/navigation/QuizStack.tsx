@@ -16,6 +16,9 @@ export type QuizBackContext =
       contextType: 'WORKSPACE' | 'GROUP';
       contextId: number;
       title?: string;
+      roadmapId?: number;
+      phaseId?: number;
+      quizIntent?: string;
     };
 
 export type QuizStackParamList = {
