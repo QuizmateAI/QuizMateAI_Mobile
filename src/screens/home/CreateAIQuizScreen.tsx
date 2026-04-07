@@ -292,9 +292,14 @@ const normalizeDifficultyToTarget = (
 const normalizeMaterialStatus = (material: any) =>
   String(material?.final_status || material?.status || '').toUpperCase();
 
-const isRejectedMaterial = (material: any) => {
+const isBlockedMaterial = (material: any) => {
   const status = normalizeMaterialStatus(material);
-  return status === 'REJECT' || status === 'REJECTED';
+  return (
+    status === 'REJECT' ||
+    status === 'REJECTED' ||
+    status === 'WARN' ||
+    status === 'WARNED'
+  );
 };
 
 const getDominantDifficulty = (ratios: {easy: number; medium: number; hard: number}) => {
@@ -367,7 +372,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
         ...material,
         normalizedId: Number.isFinite(id) ? id : null,
         normalizedStatus: normalizeMaterialStatus(material),
-        disabled: isRejectedMaterial(material),
+        disabled: isBlockedMaterial(material),
       };
     });
   }, [materials]);
@@ -1254,7 +1259,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
                         styles.materialStatusText,
                         {color: disabled ? Colors.error : colors.textSecondary},
                       ]}>
-                      {disabled ? 'Bị từ chối - không thể chọn' : material.normalizedStatus || 'ACTIVE'}
+                      {disabled ? 'Tài liệu bị cảnh báo/từ chối - không thể chọn' : material.normalizedStatus || 'ACTIVE'}
                     </Text>
                   </View>
                 </TouchableOpacity>
