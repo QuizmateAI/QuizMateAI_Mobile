@@ -17,6 +17,12 @@ interface WorkspaceCardProps {
   onDotsPress?: () => void;
 }
 
+function isValidDescription(desc?: string) {
+  if (!desc) return false;
+  const lower = desc.trim().toLowerCase();
+  return lower !== 'null' && lower !== 'description null' && lower !== 'undefined' && lower.length > 0;
+}
+
 const ACCENT_COLORS = [
   {light: '#059669', dark: '#34D399'},
   {light: '#EA580C', dark: '#FB923C'},
@@ -52,7 +58,7 @@ export default function WorkspaceCard({
           shadowColor: isDark ? colors.shadow : '#0F172A',
         },
       ]}>
-      <View style={[styles.accentBar, {backgroundColor: accentColor}]} />
+      {/* <View style={[styles.accentBar, {backgroundColor: accentColor}]} /> */}
       <View style={styles.content}>
         <View style={styles.header}>
           <View
@@ -76,13 +82,11 @@ export default function WorkspaceCard({
           {name}
         </Text>
 
-        {description ? (
-          <Text
-            style={[styles.description, {color: colors.textSecondary}]}
-            numberOfLines={2}>
-            {description}
-          </Text>
-        ) : null}
+        <Text
+          style={[styles.description, {color: isValidDescription(description) ? colors.textSecondary : colors.textTertiary}]}
+          numberOfLines={2}>
+          {isValidDescription(description) ? description : 'Chưa có mô tả'}
+        </Text>
 
         <View style={styles.footer}>
           {topicName ? (
@@ -97,9 +101,12 @@ export default function WorkspaceCard({
             </View>
           ) : null}
           {createdAt ? (
-            <Text style={[styles.date, {color: colors.textTertiary}]}>
-              {new Date(createdAt).toLocaleDateString()}
-            </Text>
+            <View style={styles.dateRow}>
+              <Icon name="clock-outline" size={11} color={colors.textTertiary} />
+              <Text style={[styles.date, {color: colors.textTertiary}]}>
+                {new Date(createdAt).toLocaleDateString()}
+              </Text>
+            </View>
           ) : null}
         </View>
       </View>
@@ -161,6 +168,11 @@ const styles = StyleSheet.create({
   topicText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   date: {
     fontSize: 11,

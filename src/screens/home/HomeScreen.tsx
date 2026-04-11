@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -14,23 +15,48 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Colors } from '../../theme/colors';
 import { BorderRadius, Spacing } from '../../theme/spacing';
-import TabBar from '../../components/ui/TabBar';
 import Avatar from '../../components/ui/Avatar';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import WorkspaceCard from '../../components/features/WorkspaceCard';
-import GroupCard from '../../components/features/GroupCard';
 import UserProfileMenu from '../../components/features/UserProfileMenu';
 import Dialog from '../../components/ui/Dialog';
 import ActionSheet from '../../components/ui/ActionSheet';
 import FloatingInput from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import WorkspaceAPI from '../../api/WorkspaceAPI';
-import GroupAPI from '../../api/GroupAPI';
+import AppLogo from '../../components/AppLogo';
 
-const TABS = [
-  { key: 'workspace', label: 'Workspace' },
-  { key: 'group', label: 'Nhóm' },
-];
+const PAGE_SIZE = 10;
+
+const sortWorkspacesByNewest = (items: any[]) =>
+  [...items].sort((left, right) => {
+    const leftCreatedAt = new Date(left?.createdAt || 0).getTime();
+    const rightCreatedAt = new Date(right?.createdAt || 0).getTime();
+
+    if (rightCreatedAt !== leftCreatedAt) {
+      return rightCreatedAt - leftCreatedAt;
+    }
+
+    return Number(right?.id || right?.workspaceId || 0) -
+      Number(left?.id || left?.workspaceId || 0);
+  });
+
+const mergeWorkspacePages = (currentItems: any[], incomingItems: any[], replace = false) => {
+  const mergedMap = new Map<string, any>();
+  const baseItems = replace ? [] : currentItems;
+
+  [...baseItems, ...incomingItems].forEach(item => {
+    mergedMap.set(String(item?.id || item?.workspaceId), item);
+  });
+
+  return sortWorkspacesByNewest(Array.from(mergedMap.values()));
+};
+
+const getApiErrorMessage = (error: any, fallback: string) =>
+  error?.response?.data?.message ||
+  error?.response?.data?.data?.message ||
+  error?.message ||
+  fallback;
 
 const WORKSPACE_ACTIONS = [
   { key: 'edit', label: 'Sửa workspace', icon: 'pencil-outline' },
@@ -46,11 +72,13 @@ export default function HomeScreen({ navigation }: any) {
   const { isDark, colors, toggleTheme } = useTheme();
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState('workspace');
   const [workspaces, setWorkspaces] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalWorkspaces, setTotalWorkspaces] = useState(0);
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
 
   // Create workspace/group dialog
@@ -72,31 +100,60 @@ export default function HomeScreen({ navigation }: any) {
   const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (page = 0, replace = false) => {
+    if (page === 0) {
+      if (replace) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+    } else {
+      setLoadingMore(true);
+    }
+
     try {
-      const [wsRes, grRes] = await Promise.all([
-        WorkspaceAPI.getByUser(),
-        GroupAPI.getJoined(),
-      ]);
-      setWorkspaces(wsRes.data || []);
-      setGroups(grRes.data || []);
-    } catch {
-      setWorkspaces([]);
-      setGroups([]);
-      showToast('Không thể tải danh sách workspace/nhóm', 'error');
+      const wsRes = await WorkspaceAPI.getByUser(page, PAGE_SIZE);
+      const nextItems = wsRes.data || [];
+      const nextPagination = wsRes.pagination;
+
+      setWorkspaces(currentItems =>
+        mergeWorkspacePages(currentItems, nextItems, replace || page === 0),
+      );
+      setCurrentPage(nextPagination?.page ?? page);
+      setHasMore(!(nextPagination?.last ?? nextItems.length < PAGE_SIZE));
+      setTotalWorkspaces(nextPagination?.totalElements ?? nextItems.length);
+    } catch (error: any) {
+      if (page === 0) {
+        setWorkspaces([]);
+        setHasMore(false);
+        setCurrentPage(0);
+        setTotalWorkspaces(0);
+      }
+      showToast(
+        getApiErrorMessage(error, 'Không thể tải danh sách workspace'),
+        'error',
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
     }
   }, [showToast]);
 
   useEffect(() => {
-    fetchData();
+    fetchData(0, false);
   }, [fetchData]);
 
   const onRefresh = () => {
-    setRefreshing(true);
-    fetchData();
+    fetchData(0, true);
+  };
+
+  const handleLoadMore = () => {
+    if (loading || refreshing || loadingMore || !hasMore) {
+      return;
+    }
+
+    fetchData(currentPage + 1, false);
   };
 
   // ---------- Create ----------
@@ -104,20 +161,13 @@ export default function HomeScreen({ navigation }: any) {
     if (!newName.trim()) {return;}
     setCreating(true);
     try {
-      if (activeTab === 'workspace') {
-        await WorkspaceAPI.create({ name: newName });
-      } else {
-        await GroupAPI.create({ name: newName });
-      }
-      showToast(
-        `${activeTab === 'workspace' ? 'Workspace' : 'Nhóm'} đã được tạo!`,
-        'success',
-      );
+      await WorkspaceAPI.create({ name: newName });
+      showToast('Workspace đã được tạo!', 'success');
       setCreateDialogVisible(false);
       setNewName('');
-      fetchData();
-    } catch {
-      showToast('Không thể tạo mới', 'error');
+      fetchData(0, true);
+    } catch (error: any) {
+      showToast(getApiErrorMessage(error, 'Không thể tạo mới'), 'error');
     } finally {
       setCreating(false);
     }
@@ -133,7 +183,13 @@ export default function HomeScreen({ navigation }: any) {
     if (!selectedWorkspace) {return;}
     if (key === 'edit') {
       // Pre-fill dialog with workspace data
-      setEditTitle(selectedWorkspace.title || selectedWorkspace.name || '');
+      setEditTitle(
+        selectedWorkspace.rawTitle ||
+          selectedWorkspace.rawName ||
+          selectedWorkspace.title ||
+          selectedWorkspace.name ||
+          '',
+      );
       setEditDescription(selectedWorkspace.description || '');
       setEditDialogVisible(true);
     } else if (key === 'delete') {
@@ -154,9 +210,12 @@ export default function HomeScreen({ navigation }: any) {
       });
       showToast('Đã cập nhật workspace!', 'success');
       setEditDialogVisible(false);
-      fetchData();
-    } catch {
-      showToast('Không thể cập nhật workspace', 'error');
+      fetchData(0, true);
+    } catch (error: any) {
+      showToast(
+        getApiErrorMessage(error, 'Không thể cập nhật workspace'),
+        'error',
+      );
     } finally {
       setSaving(false);
     }
@@ -173,9 +232,9 @@ export default function HomeScreen({ navigation }: any) {
       showToast('Đã xóa workspace!', 'success');
       setDeleteDialogVisible(false);
       setSelectedWorkspace(null);
-      fetchData();
-    } catch {
-      showToast('Không thể xóa workspace', 'error');
+      fetchData(0, true);
+    } catch (error: any) {
+      showToast(getApiErrorMessage(error, 'Không thể xóa workspace'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -189,20 +248,40 @@ export default function HomeScreen({ navigation }: any) {
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Icon
-        name={
-          activeTab === 'workspace' ? 'book-open-variant' : 'account-group'
-        }
+        name="book-open-variant"
         size={56}
         color={colors.textTertiary}
       />
       <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
-        Chưa có {activeTab === 'workspace' ? 'workspace' : 'nhóm'} nào
+        Chưa có workspace nào
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
         Nhấn nút + để tạo mới
       </Text>
     </View>
   );
+
+  const renderFooter = () => {
+    if (loadingMore) {
+      return (
+        <View style={styles.footerLoading}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+        </View>
+      );
+    }
+
+    if (workspaces.length > 0 && !hasMore) {
+      return (
+        <View style={styles.footerSummary}>
+          <Text style={[styles.footerSummaryText, { color: colors.textTertiary }]}>
+            Đã hiển thị {workspaces.length}/{totalWorkspaces || workspaces.length} workspace
+          </Text>
+        </View>
+      );
+    }
+
+    return null;
+  };
 
   if (loading) {
     return <LoadingSpinner />;
@@ -224,11 +303,9 @@ export default function HomeScreen({ navigation }: any) {
           },
         ]}>
         <View style={styles.headerLeft}>
-          <View style={[styles.logo, { backgroundColor: Colors.primary }]}>
-            <Text style={styles.logoText}>Q</Text>
-          </View>
+          <AppLogo size={40} />
           <Text style={[styles.headerTitle, { color: colors.heading }]}>
-            QuizMate
+            Cá nhân
           </Text>
         </View>
 
@@ -255,76 +332,42 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       </View>
 
-      {/* Tab Bar */}
-      <View style={styles.tabContainer}>
-        <TabBar tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-      </View>
-
       {/* Content */}
-      {activeTab === 'workspace' ? (
-        <FlatList
-          data={workspaces}
-          keyExtractor={item => String(item.id || item.workspaceId)}
-          renderItem={({ item, index }) => (
-            <WorkspaceCard
-              id={item.id || item.workspaceId}
-              name={item.name || item.title}
-              description={item.description}
-              topicName={item.topicName}
-              createdAt={item.createdAt}
-              colorIndex={index}
-              onPress={() =>
-                navigation.navigate('Workspace', {
-                  workspaceId: item.id || item.workspaceId,
-                  title: item.name || item.title,
-                })
-              }
-              onLongPress={() => handleOpenActionSheet(item)}
-              onDotsPress={() => handleOpenActionSheet(item)}
-            />
-          )}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={renderEmpty}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={Colors.primary}
-            />
-          }
-        />
-      ) : (
-        <FlatList
-          data={groups}
-          keyExtractor={item => String(item.id || item.groupId)}
-          renderItem={({ item }) => (
-            <GroupCard
-              id={item.id || item.groupId}
-              name={item.name || item.groupName}
-              description={item.description}
-              memberCount={item.memberCount}
-              role={item.role || item.memberRole}
-              onPress={() =>
-                navigation.navigate('GroupWorkspace', {
-                  groupId: item.id || item.groupId,
-                  title: item.name || item.groupName,
-                })
-              }
-            />
-          )}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={renderEmpty}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={Colors.primary}
-            />
-          }
-        />
-      )}
+      <FlatList
+        data={workspaces}
+        keyExtractor={item => String(item.id || item.workspaceId)}
+        renderItem={({ item, index }) => (
+          <WorkspaceCard
+            id={item.id || item.workspaceId}
+            name={item.displayName || item.name || item.title}
+            description={item.description}
+            topicName={item.topicName}
+            createdAt={item.createdAt}
+            colorIndex={index}
+            onPress={() =>
+              navigation.navigate('Workspace', {
+                workspaceId: item.id || item.workspaceId,
+                title: item.displayName || item.name || item.title,
+              })
+            }
+            onLongPress={() => handleOpenActionSheet(item)}
+            onDotsPress={() => handleOpenActionSheet(item)}
+          />
+        )}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={renderEmpty}
+        ListFooterComponent={renderFooter}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.35}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.primary}
+          />
+        }
+      />
 
       {/* FAB */}
       <TouchableOpacity
@@ -338,7 +381,12 @@ export default function HomeScreen({ navigation }: any) {
       <ActionSheet
         visible={actionSheetVisible}
         onClose={() => setActionSheetVisible(false)}
-        title={selectedWorkspace?.name || selectedWorkspace?.title || 'Tác vụ'}
+        title={
+          selectedWorkspace?.displayName ||
+          selectedWorkspace?.name ||
+          selectedWorkspace?.title ||
+          'Không gian học tập chưa có tiêu đề'
+        }
         items={WORKSPACE_ACTIONS}
         onSelect={handleActionSelect}
       />
@@ -347,7 +395,7 @@ export default function HomeScreen({ navigation }: any) {
       <Dialog
         visible={createDialogVisible}
         onClose={() => setCreateDialogVisible(false)}
-        title={`Tạo mới ${activeTab === 'workspace' ? 'workspace' : 'nhóm'}`}>
+        title="Tạo workspace mới">
         <FloatingInput
           label="Name"
           value={newName}
@@ -448,9 +496,10 @@ export default function HomeScreen({ navigation }: any) {
               <Text
                 style={[styles.deleteWorkspaceName, { color: colors.heading }]}
                 numberOfLines={1}>
-                {selectedWorkspace.name ||
+                {selectedWorkspace.displayName ||
+                  selectedWorkspace.name ||
                   selectedWorkspace.title ||
-                  'workspace'}
+                  'Không gian học tập chưa có tiêu đề'}
               </Text>
             </View>
           )}
@@ -502,18 +551,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  logo: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
@@ -530,14 +567,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  tabContainer: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-  },
   list: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: 100,
     flexGrow: 1,
+  },
+  footerLoading: {
+    paddingVertical: Spacing.base,
+    alignItems: 'center',
+  },
+  footerSummary: {
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.base,
+    alignItems: 'center',
+  },
+  footerSummaryText: {
+    fontSize: 12,
   },
   emptyContainer: {
     flex: 1,

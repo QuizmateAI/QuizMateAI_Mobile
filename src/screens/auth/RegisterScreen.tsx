@@ -16,6 +16,7 @@ import {Spacing} from '../../theme/spacing';
 import Button from '../../components/ui/Button';
 import FloatingInput from '../../components/ui/Input';
 import AuthAPI from '../../api/AuthAPI';
+import AppLogo from '../../components/AppLogo';
 
 const validateEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -216,13 +217,7 @@ export default function RegisterScreen({navigation}: any) {
           showsVerticalScrollIndicator={false}>
           {/* Logo */}
           <View style={styles.logoContainer}>
-            <View
-              style={[
-                styles.logoPlaceholder,
-                {backgroundColor: Colors.primary},
-              ]}>
-              <Text style={styles.logoText}>Q</Text>
-            </View>
+            <AppLogo size={56} />
           </View>
 
           <Text style={[styles.title, {color: colors.heading}]}>
@@ -338,18 +333,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Spacing['3xl'],
     marginBottom: Spacing.lg,
-  },
-  logoPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   title: {
     fontSize: 26,

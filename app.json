@@ -1,4 +1,7 @@
 {
   "name": "QuizmateAI_Mobile",
-  "displayName": "QuizmateAI_Mobile"
+  "displayName": "QuizmateAI_Mobile",
+  "plugins": [
+    "expo-audio"
+  ]
 }

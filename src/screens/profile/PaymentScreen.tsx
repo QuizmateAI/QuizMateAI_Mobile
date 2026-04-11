@@ -13,6 +13,7 @@ import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
+import {getPlanFeatureLabel} from '../../utils/uiText';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
@@ -153,14 +154,16 @@ export default function PaymentScreen({navigation, route}: any) {
               )}
             </View>
           </View>
-          <View style={styles.priceRow}>
-            <Text style={[styles.planPrice, {color: Colors.primary}]}>
-              {plan?.price?.toLocaleString() || '0'}đ
-            </Text>
-            <Text style={[styles.planPeriod, {color: colors.textSecondary}]}>
-              /{plan?.duration || 'month'}
-            </Text>
-          </View>
+          {(plan?.price ?? 0) > 0 && (
+            <View style={styles.priceRow}>
+              <Text style={[styles.planPrice, {color: Colors.primary}]}>
+                {plan?.price?.toLocaleString()}đ
+              </Text>
+              <Text style={[styles.planPeriod, {color: colors.textSecondary}]}>
+                /{plan?.durationLabel || plan?.duration || 'tháng'}
+              </Text>
+            </View>
+          )}
 
           {/* Features */}
           {plan?.features && (
@@ -173,7 +176,7 @@ export default function PaymentScreen({navigation, route}: any) {
                       styles.featureText,
                       {color: colors.textSecondary},
                     ]}>
-                    {f}
+                    {getPlanFeatureLabel(f)}
                   </Text>
                 </View>
               ))}
@@ -354,42 +357,46 @@ export default function PaymentScreen({navigation, route}: any) {
         </TouchableOpacity>
 
         {/* Order Summary */}
-        <View
-          style={[
-            styles.summaryCard,
-            {backgroundColor: colors.surface, borderColor: colors.border},
-          ]}>
-          <Text style={[styles.summaryTitle, {color: colors.heading}]}>
-            Tóm tắt đơn hàng
-          </Text>
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, {color: colors.textSecondary}]}>
-              {plan?.name || planName}
-            </Text>
-            <Text style={[styles.summaryValue, {color: colors.heading}]}>
-              {plan?.price?.toLocaleString() || '0'}đ
-            </Text>
-          </View>
-          <View
-            style={[styles.summaryDivider, {backgroundColor: colors.border}]}
-          />
-          <View style={styles.summaryRow}>
-            <Text style={[styles.totalLabel, {color: colors.heading}]}>
-              Tổng cộng
-            </Text>
-            <Text style={[styles.totalValue, {color: Colors.primary}]}>
-              {plan?.price?.toLocaleString() || '0'}đ
-            </Text>
-          </View>
-        </View>
+        {(plan?.price ?? 0) > 0 && (
+          <>
+            <View
+              style={[
+                styles.summaryCard,
+                {backgroundColor: colors.surface, borderColor: colors.border},
+              ]}>
+              <Text style={[styles.summaryTitle, {color: colors.heading}]}>
+                Tóm tắt đơn hàng
+              </Text>
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, {color: colors.textSecondary}]}>
+                  {plan?.name || planName}
+                </Text>
+                <Text style={[styles.summaryValue, {color: colors.heading}]}>
+                  {plan?.price?.toLocaleString()}đ
+                </Text>
+              </View>
+              <View
+                style={[styles.summaryDivider, {backgroundColor: colors.border}]}
+              />
+              <View style={styles.summaryRow}>
+                <Text style={[styles.totalLabel, {color: colors.heading}]}>
+                  Tổng cộng
+                </Text>
+                <Text style={[styles.totalValue, {color: Colors.primary}]}>
+                  {plan?.price?.toLocaleString()}đ
+                </Text>
+              </View>
+            </View>
 
-        <Button
-          title={`Thanh toán ${plan?.price?.toLocaleString() || '0'}đ`}
-          onPress={handlePayment}
-          loading={processing}
-          disabled={isGroupPlan && !selectedGroupId}
-          style={styles.payBtn}
-        />
+            <Button
+              title={`Thanh toán ${plan?.price?.toLocaleString()}đ`}
+              onPress={handlePayment}
+              loading={processing}
+              disabled={isGroupPlan && !selectedGroupId}
+              style={styles.payBtn}
+            />
+          </>
+        )}
 
         {/* Secure badge */}
         <View style={styles.secureRow}>

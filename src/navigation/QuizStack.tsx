@@ -1,6 +1,8 @@
 import React from 'react';
 import {createStackNavigator} from '@react-navigation/stack';
-import QuizListScreen from '../screens/quiz/QuizListScreen';
+import GroupListScreen from '../screens/group/GroupListScreen';
+import GroupWorkspaceScreen from '../screens/home/GroupWorkspaceScreen';
+import GroupManagementScreen from '../screens/home/GroupManagementScreen';
 import PracticeQuizScreen from '../screens/quiz/PracticeQuizScreen';
 import ExamQuizScreen from '../screens/quiz/ExamQuizScreen';
 import QuizResultScreen from '../screens/quiz/QuizResultScreen';
@@ -22,7 +24,9 @@ export type QuizBackContext =
     };
 
 export type QuizStackParamList = {
-  QuizList: undefined;
+  GroupList: undefined;
+  GroupWorkspace: {groupId: number; title?: string};
+  GroupManagement: {groupId: number; title?: string};
   PracticeQuiz: {quizId: number; title?: string; backContext?: QuizBackContext};
   VoicePracticeQuiz: {
     quizId: number;
@@ -40,7 +44,9 @@ const Stack = createStackNavigator<QuizStackParamList>();
 export default function QuizStack() {
   return (
     <Stack.Navigator screenOptions={{headerShown: false}}>
-      <Stack.Screen name="QuizList" component={QuizListScreen} />
+      <Stack.Screen name="GroupList" component={GroupListScreen} />
+      <Stack.Screen name="GroupWorkspace" component={GroupWorkspaceScreen} />
+      <Stack.Screen name="GroupManagement" component={GroupManagementScreen} />
       <Stack.Screen name="PracticeQuiz" component={PracticeQuizScreen} />
       <Stack.Screen name="VoicePracticeQuiz" component={VoicePracticeQuizScreen} />
       <Stack.Screen name="ExamQuiz" component={ExamQuizScreen} />

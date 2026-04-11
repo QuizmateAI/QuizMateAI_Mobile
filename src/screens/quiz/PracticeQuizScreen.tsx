@@ -58,10 +58,10 @@ const VOICE_SETTING_FIELDS: Array<{
     label: 'Chờ sau khi im lặng',
     description: 'Ứng dụng đợi bấy lâu sau khi bạn dừng nói rồi mới tự gửi câu trả lời.',
     min: 500,
-    max: 3000,
+    max: 5000,
     minHint: 'Phản hồi nhanh hơn',
     maxHint: 'Chờ lâu hơn',
-    step: 100,
+    step: 500,
     formatValue: value => formatVoiceSeconds(value),
   },
   {
@@ -84,7 +84,7 @@ const VOICE_SETTING_FIELDS: Array<{
     max: 2000,
     minHint: 'Dừng sớm hơn',
     maxHint: 'Chắc chắn hơn',
-    step: 100,
+    step: 500,
     formatValue: value => formatVoiceSeconds(value),
   },
 ];

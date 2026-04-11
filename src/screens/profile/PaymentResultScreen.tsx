@@ -21,9 +21,11 @@ export default function PaymentResultScreen({navigation, route}: any) {
     transId = '',
     payType = '',
     responseTime = '',
+    purchaseType = 'plan',
   } = route.params || {};
 
   const isSuccess = status === 'success';
+  const isCreditPurchase = purchaseType === 'credit';
 
   const formattedAmount = new Intl.NumberFormat('vi-VN').format(Number(amount));
   const formattedTime = responseTime
@@ -78,11 +80,17 @@ export default function PaymentResultScreen({navigation, route}: any) {
             />
           </View>
           <Text style={[styles.statusTitle, {color: colors.heading}]}>
-            {isSuccess ? 'Thanh toán thành công!' : 'Thanh toán thất bại'}
+            {isSuccess
+              ? isCreditPurchase
+                ? 'Nạp credit thành công!'
+                : 'Thanh toán thành công!'
+              : 'Thanh toán chưa hoàn tất'}
           </Text>
           <Text style={[styles.statusDesc, {color: colors.textSecondary}]}>
             {isSuccess
-              ? 'Gói đăng ký của bạn đã được kích hoạt'
+              ? isCreditPurchase
+                ? 'Credit sẽ được cộng vào ví của bạn sau khi giao dịch được xác nhận'
+                : 'Gói đăng ký của bạn đã được kích hoạt'
               : 'Có lỗi xảy ra trong quá trình thanh toán'}
           </Text>
         </View>
@@ -130,11 +138,15 @@ export default function PaymentResultScreen({navigation, route}: any) {
         {/* Actions */}
         <View style={styles.actions}>
           <Button
-            title="Back to Plans"
+            title={isCreditPurchase ? 'Về trang credit' : 'Back to Plans'}
             variant="outline"
             size="lg"
             icon="arrow-left"
-            onPress={() => navigation.navigate('Subscription')}
+            onPress={() =>
+              navigation.navigate(
+                isCreditPurchase ? 'CreditPackages' : 'Subscription',
+              )
+            }
             style={styles.actionBtn}
           />
           <Button

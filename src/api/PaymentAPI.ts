@@ -14,6 +14,50 @@ const normalizePlanType = (type: any) => {
   return rawType || type;
 };
 
+const ENTITLEMENT_FEATURE_LABELS: Array<[key: string, label: string]> = [
+  ['canProcessPdf', 'Xử lý PDF'],
+  ['canProcessWord', 'Xử lý Word'],
+  ['canProcessSlide', 'Xử lý slide'],
+  ['canProcessExcel', 'Xử lý Excel'],
+  ['canProcessImage', 'Xử lý hình ảnh'],
+  ['canProcessAudio', 'Xử lý audio'],
+  ['canProcessVideo', 'Xử lý video'],
+  ['hasAdvanceQuizConfig', 'Tùy chỉnh quiz nâng cao'],
+  ['hasAiCompanionMode', 'Làm quiz bằng giọng nói'],
+  ['hasWorkspaceAnalytics', 'Thống kê workspace'],
+];
+
+const normalizePlanDuration = (duration: any) => {
+  if (duration == null || duration === '') {
+    return 'tháng';
+  }
+
+  if (typeof duration === 'number') {
+    return `${duration} tháng`;
+  }
+
+  const rawDuration = String(duration).trim();
+  const normalizedDuration = rawDuration.toLowerCase();
+
+  if (normalizedDuration === 'month' || normalizedDuration === 'monthly') {
+    return 'tháng';
+  }
+
+  if (normalizedDuration === 'year' || normalizedDuration === 'yearly' || normalizedDuration === 'annual') {
+    return 'năm';
+  }
+
+  if (normalizedDuration === 'week' || normalizedDuration === 'weekly') {
+    return 'tuần';
+  }
+
+  if (/^\d+$/.test(rawDuration)) {
+    return `${rawDuration} tháng`;
+  }
+
+  return rawDuration;
+};
+
 const unwrapApiData = (response: any) => ({
   ...response,
   data: response?.data?.data ?? response?.data,
@@ -21,18 +65,9 @@ const unwrapApiData = (response: any) => ({
 
 const mapPlan = (plan: any) => {
   const entitlement = plan?.entitlement || {};
-  const features = [
-    entitlement?.canProcessPdf ? 'Process PDF files' : null,
-    entitlement?.canProcessWord ? 'Process Word files' : null,
-    entitlement?.canProcessSlide ? 'Process Slides' : null,
-    entitlement?.canProcessExcel ? 'Process Excel files' : null,
-    entitlement?.canProcessImage ? 'Process images' : null,
-    entitlement?.canProcessAudio ? 'Process audio' : null,
-    entitlement?.canProcessVideo ? 'Process video' : null,
-    entitlement?.hasAdvanceQuizConfig ? 'Advanced quiz settings' : null,
-    entitlement?.hasAiCompanionMode ? 'AI companion mode' : null,
-    entitlement?.hasWorkspaceAnalytics ? 'Workspace analytics' : null,
-  ].filter(Boolean);
+  const features = ENTITLEMENT_FEATURE_LABELS
+    .filter(([key]) => Boolean(entitlement?.[key]))
+    .map(([, label]) => label);
 
   return {
     ...plan,
@@ -40,6 +75,7 @@ const mapPlan = (plan: any) => {
     name: plan?.displayName ?? plan?.planName ?? plan?.name,
     type: normalizePlanType(plan?.planScope ?? plan?.type),
     duration: plan?.duration ?? 'month',
+    durationLabel: normalizePlanDuration(plan?.duration),
     features,
   };
 };
@@ -72,6 +108,22 @@ const PaymentAPI = {
       ? api.post(`/api/vnpay/create-workspace/${groupId}`)
       : api.post(`/api/vnpay/create/${planId}`)
     ).then(unwrapApiData),
+  createMomoCreditPayment: (creditPackageId: number, workspaceId?: number) =>
+    api
+      .post(
+        `/api/momo/create-credit/${creditPackageId}${
+          workspaceId ? `?workspaceId=${workspaceId}` : ''
+        }`,
+      )
+      .then(unwrapApiData),
+  createVnpayCreditPayment: (creditPackageId: number, workspaceId?: number) =>
+    api
+      .post(
+        `/api/vnpay/create-credit/${creditPackageId}${
+          workspaceId ? `?workspaceId=${workspaceId}` : ''
+        }`,
+      )
+      .then(unwrapApiData),
 };
 
 export default PaymentAPI;

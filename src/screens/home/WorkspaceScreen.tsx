@@ -494,12 +494,11 @@ export default function WorkspaceScreen({navigation, route}: any) {
       return;
     }
     if (key === 'roadmap') {
-      navigation.navigate('RoadmapJourney', {
-        contextType: 'WORKSPACE',
-        contextId: workspaceId,
-        title,
-        materials,
-      });
+      Alert.alert(
+        'Chưa hỗ trợ trên mobile',
+        'Tính năng Lộ trình hiện chỉ khả dụng trên web app. Vui lòng truy cập trên trình duyệt để sử dụng.',
+        [{text: 'Đã hiểu', style: 'default'}],
+      );
       return;
     }
     if (key === 'flashcard') {
@@ -987,12 +986,11 @@ export default function WorkspaceScreen({navigation, route}: any) {
                         materials,
                       });
                     } else if (item.key === 'roadmap') {
-                      navigation.navigate('RoadmapJourney', {
-                        contextType: 'WORKSPACE',
-                        contextId: workspaceId,
-                        title,
-                        materials,
-                      });
+                      Alert.alert(
+                        'Chưa hỗ trợ trên mobile',
+                        'Tính năng Lộ trình hiện chỉ khả dụng trên web app. Vui lòng truy cập trên trình duyệt để sử dụng.',
+                        [{text: 'Đã hiểu', style: 'default'}],
+                      );
                     } else if (item.key === 'flashcard') {
                       navigation.navigate('CreateAIFlashcard', {
                         workspaceId,
@@ -1100,62 +1098,6 @@ export default function WorkspaceScreen({navigation, route}: any) {
         )}
       </ScrollView>
 
-      {/* ─── Chat Input (only on Chat tab) ─── */}
-      {activeBottomTab === 'chat' && (
-        <View
-          style={[
-            styles.chatInputBar,
-            {
-              backgroundColor: colors.surface,
-              borderTopColor: colors.border,
-            },
-          ]}>
-          <View
-            style={[
-              styles.chatInputWrap,
-              {
-                backgroundColor: isDark
-                  ? Colors.dark.surfaceVariant
-                  : '#F1F5F9',
-                borderColor: colors.border,
-              },
-            ]}>
-            <TextInput
-              value={chatMessage}
-              onChangeText={setChatMessage}
-              placeholder="Hỏi AI về tài liệu của bạn..."
-              placeholderTextColor={colors.placeholder}
-              style={[styles.chatInput, {color: colors.text}]}
-              multiline
-              maxLength={2000}
-            />
-            <TouchableOpacity
-              onPress={() => {
-                if (chatMessage.trim()) {
-                  showToast('Tính năng chat AI sẽ sớm ra mắt', 'info');
-                  setChatMessage('');
-                }
-              }}
-              disabled={!chatMessage.trim()}
-              style={[
-                styles.sendBtn,
-                {
-                  backgroundColor: chatMessage.trim()
-                    ? Colors.primary
-                    : isDark
-                    ? Colors.dark.surfaceVariant
-                    : '#E2E8F0',
-                },
-              ]}>
-              <Icon
-                name="send"
-                size={18}
-                color={chatMessage.trim() ? '#FFFFFF' : colors.textTertiary}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
 
       {/* ─── Bottom Toolbar ─── */}
       <View
@@ -1167,8 +1109,8 @@ export default function WorkspaceScreen({navigation, route}: any) {
           },
         ]}>
         <ToolbarTab
-          icon="chat-outline"
-          label="Trò chuyện"
+          icon="view-dashboard-outline"
+          label="Tổng quan"
           active={activeBottomTab === 'chat'}
           onPress={() => setActiveBottomTab('chat')}
           colors={colors}
