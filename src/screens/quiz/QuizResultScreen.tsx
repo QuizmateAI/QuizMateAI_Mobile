@@ -46,11 +46,13 @@ const getMatchingItemsFromResult = (question: any) => {
 };
 
 export default function QuizResultScreen({navigation, route}: any) {
-  const {attemptId, backContext} = route.params;
+  const {attemptId, backContext} = route.params || {};
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [showReview, setShowReview] = useState(false);
   const [loadingCurrentPhase, setLoadingCurrentPhase] = useState(false);
   const [currentPhaseProgress, setCurrentPhaseProgress] = useState<any>(null);
@@ -59,8 +61,15 @@ export default function QuizResultScreen({navigation, route}: any) {
   const [knowledgeGenerationTriggered, setKnowledgeGenerationTriggered] = useState(false);
 
   useEffect(() => {
+    if (!attemptId) {
+      setLoadError('Không tìm thấy lượt làm bài để hiển thị kết quả');
+      setLoading(false);
+      return;
+    }
+
     QuizAPI.getResult(attemptId)
       .then(async res => {
+        setLoadError(null);
         const attemptResult = res.data;
         const quizId = Number(attemptResult?.quizId);
 
@@ -96,9 +105,16 @@ export default function QuizResultScreen({navigation, route}: any) {
           setResult(attemptResult);
         }
       })
-      .catch(() => {})
+      .catch((error: any) => {
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          'Không thể tải kết quả bài làm';
+        setLoadError(message);
+        showToast(message, 'error');
+      })
       .finally(() => setLoading(false));
-  }, [attemptId]);
+  }, [attemptId, reloadKey, showToast]);
 
   const roadmapContext = useMemo(() => {
     if (backContext?.type !== 'roadmap') {
@@ -160,10 +176,6 @@ export default function QuizResultScreen({navigation, route}: any) {
     }
     fetchCurrentRoadmapPhase();
   }, [fetchCurrentRoadmapPhase, isRoadmapPreLearningQuiz]);
-
-  if (loading) {
-    return <LoadingSpinner />;
-  }
 
   const score = result?.score || 0;
   const accuracyPercent = result?.accuracyPercent || 0;
@@ -398,6 +410,50 @@ export default function QuizResultScreen({navigation, route}: any) {
       navigation.navigate('QuizList');
     }
   };
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
+  if (loadError) {
+    return (
+      <SafeAreaView
+        style={[styles.container, {backgroundColor: colors.backgroundSecondary}]}>
+        <View style={styles.errorState}>
+          <View
+            style={[
+              styles.errorStateIcon,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(239,68,68,0.16)'
+                  : '#FEF2F2',
+              },
+            ]}>
+            <Icon name="alert-circle-outline" size={36} color={Colors.error} />
+          </View>
+          <Text style={[styles.errorStateTitle, {color: colors.heading}]}>
+            Không tải được kết quả
+          </Text>
+          <Text
+            style={[styles.errorStateText, {color: colors.textSecondary}]}>
+            {loadError}
+          </Text>
+          <View style={styles.errorStateActions}>
+            <Button title={backButtonTitle} variant="outline" onPress={handleBack} />
+            <Button
+              title="Thử lại"
+              onPress={() => {
+                setLoading(true);
+                setLoadError(null);
+                setResult(null);
+                setReloadKey(prev => prev + 1);
+              }}
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
@@ -638,6 +694,37 @@ const styles = StyleSheet.create({
   },
   decisionActions: {
     gap: Spacing.sm,
+  },
+
+  errorState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.xl,
+  },
+  errorStateIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.base,
+  },
+  errorStateTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  errorStateText: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  errorStateActions: {
+    width: '100%',
+    gap: Spacing.sm,
+    marginTop: Spacing.xl,
   },
 
   reviewSection: {marginTop: Spacing.sm},

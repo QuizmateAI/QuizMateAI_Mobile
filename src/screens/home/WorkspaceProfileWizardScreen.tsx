@@ -21,9 +21,10 @@ import WorkspaceProfileAPI from '../../api/WorkspaceProfileAPI';
 type LearningMode = 'STUDY_NEW' | 'REVIEW' | 'MOCK_TEST';
 
 const LEARNING_MODES: LearningMode[] = ['STUDY_NEW', 'REVIEW', 'MOCK_TEST'];
-const STEP_TITLES = ['Nền tảng', 'Cá nhân hóa', 'Kiểm tra'];
+const STEP_TITLES = ['Nền tảng', 'Hồ sơ cá nhân', 'Kiểm tra'];
 const ADAPTATION_MODES = ['STRICT', 'FLEXIBLE'] as const;
 const SPEED_MODES = ['STANDARD', 'SLOW', 'FAST'] as const;
+const KNOWLEDGE_LOADS = ['BASIC', 'INTERMEDIATE', 'ADVANCED'] as const;
 const LEARNING_MODE_LABELS: Record<LearningMode, string> = {
   STUDY_NEW: 'Học mới',
   REVIEW: 'Ôn tập',
@@ -38,6 +39,11 @@ const ADAPTATION_MODE_LABELS: Record<'STRICT' | 'FLEXIBLE', string> = {
   STRICT: 'Nghiêm ngặt',
   FLEXIBLE: 'Linh hoạt',
 };
+const KNOWLEDGE_LOAD_LABELS: Record<'BASIC' | 'INTERMEDIATE' | 'ADVANCED', string> = {
+  BASIC: 'Cơ bản',
+  INTERMEDIATE: 'Trung bình',
+  ADVANCED: 'Nâng cao',
+};
 const STEP_GUIDES: Record<number, {title: string; lines: string[]}> = {
   1: {
     title: 'Bước 1: Xác định nền tảng',
@@ -47,7 +53,7 @@ const STEP_GUIDES: Record<number, {title: string; lines: string[]}> = {
     ],
   },
   2: {
-    title: 'Bước 2: Cá nhân hóa hồ sơ',
+    title: 'Bước 2: Thiết lập hồ sơ cá nhân',
     lines: [
       'Điền trình độ hiện tại, mục tiêu, điểm mạnh và điểm yếu của bạn.',
       'Bạn có thể nhấn gợi ý AI để điền nhanh các trường hồ sơ.',
@@ -107,6 +113,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
   const [autoSuggestingTemplates, setAutoSuggestingTemplates] = useState(false);
   const [autoValidatingConsistency, setAutoValidatingConsistency] = useState(false);
   const [roadmapEnabled, setRoadmapEnabled] = useState(true);
+  const [knowledgeLoad, setKnowledgeLoad] = useState<'BASIC' | 'INTERMEDIATE' | 'ADVANCED'>('INTERMEDIATE');
   const [adaptationMode, setAdaptationMode] = useState<'STRICT' | 'FLEXIBLE'>('STRICT');
   const [speedMode, setSpeedMode] = useState<'STANDARD' | 'SLOW' | 'FAST'>('STANDARD');
   const [estimatedTotalDays, setEstimatedTotalDays] = useState('30');
@@ -749,6 +756,11 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             : profile.learningMode === 'STUDY_NEW',
         );
         setAdaptationMode(profile.adaptationMode === 'FLEXIBLE' ? 'FLEXIBLE' : 'STRICT');
+        setKnowledgeLoad(
+          profile.knowledgeLoad === 'BASIC' || profile.knowledgeLoad === 'ADVANCED'
+            ? profile.knowledgeLoad
+            : 'INTERMEDIATE',
+        );
         setSpeedMode(
           profile.speedMode === 'MEDIUM' || profile.speedMode === 'STANDARD'
             ? 'STANDARD'
@@ -833,6 +845,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         strongAreas: parseListField(strongAreas),
         examName,
         roadmapEnabled: learningMode === 'STUDY_NEW' ? true : roadmapEnabled,
+        knowledgeLoad,
         adaptationMode,
         speedMode,
         estimatedTotalDays: Number(estimatedTotalDays) || null,
@@ -1302,6 +1315,23 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
             {(learningMode === 'STUDY_NEW' || roadmapEnabled) && (
               <>
                 <View style={styles.spaceMd} />
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    backgroundColor: isDark ? 'rgba(234,179,8,0.12)' : '#FEFCE8',
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(234,179,8,0.35)' : '#FDE047',
+                    borderRadius: 10,
+                    padding: 12,
+                    marginBottom: 4,
+                  }}>
+                  <Icon name="information-outline" size={18} color="#CA8A04" style={{marginTop: 1}} />
+                  <Text style={{flex: 1, fontSize: 13, color: isDark ? '#FDE047' : '#854D0E', lineHeight: 19}}>
+                    Tính năng Lộ trình hiện chỉ khả dụng trên web app. Bạn vẫn có thể tạo workspace bình thường — lộ trình sẽ được hiển thị khi truy cập trên trình duyệt.
+                  </Text>
+                </View>
                 <FloatingInput
                   label="Tổng số ngày dự kiến"
                   value={estimatedTotalDays}
@@ -1372,6 +1402,37 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
                             {color: active ? Colors.primary : colors.textSecondary},
                           ]}>
                           {ADAPTATION_MODE_LABELS[mode]}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={[styles.sectionTitle, {color: colors.heading}]}>Độ sâu kiến thức</Text>
+                <View style={styles.segmentRow}>
+                  {KNOWLEDGE_LOADS.map(level => {
+                    const active = knowledgeLoad === level;
+                    return (
+                      <TouchableOpacity
+                        key={level}
+                        onPress={() => setKnowledgeLoad(level)}
+                        style={[
+                          styles.segmentBtn,
+                          {
+                            borderColor: active ? Colors.primary : colors.border,
+                            backgroundColor: active
+                              ? isDark
+                                ? '#1E3A8A40'
+                                : '#DBEAFE'
+                              : colors.surface,
+                          },
+                        ]}>
+                        <Text
+                          style={[
+                            styles.segmentText,
+                            {color: active ? Colors.primary : colors.textSecondary},
+                          ]}>
+                          {KNOWLEDGE_LOAD_LABELS[level]}
                         </Text>
                       </TouchableOpacity>
                     );

@@ -3,6 +3,7 @@ import {createStackNavigator} from '@react-navigation/stack';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
 import SubscriptionScreen from '../screens/profile/SubscriptionScreen';
+import CreditPackagesScreen from '../screens/profile/CreditPackagesScreen';
 import PaymentScreen from '../screens/profile/PaymentScreen';
 import PaymentResultScreen from '../screens/profile/PaymentResultScreen';
 
@@ -10,6 +11,7 @@ export type ProfileStackParamList = {
   ProfileMain: undefined;
   Settings: undefined;
   Subscription: undefined;
+  CreditPackages: undefined;
   Payment: {planId: number; planName?: string; planType?: string};
   PaymentResult: {
     status: string;
@@ -19,6 +21,7 @@ export type ProfileStackParamList = {
     transId?: string;
     payType?: string;
     responseTime?: string;
+    purchaseType?: 'plan' | 'credit';
   };
 };
 
@@ -30,6 +33,7 @@ export default function ProfileStack() {
       <Stack.Screen name="ProfileMain" component={ProfileScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="Subscription" component={SubscriptionScreen} />
+      <Stack.Screen name="CreditPackages" component={CreditPackagesScreen} />
       <Stack.Screen name="Payment" component={PaymentScreen} />
       <Stack.Screen name="PaymentResult" component={PaymentResultScreen} />
     </Stack.Navigator>

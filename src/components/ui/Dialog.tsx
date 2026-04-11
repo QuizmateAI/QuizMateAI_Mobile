@@ -5,7 +5,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  TouchableWithoutFeedback,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -34,35 +33,39 @@ export default function Dialog({
       transparent
       animationType="fade"
       onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={[styles.overlay, {backgroundColor: colors.overlay}]}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <TouchableWithoutFeedback>
-              <View
-                style={[
-                  styles.dialog,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                  },
-                ]}>
-                {title && (
-                  <View style={styles.header}>
-                    <Text style={[styles.title, {color: colors.heading}]}>
-                      {title}
-                    </Text>
-                    <TouchableOpacity onPress={onClose} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                      <Icon name="close" size={22} color={colors.icon} />
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {children}
+      <View style={[styles.overlay, {backgroundColor: colors.overlay}]}>
+        {/* Backdrop riêng — chỉ xử lý đóng dialog, không wrap nội dung */}
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardView}>
+          {/* Dialog content hoàn toàn độc lập, ScrollView bên trong không bị tranh responder */}
+          <View
+            style={[
+              styles.dialog,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}>
+            {title && (
+              <View style={styles.header}>
+                <Text style={[styles.title, {color: colors.heading}]}>
+                  {title}
+                </Text>
+                <TouchableOpacity onPress={onClose} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                  <Icon name="close" size={22} color={colors.icon} />
+                </TouchableOpacity>
               </View>
-            </TouchableWithoutFeedback>
-          </KeyboardAvoidingView>
-        </View>
-      </TouchableWithoutFeedback>
+            )}
+            {children}
+          </View>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -74,9 +77,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.xl,
   },
-  dialog: {
+  keyboardView: {
     width: '100%',
     maxWidth: 400,
+  },
+  dialog: {
+    width: '100%',
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     padding: Spacing.xl,

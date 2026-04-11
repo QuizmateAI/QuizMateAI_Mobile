@@ -4,6 +4,8 @@ type LearningMode = 'STUDY_NEW' | 'REVIEW' | 'MOCK_TEST';
 type AdaptationMode = 'STRICT' | 'FLEXIBLE' | 'BALANCED';
 type RoadmapSpeedMode = 'SLOW' | 'STANDARD' | 'FAST' | 'MEDIUM';
 
+type RoadmapKnowledgeLoad = 'BASIC' | 'INTERMEDIATE' | 'ADVANCED';
+
 type ProfilePayload = {
   learningMode: LearningMode;
   domain: string;
@@ -14,6 +16,7 @@ type ProfilePayload = {
   strongAreas: string[] | string;
   examName?: string;
   roadmapEnabled?: boolean;
+  knowledgeLoad?: RoadmapKnowledgeLoad;
   adaptationMode?: AdaptationMode;
   speedMode?: RoadmapSpeedMode;
   estimatedTotalDays?: number | null;
@@ -117,6 +120,7 @@ const buildRoadmapConfigStepRequest = (payload: ProfilePayload) => {
   }
 
   return {
+    knowledgeLoad: payload.knowledgeLoad || null,
     adaptationMode: payload.adaptationMode || null,
     speedMode: toRoadmapSpeedMode(payload.speedMode),
     estimatedTotalDays:

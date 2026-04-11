@@ -33,7 +33,7 @@ export type VoicePracticePreset = {
 
 const VOICE_PRACTICE_LIMITS = {
   silenceThresholdDb: {min: -60, max: -20},
-  silenceDurationMs: {min: 500, max: 3000},
+  silenceDurationMs: {min: 500, max: 5000},
   maxRecordingMs: {min: 5000, max: 45000},
   minSpeechMs: {min: 300, max: 2000},
 } as const;
@@ -165,7 +165,7 @@ export const formatVoicePracticeConfigSummary = (
 
 export const VOICE_AUDIO_SET: AudioSet = {
   AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
-  AudioSourceAndroid: AudioSourceAndroidType.MIC,
+  AudioSourceAndroid: AudioSourceAndroidType.VOICE_RECOGNITION,
   OutputFormatAndroid: OutputFormatAndroidType.MPEG_4,
   AudioSamplingRateAndroid: 44100,
   AudioEncodingBitRateAndroid: 128000,
@@ -176,6 +176,7 @@ export const VOICE_AUDIO_SET: AudioSet = {
   AVNumberOfChannelsKeyIOS: 1,
   AVSampleRateKeyIOS: 44100,
 };
+
 
 const QUESTION_TYPE_IDS = {
   SHORT_ANSWER: 3,
@@ -354,6 +355,29 @@ export const findFirstPendingQuestionIndex = (
   });
 
   return nextIndex >= 0 ? nextIndex : Math.max(questions.length - 1, 0);
+};
+
+export const computeDbFromPcm16 = (base64Data: string): number => {
+  const binary = atob(base64Data);
+  const length = Math.floor(binary.length / 2);
+  if (length === 0) {
+    return -160;
+  }
+  let sum = 0;
+  for (let i = 0; i < length; i++) {
+    const lo = binary.charCodeAt(i * 2);
+    const hi = binary.charCodeAt(i * 2 + 1);
+    let sample = (hi << 8) | lo;
+    if (sample >= 0x8000) {
+      sample -= 0x10000;
+    }
+    sum += sample * sample;
+  }
+  const rms = Math.sqrt(sum / length);
+  if (rms < 1) {
+    return -160;
+  }
+  return Math.max(-160, 20 * Math.log10(rms / 32768));
 };
 
 export const normalizeRecordedFileUri = (uri: string) => {

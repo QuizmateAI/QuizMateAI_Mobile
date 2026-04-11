@@ -197,6 +197,20 @@ const UI_TEXT_MAP: Record<string, string> = {
   'Use existing quizzes from this group for now': 'Hiện tại hãy dùng các quiz sẵn có trong nhóm này',
 };
 
+const PLAN_FEATURE_LABEL: Record<string, string> = {
+  ADVANCE_QUIZ_CONFIG: 'Cấu hình quiz nâng cao',
+  CREATE_ROADMAP: 'Tạo lộ trình học tập',
+  AI_COMPANION_MODE: 'Chế độ AI đồng hành',
+  WORKSPACE_ANALYTICS: 'Phân tích workspace',
+  AI_SUMMARY_AND_TEXT_READING: 'AI tóm tắt & đọc văn bản',
+  AI_QUIZ_ASSESSMENT_AND_RECOMMENDATION: 'AI đánh giá & gợi ý quiz',
+};
+
+export function getPlanFeatureLabel(feature?: string): string {
+  if (!feature) return '';
+  return PLAN_FEATURE_LABEL[String(feature).toUpperCase()] || feature;
+}
+
 export function localizeUiText(text?: string): string {
   if (!text) {
     return '';

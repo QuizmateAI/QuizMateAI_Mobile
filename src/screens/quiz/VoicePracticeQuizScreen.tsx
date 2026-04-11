@@ -10,6 +10,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
+import AudioRecord from 'react-native-audio-record';
 import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
@@ -19,10 +20,10 @@ import Button from '../../components/ui/Button';
 import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
 import {
-  VOICE_AUDIO_SET,
   buildRecordedAudioFile,
   buildVoiceFeedbackPrompt,
   buildVoiceQuestionPrompt,
+  computeDbFromPcm16,
   ensureVoiceRecordingPermission,
   findFirstPendingQuestionIndex,
   getQuestionId,
@@ -77,8 +78,8 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
     [routeVoiceConfig],
   );
 
-  const recorderRef = useRef(new AudioRecorderPlayer());
   const playerRef = useRef(new AudioRecorderPlayer());
+  const audioRecordSubRef = useRef<any>(null);
   const isMountedRef = useRef(true);
   const flowTokenRef = useRef(0);
   const activeQuestionIdRef = useRef<number | null>(null);
@@ -236,12 +237,15 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
   }, []);
 
   const stopRecording = useCallback(async () => {
-    const recorder = recorderRef.current;
-    recorder.removeRecordBackListener();
+    const wasRecording = audioRecordSubRef.current != null;
+    audioRecordSubRef.current?.remove();
+    audioRecordSubRef.current = null;
     recordingSessionRef.current.stopRequested = true;
-    try {
-      await recorder.stopRecorder();
-    } catch {}
+    if (wasRecording) {
+      try {
+        await AudioRecord.stop();
+      } catch {}
+    }
     setRecordingDurationMs(0);
     setCurrentMetering(voiceConfig.silenceThresholdDb);
   }, [voiceConfig.silenceThresholdDb]);
@@ -540,8 +544,6 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
         return;
       }
 
-      const recorder = recorderRef.current;
-      await recorder.setSubscriptionDuration(0.2);
       await stopSpeaking();
 
       setVoiceState('listening');
@@ -566,11 +568,16 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
         setVoiceState('processing');
         setStatusMessage('Đang gửi câu trả lời của bạn cho AI...');
 
+        audioRecordSubRef.current?.remove();
+        audioRecordSubRef.current = null;
         let recordedUri = recordingSessionRef.current.uri;
         try {
-          recordedUri = (await recorder.stopRecorder()) || recordedUri;
+          const filePath = await AudioRecord.stop();
+          if (filePath) {
+            recordedUri = filePath;
+            recordingSessionRef.current.uri = recordedUri;
+          }
         } catch {}
-        recorder.removeRecordBackListener();
 
         if (token !== flowTokenRef.current || !isMountedRef.current) {
           return;
@@ -671,19 +678,23 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
       };
 
       try {
-        const uri = await recorder.startRecorder(undefined, VOICE_AUDIO_SET, true);
-        recordingSessionRef.current.uri = uri || '';
+        AudioRecord.init({
+          sampleRate: 16000,
+          channels: 1,
+          bitsPerSample: 16,
+          audioSource: 6, // VOICE_RECOGNITION on Android
+          wavFile: `voice-answer-${questionId}.wav`,
+        });
 
-        recorder.addRecordBackListener(event => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sub = (AudioRecord.on as any)('data', (data: string) => {
           if (token !== flowTokenRef.current || recordingSessionRef.current.stopRequested) {
             return;
           }
 
           const now = Date.now();
-          const metering = Number(
-            event?.currentMetering ?? voiceConfig.silenceThresholdDb,
-          );
-          const currentPosition = Number(event?.currentPosition || 0);
+          const metering = computeDbFromPcm16(data);
+          const currentPosition = now - recordingSessionRef.current.startTime;
           const isAboveThreshold = metering > voiceConfig.silenceThresholdDb;
 
           setRecordingDurationMs(currentPosition);
@@ -719,6 +730,8 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
             finalizeRecording().catch(() => {});
           }
         });
+        audioRecordSubRef.current = sub;
+        AudioRecord.start();
       } catch (error: any) {
         showToast(
           error?.message || 'Không thể bắt đầu ghi âm. Vui lòng thử lại.',

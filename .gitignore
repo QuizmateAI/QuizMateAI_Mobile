@@ -91,3 +91,6 @@ yarn-error.log
 *.tmp
 android/app/google-services.json
 copilot-instructions.md
+
+AGENTS.md
+SKILL.md

@@ -44,8 +44,9 @@ export default function MainTabNavigator() {
         name="Home"
         component={HomeStack}
         options={{
+          tabBarLabel: 'Cá nhân',
           tabBarIcon: ({color, size, focused}) => (
-            <TabIcon name={focused ? 'home' : 'home-outline'} color={color} size={size} />
+            <TabIcon name={focused ? 'account' : 'account-outline'} color={color} size={size} />
           ),
         }}
       />
@@ -55,12 +56,13 @@ export default function MainTabNavigator() {
         listeners={({navigation}) => ({
           tabPress: e => {
             e.preventDefault();
-            navigation.navigate('Quiz', {screen: 'QuizList'} as never);
+            navigation.navigate('Quiz', {screen: 'GroupList'} as never);
           },
         })}
         options={{
+          tabBarLabel: 'Nhóm',
           tabBarIcon: ({color, size, focused}) => (
-            <TabIcon name={focused ? 'head-question' : 'head-question-outline'} color={color} size={size} />
+            <TabIcon name={focused ? 'account-group' : 'account-group-outline'} color={color} size={size} />
           ),
         }}
       />
@@ -68,6 +70,7 @@ export default function MainTabNavigator() {
         name="Profile"
         component={ProfileStack}
         options={{
+          tabBarLabel: 'Hồ sơ',
           tabBarIcon: ({color, size, focused}) => (
             <TabIcon name={focused ? 'account-circle' : 'account-circle-outline'} color={color} size={size} />
           ),

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,11 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  Modal,
+
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {launchImageLibrary} from 'react-native-image-picker';
 import {useTheme} from '../../context/ThemeContext';
@@ -17,9 +20,23 @@ import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import Avatar from '../../components/ui/Avatar';
+import Button from '../../components/ui/Button';
 import FloatingInput from '../../components/ui/Input';
 import {Card} from '../../components/ui/Card';
+import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import ProfileAPI from '../../api/ProfileAPI';
+import ManagementSystemAPI from '../../api/ManagementSystemAPI';
+import {
+  EMPTY_CREDIT_SUMMARY,
+  formatCredits,
+  formatCreditDateTime,
+  formatPlanDate,
+  getCreditTransactionActivity,
+  getCreditTransactionIcon,
+  getCreditTransactionSourceLabel,
+  getCurrentPlanName,
+  getCurrentPlanSubtitle,
+} from '../../utils/accountSummary';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -34,29 +51,107 @@ export default function ProfileScreen({navigation}: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editBirthday, setEditBirthday] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    ProfileAPI.getProfile()
-      .then(res => {
-        setProfile(res.data);
-        setEditName(res.data?.fullName || '');
-        setEditBirthday(res.data?.birthday || '');
-      })
-      .catch(() => {
-        setProfile({
-          fullName: user?.fullName || '',
-          username: user?.username || '',
-          email: user?.email || '',
-          avatarUrl: user?.avatarUrl || null,
-          birthday: '',
-          badges: [],
-        });
-        setEditName(user?.fullName || '');
-        setEditBirthday('');
-        showToast('Không thể tải hồ sơ', 'error');
+  const parsedBirthday = useMemo(() => {
+    const now = new Date();
+    if (!editBirthday) return {day: 1, month: 1, year: 2000};
+    const d = new Date(editBirthday);
+    if (isNaN(d.getTime())) return {day: 1, month: 1, year: 2000};
+    return {day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear()};
+  }, [editBirthday]);
+
+  const [pickerDay, setPickerDay] = useState(parsedBirthday.day);
+  const [pickerMonth, setPickerMonth] = useState(parsedBirthday.month);
+  const [pickerYear, setPickerYear] = useState(parsedBirthday.year);
+
+  const openDatePicker = () => {
+    setPickerDay(parsedBirthday.day);
+    setPickerMonth(parsedBirthday.month);
+    setPickerYear(parsedBirthday.year);
+    setShowDatePicker(true);
+  };
+
+  const confirmDatePicker = () => {
+    const dd = String(pickerDay).padStart(2, '0');
+    const mm = String(pickerMonth).padStart(2, '0');
+    setEditBirthday(`${pickerYear}-${mm}-${dd}`);
+    setShowDatePicker(false);
+  };
+
+  const DAYS = Array.from({length: 31}, (_, i) => i + 1);
+  const MONTHS = ['Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6',
+                  'Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'];
+  const currentYear = new Date().getFullYear();
+  const YEARS = Array.from({length: 100}, (_, i) => currentYear - i);
+  const [currentPlan, setCurrentPlan] = useState<any>(null);
+  const [creditSummary, setCreditSummary] = useState(EMPTY_CREDIT_SUMMARY);
+  const [creditTransactions, setCreditTransactions] = useState<any[]>([]);
+  const [loadingAccountSummary, setLoadingAccountSummary] = useState(true);
+
+  const loadProfile = useCallback(async () => {
+    try {
+      const res = await ProfileAPI.getProfile();
+      setProfile(res.data);
+      setEditName(res.data?.fullName || '');
+      setEditBirthday(res.data?.birthday || '');
+    } catch {
+      setProfile({
+        fullName: user?.fullName || '',
+        username: user?.username || '',
+        email: user?.email || '',
+        avatarUrl: user?.avatarUrl || null,
+        birthday: '',
+        badges: [],
       });
-  }, [user, showToast]);
+      setEditName(user?.fullName || '');
+      setEditBirthday('');
+      showToast('Không thể tải hồ sơ', 'error');
+    }
+  }, [showToast, user]);
+
+  const loadAccountSummary = useCallback(async () => {
+    setLoadingAccountSummary(true);
+
+    const [planResult, creditResult, transactionResult] =
+      await Promise.allSettled([
+        ManagementSystemAPI.getCurrentUserPlan(),
+        ManagementSystemAPI.getMyWallet(),
+        ManagementSystemAPI.getMyWalletTransactions(0, 6),
+      ]);
+
+    setCurrentPlan(
+      planResult.status === 'fulfilled' ? planResult.value.data : null,
+    );
+    setCreditSummary(
+      creditResult.status === 'fulfilled'
+        ? creditResult.value.data
+        : EMPTY_CREDIT_SUMMARY,
+    );
+    setCreditTransactions(
+      transactionResult.status === 'fulfilled' ? transactionResult.value.data : [],
+    );
+    setLoadingAccountSummary(false);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      const refreshProfileScreen = async () => {
+        await Promise.allSettled([loadProfile(), loadAccountSummary()]);
+      };
+
+      if (active) {
+        refreshProfileScreen();
+      }
+
+      return () => {
+        active = false;
+      };
+    }, [loadAccountSummary, loadProfile]),
+  );
 
   /* ──── Avatar Upload ──── */
   const handleAvatarPress = useCallback(async () => {
@@ -143,36 +238,13 @@ export default function ProfileScreen({navigation}: any) {
     setIsEditing(false);
   };
 
-  const stats = [
-    {
-      icon: 'book-open-variant',
-      label: 'Chủ đề',
-      value: profile?.topicCount || 0,
-      color: Colors.primary,
-    },
-    {
-      icon: 'clock-outline',
-      label: 'Giờ học',
-      value: profile?.totalHours || 0,
-      color: '#059669',
-    },
-    {
-      icon: 'fire',
-      label: 'Chuỗi ngày',
-      value: profile?.streak || 0,
-      color: '#EA580C',
-    },
-    {
-      icon: 'star-outline',
-      label: 'Điểm TB',
-      value: profile?.avgScore ? `${profile.avgScore}%` : '0%',
-      color: '#7C3AED',
-    },
-  ];
-
-  const xpPercent = profile?.xp
-    ? Math.min((profile.xp / (profile.nextLevelXp || 1000)) * 100, 100)
-    : 0;
+  const currentPlanName = loadingAccountSummary
+    ? 'Đang tải...'
+    : getCurrentPlanName(currentPlan);
+  const currentPlanSubtitle = loadingAccountSummary
+    ? 'Đang cập nhật thông tin gói'
+    : getCurrentPlanSubtitle(currentPlan);
+  const creditExpiry = formatPlanDate(creditSummary.planCreditExpiresAt);
 
   return (
     <SafeAreaView
@@ -244,12 +316,94 @@ export default function ProfileScreen({navigation}: any) {
                     value={editName}
                     onChangeText={setEditName}
                   />
-                  <FloatingInput
-                    label="Birthday (YYYY-MM-DD)"
-                    value={editBirthday}
-                    onChangeText={setEditBirthday}
-                    placeholder="2000-01-15"
-                  />
+                  <TouchableOpacity
+                    onPress={openDatePicker}
+                    style={[
+                      styles.datePickerBtn,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: isDark ? Colors.dark.surfaceVariant : '#FFFFFF',
+                      },
+                    ]}>
+                    <Text style={[styles.datePickerLabel, {color: colors.textTertiary}]}>
+                      Ngày sinh
+                    </Text>
+                    <Text style={[styles.datePickerValue, {color: editBirthday ? colors.text : colors.placeholder}]}>
+                      {editBirthday
+                        ? new Date(editBirthday).toLocaleDateString('vi-VN', {day: '2-digit', month: '2-digit', year: 'numeric'})
+                        : 'Chọn ngày sinh'}
+                    </Text>
+                    <Icon name="calendar-outline" size={20} color={colors.icon} style={styles.datePickerIcon} />
+                  </TouchableOpacity>
+
+                  <Modal visible={showDatePicker} transparent animationType="slide">
+                    <TouchableOpacity
+                      style={styles.pickerOverlay}
+                      activeOpacity={1}
+                      onPress={() => setShowDatePicker(false)}
+                    />
+                    <View style={[styles.pickerSheet, {backgroundColor: colors.surface}]}>
+                      <View style={styles.pickerHeader}>
+                        <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                          <Text style={[styles.pickerHeaderBtn, {color: colors.textSecondary}]}>Huỷ</Text>
+                        </TouchableOpacity>
+                        <Text style={[styles.pickerTitle, {color: colors.heading}]}>Chọn ngày sinh</Text>
+                        <TouchableOpacity onPress={confirmDatePicker}>
+                          <Text style={[styles.pickerHeaderBtn, {color: Colors.primary, fontWeight: '700'}]}>Xong</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.pickerColumns}>
+                        {/* Ngày */}
+                        <View style={styles.pickerCol}>
+                          <Text style={[styles.pickerColLabel, {color: colors.textTertiary}]}>Ngày</Text>
+                          <ScrollView showsVerticalScrollIndicator={false} style={styles.pickerScroll}>
+                            {DAYS.map(d => (
+                              <TouchableOpacity
+                                key={d}
+                                onPress={() => setPickerDay(d)}
+                                style={[styles.pickerItem, pickerDay === d && {backgroundColor: Colors.primary + '20'}]}>
+                                <Text style={[styles.pickerItemText, {color: colors.text}, pickerDay === d && {color: Colors.primary, fontWeight: '700'}]}>
+                                  {String(d).padStart(2, '0')}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                        {/* Tháng */}
+                        <View style={[styles.pickerCol, {flex: 2}]}>
+                          <Text style={[styles.pickerColLabel, {color: colors.textTertiary}]}>Tháng</Text>
+                          <ScrollView showsVerticalScrollIndicator={false} style={styles.pickerScroll}>
+                            {MONTHS.map((m, idx) => (
+                              <TouchableOpacity
+                                key={idx}
+                                onPress={() => setPickerMonth(idx + 1)}
+                                style={[styles.pickerItem, pickerMonth === idx + 1 && {backgroundColor: Colors.primary + '20'}]}>
+                                <Text style={[styles.pickerItemText, {color: colors.text}, pickerMonth === idx + 1 && {color: Colors.primary, fontWeight: '700'}]}>
+                                  {m}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                        {/* Năm */}
+                        <View style={styles.pickerCol}>
+                          <Text style={[styles.pickerColLabel, {color: colors.textTertiary}]}>Năm</Text>
+                          <ScrollView showsVerticalScrollIndicator={false} style={styles.pickerScroll}>
+                            {YEARS.map(y => (
+                              <TouchableOpacity
+                                key={y}
+                                onPress={() => setPickerYear(y)}
+                                style={[styles.pickerItem, pickerYear === y && {backgroundColor: Colors.primary + '20'}]}>
+                                <Text style={[styles.pickerItemText, {color: colors.text}, pickerYear === y && {color: Colors.primary, fontWeight: '700'}]}>
+                                  {y}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      </View>
+                    </View>
+                  </Modal>
                   <View style={styles.editActions}>
                     <TouchableOpacity
                       onPress={handleCancelEdit}
@@ -316,101 +470,312 @@ export default function ProfileScreen({navigation}: any) {
             </View>
           </View>
 
-          {/* XP Bar */}
-          <View style={styles.xpSection}>
-            <View style={styles.xpHeader}>
-              <View style={styles.levelBadge}>
-                <Icon name="lightning-bolt" size={14} color="#F59E0B" />
-                <Text style={[styles.xpLabel, {color: colors.textSecondary}]}>
-                  Cấp {profile?.level || 1}
-                </Text>
-              </View>
-              <Text style={[styles.xpValue, {color: colors.textSecondary}]}>
-                {profile?.xp || 0} / {profile?.nextLevelXp || 1000} XP
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.xpBarBg,
-                {backgroundColor: isDark ? '#1E293B' : '#E2E8F0'},
-              ]}>
-              <View
-                style={[
-                  styles.xpBarFill,
-                  {
-                    width: `${xpPercent}%`,
-                    backgroundColor: Colors.primary,
-                  },
-                ]}
-              />
-            </View>
-          </View>
         </Card>
 
-        {/* Stats Grid */}
         <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-          Thống kê
+          Gói và credit
         </Text>
-        <View style={styles.statsGrid}>
-          {stats.map(stat => (
+        <View style={styles.accountSummaryGrid}>
+          {/* Plan card — full width, horizontal */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('Subscription')}
+            style={[
+              styles.planCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}>
             <View
-              key={stat.label}
               style={[
-                styles.statCard,
+                styles.accountSummaryIcon,
                 {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
+                  backgroundColor: isDark
+                    ? 'rgba(245,158,11,0.14)'
+                    : '#FEF3C7',
                 },
               ]}>
-              <View
-                style={[
-                  styles.statIcon,
-                  {backgroundColor: `${stat.color}15`},
-                ]}>
-                <Icon name={stat.icon} size={18} color={stat.color} />
-              </View>
-              <Text style={[styles.statValue, {color: colors.heading}]}>
-                {stat.value}
+              <Icon
+                name="crown-outline"
+                size={20}
+                color={isDark ? '#FBBF24' : '#D97706'}
+              />
+            </View>
+            <View style={styles.planCardContent}>
+              <Text style={[styles.accountSummaryLabel, {color: colors.textTertiary}]}>
+                Gói hiện tại
               </Text>
-              <Text style={[styles.statLabel, {color: colors.textSecondary}]}>
-                {stat.label}
+              <Text style={[styles.accountSummaryValue, {color: colors.heading}]}>
+                {currentPlanName}
+              </Text>
+              <Text style={[styles.accountSummaryHint, {color: colors.textSecondary}]}>
+                {currentPlanSubtitle}
               </Text>
             </View>
-          ))}
-        </View>
+          </TouchableOpacity>
 
-        {/* Badges */}
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-          Huy hiệu
-        </Text>
-        <View style={styles.badgesRow}>
-          {(profile?.badges || []).length > 0 ? (
-            profile.badges.map((badge: any, i: number) => (
-              <View
-                key={i}
-                style={[
-                  styles.badgeCard,
-                  {backgroundColor: colors.surface, borderColor: colors.border},
-                ]}>
-                <Text style={styles.badgeEmoji}>{badge.emoji || '🏆'}</Text>
-                <Text
-                  style={[styles.badgeName, {color: colors.heading}]}
-                  numberOfLines={1}>
-                  {badge.name}
+          {/* Credit card — full width */}
+          <View
+            style={[
+              styles.accountSummaryCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}>
+            <View style={styles.accountSummaryTop}>
+              <View style={styles.creditHeaderLeft}>
+                <View
+                  style={[
+                    styles.accountSummaryIcon,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(37,99,235,0.18)'
+                        : '#DBEAFE',
+                    },
+                  ]}>
+                  <Icon
+                    name="lightning-bolt-circle"
+                    size={20}
+                    color={isDark ? '#93C5FD' : Colors.primary}
+                  />
+                </View>
+                <Text style={[styles.accountSummaryLabel, {color: colors.textTertiary, marginBottom: 0}]}>
+                  Số dư credit
                 </Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.emptyBadges}>
-              <Icon
-                name="trophy-outline"
-                size={32}
-                color={colors.textTertiary}
-              />
-              <Text style={[styles.emptyText, {color: colors.textSecondary}]}>
-                Chưa có huy hiệu nào
+            </View>
+            <View style={styles.creditValueRow}>
+              <Text style={[styles.creditPrimaryValue, {color: colors.heading}]}>
+                {loadingAccountSummary
+                  ? '...'
+                  : formatCredits(creditSummary.totalAvailableCredits)}
+              </Text>
+              <Text style={[styles.creditPrimaryUnit, {color: colors.textSecondary}]}>
+                credit
               </Text>
             </View>
+            <View style={styles.creditBreakdownList}>
+              <View
+                style={[
+                  styles.creditBreakdownCard,
+                  {
+                    backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                    borderColor: colors.border,
+                  },
+                ]}>
+                <View style={styles.creditBreakdownHeader}>
+                  <Icon
+                    name="cart-outline"
+                    size={16}
+                    color={isDark ? '#93C5FD' : Colors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.creditBreakdownLabel,
+                      {color: colors.textSecondary},
+                    ]}>
+                    Credit mua riêng
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.creditBreakdownValue,
+                    {color: colors.heading},
+                  ]}>
+                  {loadingAccountSummary
+                    ? '...'
+                    : formatCredits(creditSummary.regularCreditBalance)}
+                </Text>
+              </View>
+
+              {creditSummary.hasActivePlan && (
+                <View
+                  style={[
+                    styles.creditBreakdownCard,
+                    {
+                      backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                      borderColor: colors.border,
+                    },
+                  ]}>
+                  <View style={styles.creditBreakdownHeader}>
+                    <Icon
+                      name="crown-outline"
+                      size={16}
+                      color={isDark ? '#FBBF24' : '#D97706'}
+                    />
+                    <Text
+                      style={[
+                        styles.creditBreakdownLabel,
+                        {color: colors.textSecondary},
+                      ]}>
+                      Credit từ gói
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.creditBreakdownValue,
+                      {color: colors.heading},
+                    ]}>
+                    {loadingAccountSummary
+                      ? '...'
+                      : formatCredits(creditSummary.planCreditBalance)}
+                  </Text>
+                  {!!creditExpiry && (
+                    <Text
+                      style={[
+                        styles.creditBreakdownMeta,
+                        {color: colors.textSecondary},
+                      ]}>
+                      Hết hạn vào {creditExpiry}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+            <Button
+              title="Mua credit"
+              variant="outline"
+              size="sm"
+              onPress={() => navigation.navigate('CreditPackages')}
+              icon="lightning-bolt"
+              style={styles.creditActionBtn}
+            />
+          </View>
+        </View>
+
+        <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+          Biến động số dư credit
+        </Text>
+        <View
+          style={[
+            styles.creditHistoryCard,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}>
+          {loadingAccountSummary ? (
+            <LoadingSpinner fullScreen={false} size="small" />
+          ) : creditTransactions.length === 0 ? (
+            <View style={styles.creditHistoryEmpty}>
+              <Icon
+                name="timeline-clock-outline"
+                size={28}
+                color={colors.textTertiary}
+              />
+              <Text
+                style={[
+                  styles.creditHistoryEmptyText,
+                  {color: colors.textSecondary},
+                ]}>
+                Chưa có biến động credit nào gần đây
+              </Text>
+            </View>
+          ) : (
+            creditTransactions.map((transaction, index) => {
+              const isPositive = Number(transaction.creditChange || 0) >= 0;
+              const activity = getCreditTransactionActivity(transaction);
+              return (
+                <View
+                  key={transaction.id}
+                  style={[
+                    styles.creditHistoryRow,
+                    index < creditTransactions.length - 1 && {
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: colors.border,
+                    },
+                  ]}>
+                  <View
+                    style={[
+                      styles.creditHistoryIconWrap,
+                      {
+                        backgroundColor: isPositive
+                          ? isDark
+                            ? 'rgba(16,185,129,0.16)'
+                            : '#ECFDF5'
+                          : isDark
+                          ? 'rgba(245,158,11,0.16)'
+                          : '#FFF7ED',
+                      },
+                    ]}>
+                    <Icon
+                      name={getCreditTransactionIcon(
+                        transaction.type,
+                        transaction.source,
+                        transaction.note,
+                      )}
+                      size={18}
+                      color={
+                        isPositive
+                          ? isDark
+                            ? '#34D399'
+                            : '#059669'
+                          : isDark
+                          ? '#FBBF24'
+                          : '#D97706'
+                      }
+                    />
+                  </View>
+
+                  <View style={styles.creditHistoryContent}>
+                    <Text
+                      style={[
+                        styles.creditHistoryTitle,
+                        {color: colors.heading},
+                      ]}>
+                      {activity.title}
+                    </Text>
+                    {!!activity.subtitle && (
+                      <Text
+                        style={[
+                          styles.creditHistoryMeta,
+                          {color: colors.textSecondary},
+                        ]}>
+                        {activity.subtitle}
+                      </Text>
+                    )}
+                    <Text
+                      style={[
+                        styles.creditHistoryMeta,
+                        {color: colors.textSecondary},
+                      ]}>
+                      {getCreditTransactionSourceLabel(transaction.source)}
+                      {' • '}
+                      {formatCreditDateTime(transaction.createdAt)}
+                    </Text>
+                    {transaction.balanceAfter != null && (
+                      <Text
+                        style={[
+                          styles.creditHistoryMeta,
+                          {color: colors.textTertiary},
+                        ]}>
+                        Số dư sau biến động:{' '}
+                        {formatCredits(transaction.balanceAfter)} credit
+                      </Text>
+                    )}
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.creditHistoryAmount,
+                      {
+                        color: isPositive
+                          ? isDark
+                            ? '#34D399'
+                            : '#059669'
+                          : isDark
+                          ? '#FBBF24'
+                          : '#D97706',
+                      },
+                    ]}>
+                    {isPositive ? '+' : ''}
+                    {formatCredits(transaction.creditChange)}
+                  </Text>
+                </View>
+              );
+            })
           )}
         </View>
 
@@ -425,6 +790,13 @@ export default function ProfileScreen({navigation}: any) {
             desc: 'Quản lý gói của bạn',
             screen: 'Subscription',
             color: '#F59E0B',
+          },
+          {
+            icon: 'lightning-bolt-circle',
+            label: 'Mua credit',
+            desc: 'Nạp thêm credit cho tài khoản',
+            screen: 'CreditPackages',
+            color: Colors.primary,
           },
           {
             icon: 'cog-outline',
@@ -490,7 +862,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing.base,
-    marginBottom: Spacing.lg,
   },
   avatarWrap: {position: 'relative'},
   cameraBadge: {
@@ -517,7 +888,70 @@ const styles = StyleSheet.create({
   birthdayText: {fontSize: 12},
 
   // Edit fields
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  pickerSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 32,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
+  pickerTitle: {fontSize: 16, fontWeight: '600'},
+  pickerHeaderBtn: {fontSize: 15},
+  pickerColumns: {
+    flexDirection: 'row',
+    height: 220,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+  },
+  pickerCol: {flex: 1, marginHorizontal: 4},
+  pickerColLabel: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginBottom: 6,
+    fontWeight: '500',
+  },
+  pickerScroll: {flex: 1},
+  pickerItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    marginBottom: 2,
+    alignItems: 'center',
+  },
+  pickerItemText: {fontSize: 14},
   editFields: {gap: Spacing.sm},
+  datePickerBtn: {
+    height: 56,
+    borderWidth: 1.5,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+  },
+  datePickerLabel: {
+    fontSize: 11,
+    fontWeight: '400',
+    marginBottom: 2,
+  },
+  datePickerValue: {
+    fontSize: 14,
+    fontWeight: '400',
+  },
+  datePickerIcon: {
+    position: 'absolute',
+    right: 14,
+    top: 18,
+  },
   editActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -549,6 +983,160 @@ const styles = StyleSheet.create({
   xpValue: {fontSize: 12},
   xpBarBg: {height: 8, borderRadius: 4, overflow: 'hidden'},
   xpBarFill: {height: '100%', borderRadius: 4},
+
+  // Account summary
+  accountSummaryGrid: {
+    flexDirection: 'column',
+    gap: Spacing.sm,
+  },
+  planCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.base,
+  },
+  planCardContent: {
+    flex: 1,
+  },
+  accountSummaryCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.base,
+  },
+  creditHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  accountSummaryTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.base,
+  },
+  accountSummaryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountSummaryLabel: {
+    fontSize: 11,
+    textTransform: 'uppercase',
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  accountSummaryValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 24,
+  },
+  accountSummaryHint: {
+    fontSize: 12,
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  creditValueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  creditPrimaryValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    lineHeight: 32,
+  },
+  creditPrimaryUnit: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  creditBreakdownList: {
+    marginTop: Spacing.sm,
+    gap: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  creditBreakdownCard: {
+    flex: 1,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    minHeight: 88,
+  },
+  creditBreakdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  creditBreakdownLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  creditBreakdownValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  creditBreakdownMeta: {
+    fontSize: 11,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  creditActionBtn: {marginTop: Spacing.md},
+
+  // Credit history
+  creditHistoryCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  creditHistoryEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xl,
+    paddingHorizontal: Spacing.base,
+    gap: 8,
+  },
+  creditHistoryEmptyText: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  creditHistoryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.base,
+  },
+  creditHistoryIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creditHistoryContent: {
+    flex: 1,
+    gap: 3,
+  },
+  creditHistoryTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  creditHistoryMeta: {
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  creditHistoryAmount: {
+    fontSize: 15,
+    fontWeight: '700',
+    paddingTop: 2,
+  },
 
   sectionTitle: {
     fontSize: 16,

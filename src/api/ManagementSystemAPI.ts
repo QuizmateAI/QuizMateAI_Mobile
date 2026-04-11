@@ -1,4 +1,9 @@
 import api from './api';
+import {
+  normalizeCreditSummary,
+  normalizeCreditTransactions,
+  normalizeCurrentPlan,
+} from '../utils/accountSummary';
 
 const ManagementSystemAPI = {
   getMyPermissions: () => api.get('/management/me/permissions'),
@@ -96,26 +101,46 @@ const ManagementSystemAPI = {
 
   getPurchasablePlans: (type: string) => api.get(`/plan/purchasable?type=${type}`),
 
-  getAllCreditPackages: () => api.get('/credit-package/all'),
+  getCurrentUserPlan: () =>
+    api.get('/api/user/current-plan').then(res => ({
+      ...res,
+      data: normalizeCurrentPlan(res.data?.data),
+    })),
 
-  getCreditPackageById: (id: number) => api.get(`/credit-package/${id}`),
+  getAllCreditPackages: () => api.get('/api/credit-package/all'),
 
-  createCreditPackage: (data: any) => api.post('/credit-package/create', data),
+  getCreditPackageById: (id: number) => api.get(`/api/credit-package/${id}`),
+
+  createCreditPackage: (data: any) =>
+    api.post('/api/credit-package/create', data),
 
   updateCreditPackage: (id: number, data: any) =>
-    api.put(`/credit-package/${id}`, data),
+    api.put(`/api/credit-package/${id}`, data),
 
   updateCreditPackageStatus: (id: number, data: any) =>
-    api.patch(`/credit-package/${id}/status`, data),
+    api.patch(`/api/credit-package/${id}/status`, data),
 
-  deleteCreditPackage: (id: number) => api.delete(`/credit-package/${id}`),
+  deleteCreditPackage: (id: number) => api.delete(`/api/credit-package/${id}`),
 
-  getPurchaseableCreditPackages: () => api.get('/credit-package/purchaseable'),
+  getPurchaseableCreditPackages: () =>
+    api.get('/api/credit-package/purchaseable'),
 
   getUserPayments: (page = 0, size = 10) =>
     api.get(`/payment/user?page=${page}&size=${size}`),
 
-  getMyWallet: () => api.get('/credit-wallet/me'),
+  getMyWallet: () =>
+    api.get('/api/credit-wallet/me').then(res => ({
+      ...res,
+      data: normalizeCreditSummary(res.data?.data),
+    })),
+
+  getMyWalletTransactions: (page = 0, size = 10) =>
+    api
+      .get(`/api/credit-wallet/me/transactions?page=${page}&size=${size}`)
+      .then(res => ({
+        ...res,
+        data: normalizeCreditTransactions(res.data?.data),
+      })),
 };
 
 export default ManagementSystemAPI;

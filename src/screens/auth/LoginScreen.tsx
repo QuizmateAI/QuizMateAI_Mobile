@@ -21,6 +21,7 @@ import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import Button from '../../components/ui/Button';
 import FloatingInput from '../../components/ui/Input';
+import AppLogo from '../../components/AppLogo';
 import AuthAPI from '../../api/AuthAPI';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
@@ -183,13 +184,7 @@ export default function LoginScreen({navigation}: any) {
 
           {/* Logo */}
           <View style={styles.logoContainer}>
-            <View
-              style={[
-                styles.logoPlaceholder,
-                {backgroundColor: Colors.primary},
-              ]}>
-              <Text style={styles.logoText}>Q</Text>
-            </View>
+            <AppLogo size={64} style={styles.logoImage} />
             <Text style={[styles.appName, {color: colors.heading}]}>
               QuizMate AI
             </Text>
@@ -313,18 +308,8 @@ const styles = StyleSheet.create({
     marginTop: Spacing['2xl'],
     marginBottom: Spacing.xl,
   },
-  logoPlaceholder: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+  logoImage: {
     marginBottom: Spacing.md,
-  },
-  logoText: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   appName: {
     fontSize: 22,
