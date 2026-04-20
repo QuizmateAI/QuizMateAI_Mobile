@@ -28,6 +28,14 @@ import AppLogo from '../../components/AppLogo';
 
 const PAGE_SIZE = 10;
 
+const isIndividualWorkspace = (workspace: any) => {
+  const kind = String(workspace?.workspaceKind || workspace?.type || '').toUpperCase();
+  if (!kind) {
+    return workspace?.isGroupWorkspace !== true;
+  }
+  return kind === 'INDIVIDUAL';
+};
+
 const sortWorkspacesByNewest = (items: any[]) =>
   [...items].sort((left, right) => {
     const leftCreatedAt = new Date(left?.createdAt || 0).getTime();
@@ -78,7 +86,6 @@ export default function HomeScreen({ navigation }: any) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  const [totalWorkspaces, setTotalWorkspaces] = useState(0);
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
 
   // Create workspace/group dialog
@@ -113,7 +120,7 @@ export default function HomeScreen({ navigation }: any) {
 
     try {
       const wsRes = await WorkspaceAPI.getByUser(page, PAGE_SIZE);
-      const nextItems = wsRes.data || [];
+      const nextItems = (wsRes.data || []).filter(isIndividualWorkspace);
       const nextPagination = wsRes.pagination;
 
       setWorkspaces(currentItems =>
@@ -121,13 +128,11 @@ export default function HomeScreen({ navigation }: any) {
       );
       setCurrentPage(nextPagination?.page ?? page);
       setHasMore(!(nextPagination?.last ?? nextItems.length < PAGE_SIZE));
-      setTotalWorkspaces(nextPagination?.totalElements ?? nextItems.length);
     } catch (error: any) {
       if (page === 0) {
         setWorkspaces([]);
         setHasMore(false);
         setCurrentPage(0);
-        setTotalWorkspaces(0);
       }
       showToast(
         getApiErrorMessage(error, 'Không thể tải danh sách workspace'),
@@ -274,7 +279,7 @@ export default function HomeScreen({ navigation }: any) {
       return (
         <View style={styles.footerSummary}>
           <Text style={[styles.footerSummaryText, { color: colors.textTertiary }]}>
-            Đã hiển thị {workspaces.length}/{totalWorkspaces || workspaces.length} workspace
+            Đã hiển thị {workspaces.length} workspace
           </Text>
         </View>
       );

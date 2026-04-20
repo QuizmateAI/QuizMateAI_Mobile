@@ -9,6 +9,7 @@ import {
   Dimensions,
   Alert,
 } from 'react-native';
+import DocumentPicker from 'react-native-document-picker';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
@@ -21,6 +22,7 @@ import Button from '../../components/ui/Button';
 import Dialog from '../../components/ui/Dialog';
 import FloatingInput from '../../components/ui/Input';
 import GroupAPI from '../../api/GroupAPI';
+import MaterialAPI from '../../api/MaterialAPI';
 import QuizAPI from '../../api/QuizAPI';
 import FlashcardAPI from '../../api/FlashcardAPI';
 import RoadmapAPI from '../../api/RoadmapAPI';
@@ -39,16 +41,21 @@ const QUICK_ACTIONS = [
 
 export default function GroupWorkspaceScreen({navigation, route}: any) {
   const {groupId, title} = route.params;
+  const normalizedGroupId = Number(groupId || route?.params?.workspaceId || 0);
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [members, setMembers] = useState<any[]>([]);
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [pendingReviewMaterials, setPendingReviewMaterials] = useState<any[]>([]);
+  const [canReviewMaterials, setCanReviewMaterials] = useState(false);
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [flashcards, setFlashcards] = useState<any[]>([]);
   const [roadmaps, setRoadmaps] = useState<any[]>([]);
-  const [sources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('chat');
   const [chatMessage, setChatMessage] = useState('');
+  const [uploadingMaterial, setUploadingMaterial] = useState(false);
+  const [reviewingMaterialId, setReviewingMaterialId] = useState<number | null>(null);
   const latestFetchRequestIdRef = useRef(0);
   const refreshRetryTimer1Ref = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -61,6 +68,31 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const [inviteVisible, setInviteVisible] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
+
+  const normalizeArray = useCallback((payload: any): any[] => {
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+    if (Array.isArray(payload?.content)) {
+      return payload.content;
+    }
+    if (Array.isArray(payload?.items)) {
+      return payload.items;
+    }
+    if (Array.isArray(payload?.data)) {
+      return payload.data;
+    }
+    if (Array.isArray(payload?.data?.content)) {
+      return payload.data.content;
+    }
+    if (Array.isArray(payload?.data?.items)) {
+      return payload.data.items;
+    }
+    if (Array.isArray(payload?.data?.data)) {
+      return payload.data.data;
+    }
+    return [];
+  }, []);
 
   const openQuizModeSelector = useCallback(
     (quiz: any) => {
@@ -82,7 +114,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 title: quizTitle,
                 backContext: {
                   type: 'group',
-                  groupId: Number(groupId),
+                  groupId: normalizedGroupId,
                   title,
                 },
               },
@@ -98,7 +130,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 title: quizTitle,
                 backContext: {
                   type: 'group',
-                  groupId: Number(groupId),
+                  groupId: normalizedGroupId,
                   title,
                 },
               },
@@ -130,39 +162,81 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const fetchData = useCallback(async () => {
     const requestId = ++latestFetchRequestIdRef.current;
 
+    if (!Number.isInteger(normalizedGroupId) || normalizedGroupId <= 0) {
+      setLoading(false);
+      setMembers([]);
+      return;
+    }
+
     try {
-      const [memRes, quizRes, fcRes] = await Promise.all([
-        GroupAPI.getMembers(groupId),
-        QuizAPI.getByContext('GROUP', groupId),
-        FlashcardAPI.getByContext('GROUP', groupId),
+      // Use allSettled so that partial data loads even if one API fails
+      const results = await Promise.allSettled([
+        GroupAPI.getMembers(normalizedGroupId),
+        MaterialAPI.getByWorkspace(normalizedGroupId),
+        GroupAPI.getMyPermissions(normalizedGroupId),
+        QuizAPI.getByContext('GROUP', normalizedGroupId),
+        FlashcardAPI.getByContext('GROUP', normalizedGroupId),
+        RoadmapAPI.getForGroup(normalizedGroupId),
       ]);
 
       if (requestId !== latestFetchRequestIdRef.current) {
         return;
       }
 
-      setMembers(memRes.data || []);
-      setQuizzes(quizRes.data || []);
-      setFlashcards(fcRes.data || []);
+      // Extract results, handling both fulfilled and rejected states
+      const memRes = results[0].status === 'fulfilled' ? results[0].value : {data: []};
+      const materialRes = results[1].status === 'fulfilled' ? results[1].value : {data: []};
+      const permissionRes = results[2].status === 'fulfilled' ? results[2].value : {data: null};
+      const quizRes = results[3].status === 'fulfilled' ? results[3].value : {data: []};
+      const fcRes = results[4].status === 'fulfilled' ? results[4].value : {data: []};
+      const rmRes = results[5].status === 'fulfilled' ? results[5].value : {data: []};
 
-      // Roadmaps
-      try {
-        const rmRes = await RoadmapAPI.getForGroup(groupId);
-        if (requestId !== latestFetchRequestIdRef.current) {
-          return;
+      const permissionPayload = permissionRes?.data?.data || permissionRes?.data || {};
+      const role = String(
+        permissionPayload?.role ||
+          permissionPayload?.memberRole ||
+          permissionPayload?.groupRole ||
+          '',
+      ).toUpperCase();
+      const canReviewFlagRaw = permissionPayload?.canReviewMaterials;
+      const canReviewFlag =
+        canReviewFlagRaw === true ||
+        String(canReviewFlagRaw || '').toLowerCase() === 'true';
+      const canReview = canReviewFlag || role === 'LEADER';
+
+      setMembers(normalizeArray(memRes?.data));
+      setMaterials(normalizeArray(materialRes?.data));
+      setCanReviewMaterials(canReview);
+      setQuizzes(normalizeArray(quizRes?.data));
+      setFlashcards(normalizeArray(fcRes?.data));
+      setRoadmaps(normalizeArray(rmRes?.data));
+
+      if (canReview) {
+        try {
+          const pendingRes = await MaterialAPI.getPendingGroupMaterials(normalizedGroupId);
+          if (requestId !== latestFetchRequestIdRef.current) {
+            return;
+          }
+          setPendingReviewMaterials(normalizeArray(pendingRes?.data));
+        } catch {
+          setPendingReviewMaterials([]);
         }
-        setRoadmaps(rmRes.data || []);
-      } catch {
-        if (requestId !== latestFetchRequestIdRef.current) {
-          return;
-        }
-        setRoadmaps([]);
+      } else {
+        setPendingReviewMaterials([]);
       }
-    } catch {
+
+      // Keep screen usable even if member endpoint is flaky.
+      if (results[0].status === 'rejected') {
+        setMembers([]);
+      }
+    } catch (error) {
       if (requestId !== latestFetchRequestIdRef.current) {
         return;
       }
+      console.error('GroupWorkspaceScreen fetchData error:', error);
       setMembers([]);
+      setMaterials([]);
+      setPendingReviewMaterials([]);
       setQuizzes([]);
       setFlashcards([]);
       setRoadmaps([]);
@@ -172,7 +246,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         setLoading(false);
       }
     }
-  }, [groupId, showToast]);
+  }, [normalizedGroupId, showToast, normalizeArray]);
 
   useEffect(() => {
     fetchData();
@@ -209,8 +283,8 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   }, []);
 
   const {isConnected: wsConnected} = useWebSocket({
-    groupId,
-    enabled: !!groupId,
+    groupId: normalizedGroupId,
+    enabled: Number.isInteger(normalizedGroupId) && normalizedGroupId > 0,
     onMaterialUploaded: triggerMaterialRefresh,
     onMaterialDeleted: triggerMaterialRefresh,
     onMaterialUpdated: triggerMaterialRefresh,
@@ -228,7 +302,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     if (!inviteEmail.trim()) {return;}
     setInviting(true);
     try {
-      await GroupAPI.sendInvitation(groupId, {email: inviteEmail});
+      await GroupAPI.sendInvitation(normalizedGroupId, {email: inviteEmail});
       showToast('Đã gửi lời mời!', 'success');
       setInviteVisible(false);
       setInviteEmail('');
@@ -239,13 +313,64 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     }
   };
 
+  const handleUploadMaterial = async () => {
+    try {
+      const picked = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.allFiles],
+        presentationStyle: 'fullScreen',
+      });
+
+      if (!picked?.uri) {
+        return;
+      }
+
+      setUploadingMaterial(true);
+      const formData = new FormData();
+      formData.append('file', {
+        uri: picked.uri,
+        type: picked.type || 'application/octet-stream',
+        name: picked.name || `group-upload-${Date.now()}`,
+      } as any);
+      formData.append('workspaceID', String(normalizedGroupId));
+
+      await MaterialAPI.uploadGroupPending(formData);
+      showToast('Đã tải tài liệu lên, leader sẽ duyệt trước khi dùng chung', 'success');
+      fetchData();
+    } catch (error: any) {
+      if (DocumentPicker.isCancel(error)) {
+        return;
+      }
+      showToast('Không thể tải tài liệu lên', 'error');
+    } finally {
+      setUploadingMaterial(false);
+    }
+  };
+
+  const handleReviewMaterial = async (material: any, isApproved: boolean) => {
+    const materialId = Number(material?.materialId || material?.id || 0);
+    if (!materialId) {
+      return;
+    }
+
+    setReviewingMaterialId(materialId);
+    try {
+      await MaterialAPI.reviewGroupMaterial(materialId, isApproved);
+      showToast(isApproved ? 'Đã duyệt tài liệu' : 'Đã từ chối tài liệu', 'success');
+      fetchData();
+    } catch {
+      showToast('Không thể xử lý duyệt tài liệu', 'error');
+    } finally {
+      setReviewingMaterialId(null);
+    }
+  };
+
   const handleQuickAction = (key: string) => {
     if (key === 'roadmap') {
-      Alert.alert(
-        'Chưa hỗ trợ trên mobile',
-        'Tính năng Lộ trình hiện chỉ khả dụng trên web app. Vui lòng truy cập trên trình duyệt để sử dụng.',
-        [{text: 'Đã hiểu', style: 'default'}],
-      );
+      navigation.navigate('RoadmapJourney', {
+        contextType: 'GROUP',
+        contextId: normalizedGroupId,
+        title,
+      });
       return;
     }
     if (key === 'flashcard') {
@@ -298,14 +423,16 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
             {members.length} thành viên
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => setInviteVisible(true)}
-          style={[styles.inviteBtn, {backgroundColor: Colors.primaryLight}]}>
-          <Icon name="account-plus" size={18} color={Colors.primary} />
-        </TouchableOpacity>
+        {canReviewMaterials && (
+          <TouchableOpacity
+            onPress={() => setInviteVisible(true)}
+            style={[styles.inviteBtn, {backgroundColor: Colors.primaryLight}]}>
+            <Icon name="account-plus" size={18} color={Colors.primary} />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           onPress={() =>
-            navigation.navigate('GroupManagement', {groupId, title})
+            navigation.navigate('GroupManagement', {groupId: normalizedGroupId, title})
           }
           style={styles.headerAction}>
           <Icon name="cog-outline" size={22} color={colors.icon} />
@@ -374,6 +501,82 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 colors={colors}
               />
             </View>
+
+            {canReviewMaterials ? (
+              <>
+                <Text style={[styles.sectionTitle, {color: colors.heading}]}> 
+                  Quản trị nhóm
+                </Text>
+                <View style={styles.adminQuickGrid}>
+                  <TouchableOpacity
+                    onPress={() => setActiveBottomTab('sources')}
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    <Icon name="file-check-outline" size={18} color={Colors.primary} />
+                    <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Duyệt tài liệu</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate('GroupManagement', {
+                        groupId: normalizedGroupId,
+                        title,
+                        initialTab: 'members',
+                      })
+                    }
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    <Icon name="account-group-outline" size={18} color="#2563EB" />
+                    <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Thành viên</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate('GroupManagement', {
+                        groupId: normalizedGroupId,
+                        title,
+                        initialTab: 'ranking',
+                      })
+                    }
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    <Icon name="trophy-outline" size={18} color="#F59E0B" />
+                    <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Xếp hạng</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate('GroupManagement', {
+                        groupId: normalizedGroupId,
+                        title,
+                        initialTab: 'logs',
+                      })
+                    }
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    <Icon name="history" size={18} color="#64748B" />
+                    <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Hoạt động</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate('GroupManagement', {
+                        groupId: normalizedGroupId,
+                        title,
+                        initialTab: 'dashboard',
+                      })
+                    }
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    <Icon name="chart-line" size={18} color="#10B981" />
+                    <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Tổng quan</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate('GroupManagement', {
+                        groupId: normalizedGroupId,
+                        title,
+                        initialTab: 'settings',
+                      })
+                    }
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    <Icon name="cog-outline" size={18} color="#8B5CF6" />
+                    <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Cài đặt</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
 
             {/* Quizzes */}
             {quizzes.length > 0 && (
@@ -451,18 +654,76 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
           <View>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-                Tài liệu nhóm ({sources.length})
+                Tài liệu nhóm ({materials.length})
               </Text>
               <TouchableOpacity
-                onPress={() => showToast('File upload coming soon', 'info')}
-                onPress={() => showToast('Tính năng tải file sẽ sớm ra mắt', 'info')}
+                onPress={handleUploadMaterial}
                 style={[styles.addSourceBtn, {backgroundColor: Colors.primary}]}>
                 <Icon name="plus" size={16} color="#FFFFFF" />
-                <Text style={styles.addSourceText}>Thêm</Text>
+                <Text style={styles.addSourceText}>
+                  {uploadingMaterial ? 'Đang tải...' : 'Thêm'}
+                </Text>
               </TouchableOpacity>
             </View>
 
-            {sources.length === 0 ? (
+            {canReviewMaterials && (
+              <View
+                style={[
+                  styles.pendingReviewCard,
+                  {backgroundColor: colors.surface, borderColor: colors.border},
+                ]}>
+                <View style={styles.pendingReviewHeader}>
+                  <Text style={[styles.pendingReviewTitle, {color: colors.heading}]}>Duyệt tài liệu chờ</Text>
+                  <Badge
+                    label={`${pendingReviewMaterials.length}`}
+                    variant={pendingReviewMaterials.length > 0 ? 'warning' : 'neutral'}
+                    size="sm"
+                  />
+                </View>
+                {pendingReviewMaterials.length === 0 ? (
+                  <Text style={[styles.pendingReviewEmpty, {color: colors.textSecondary}]}>Không có tài liệu cần duyệt</Text>
+                ) : (
+                  pendingReviewMaterials.map((mat: any) => {
+                    const matId = Number(mat?.materialId || mat?.id || 0);
+                    const isLoading = reviewingMaterialId === matId;
+                    return (
+                      <View key={String(matId || mat?.title)} style={[styles.pendingReviewItem, {borderBottomColor: colors.border}]}> 
+                        <View style={[styles.pendingReviewIcon, {backgroundColor: '#F59E0B20'}]}>
+                          <Icon name="alert-circle-outline" size={16} color="#F59E0B" />
+                        </View>
+                        <View style={styles.pendingReviewInfo}>
+                          <Text style={[styles.pendingReviewName, {color: colors.heading}]} numberOfLines={1}>
+                            {mat?.title || mat?.fileName || `Material #${matId}`}
+                          </Text>
+                          <Text style={[styles.pendingReviewMeta, {color: colors.textSecondary}]}>Trạng thái: {String(mat?.status || 'PENDING')}</Text>
+                        </View>
+                        <View style={styles.pendingReviewActions}>
+                          <Button
+                            title="Duyệt"
+                            size="sm"
+                            fullWidth={false}
+                            loading={isLoading}
+                            onPress={() => handleReviewMaterial(mat, true)}
+                            style={styles.reviewActionBtn}
+                          />
+                          <Button
+                            title="Từ chối"
+                            variant="destructive"
+                            size="sm"
+                            fullWidth={false}
+                            loading={isLoading}
+                            onPress={() => handleReviewMaterial(mat, false)}
+                            style={styles.reviewActionBtn}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            )}
+
+            {materials.length === 0 ? (
               <View style={styles.emptySection}>
                 <View
                   style={[
@@ -475,22 +736,22 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                   Chưa có tài liệu
                 </Text>
                 <Text style={[styles.emptySubtitle, {color: colors.textTertiary}]}>
-                  Tải tài liệu lên để chia sẻ với nhóm
+                  Tải tài liệu lên để chia sẻ với nhóm và chờ leader duyệt
                 </Text>
                 <TouchableOpacity
-                  onPress={() => showToast('Tính năng tải file sẽ sớm ra mắt', 'info')}
+                  onPress={handleUploadMaterial}
                   style={[
                     styles.uploadBtn,
                     {backgroundColor: isDark ? Colors.dark.surfaceVariant : Colors.primaryLight},
                   ]}>
                   <Icon name="upload" size={18} color={Colors.primary} />
                   <Text style={[styles.uploadBtnText, {color: Colors.primary}]}>
-                    Tải tài liệu lên
+                    {uploadingMaterial ? 'Đang tải...' : 'Tải tài liệu lên'}
                   </Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              sources.map((src: any, i: number) => (
+              materials.map((src: any, i: number) => (
                 <View
                   key={src.id || i}
                   style={[
@@ -504,6 +765,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                     <Text style={[styles.sourceName, {color: colors.heading}]} numberOfLines={1}>
                       {src.title || src.name}
                     </Text>
+                    <Text style={[styles.sourceMeta, {color: colors.textSecondary}]}>Trạng thái: {String(src.status || 'N/A')}</Text>
                   </View>
                 </View>
               ))
@@ -535,7 +797,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                     if (item.label === 'Lộ trình') {
                       navigation.navigate('RoadmapJourney', {
                         contextType: 'GROUP',
-                        contextId: groupId,
+                        contextId: normalizedGroupId,
                         title,
                       });
                     }
@@ -752,6 +1014,18 @@ const styles = StyleSheet.create({
   overviewValue: {fontSize: 18, fontWeight: '700'},
   overviewLabel: {fontSize: 10},
 
+  adminQuickGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm},
+  adminQuickBtn: {
+    width: (SCREEN_WIDTH - Spacing.lg * 2 - Spacing.sm) / 2,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    alignItems: 'center',
+    gap: 6,
+  },
+  adminQuickLabel: {fontSize: 12, fontWeight: '600'},
+
   // List Items
   listItem: {
     flexDirection: 'row', alignItems: 'center',
@@ -797,6 +1071,41 @@ const styles = StyleSheet.create({
   },
   sourceInfo: {flex: 1},
   sourceName: {fontSize: 14, fontWeight: '500'},
+  sourceMeta: {fontSize: 12, marginTop: 2},
+
+  pendingReviewCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  pendingReviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pendingReviewTitle: {fontSize: 14, fontWeight: '700'},
+  pendingReviewEmpty: {fontSize: 12},
+  pendingReviewItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: Spacing.sm,
+  },
+  pendingReviewIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pendingReviewInfo: {flex: 1},
+  pendingReviewName: {fontSize: 13, fontWeight: '600'},
+  pendingReviewMeta: {fontSize: 11, marginTop: 1},
+  pendingReviewActions: {flexDirection: 'row', gap: 6},
+  reviewActionBtn: {minWidth: 70},
 
   // Studio
   studioSubtitle: {fontSize: 13, marginTop: -Spacing.sm, marginBottom: Spacing.md},

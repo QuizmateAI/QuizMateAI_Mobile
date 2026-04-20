@@ -779,6 +779,17 @@ export default function ProfileScreen({navigation}: any) {
           )}
         </View>
 
+        {creditTransactions.length > 0 && (
+          <Button
+            title="Xem lịch sử chi tiết"
+            variant="outline"
+            size="md"
+            onPress={() => navigation.navigate('PersonalWallet')}
+            icon="wallet"
+            style={styles.viewAllBtn}
+          />
+        )}
+
         {/* Quick Links */}
         <Text style={[styles.sectionTitle, {color: colors.heading}]}>
           Tài khoản
@@ -1088,6 +1099,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   creditActionBtn: {marginTop: Spacing.md},
+  viewAllBtn: {marginVertical: Spacing.lg},
 
   // Credit history
   creditHistoryCard: {

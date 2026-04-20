@@ -23,7 +23,7 @@ import GroupAPI from '../../api/GroupAPI';
 type PaymentMethod = 'momo' | 'vnpay';
 
 export default function PaymentScreen({navigation, route}: any) {
-  const {planId, planName, planType: paramPlanType} = route.params;
+  const {planId, planName, planType: paramPlanType, groupId: preselectedGroupId} = route.params;
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [plan, setPlan] = useState<any>(null);
@@ -52,11 +52,20 @@ export default function PaymentScreen({navigation, route}: any) {
       // Load groups for GROUP plans
       try {
         const grRes = await GroupAPI.getJoined();
-        setGroups(
-          (grRes.data || []).filter(
-            (g: any) => g.role === 'LEADER' || g.memberRole === 'LEADER',
-          ),
+        const leaderGroups = (grRes.data || []).filter(
+          (g: any) => g.role === 'LEADER' || g.memberRole === 'LEADER',
         );
+        setGroups(leaderGroups);
+
+        const normalizedPreselected = Number(preselectedGroupId || 0);
+        if (normalizedPreselected > 0) {
+          const matched = leaderGroups.find(
+            (g: any) => Number(g.groupId || g.id || 0) === normalizedPreselected,
+          );
+          if (matched) {
+            setSelectedGroupId(Number(matched.groupId || matched.id));
+          }
+        }
       } catch {
         setGroups([]);
       }
@@ -64,7 +73,7 @@ export default function PaymentScreen({navigation, route}: any) {
       setLoading(false);
     };
     loadData();
-  }, [planId, planName, paramPlanType, showToast]);
+  }, [planId, planName, paramPlanType, preselectedGroupId, showToast]);
 
   const handlePayment = async () => {
     if (!plan) {
@@ -228,8 +237,8 @@ export default function PaymentScreen({navigation, route}: any) {
               </View>
             ) : (
               groups.map((g: any) => {
-                const gId = g.groupId || g.id;
-                const isSelected = selectedGroupId === gId;
+                const gId = Number(g.groupId || g.id || 0);
+                const isSelected = Number(selectedGroupId) === gId;
                 return (
                   <TouchableOpacity
                     key={gId}

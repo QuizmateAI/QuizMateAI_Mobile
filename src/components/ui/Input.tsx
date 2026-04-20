@@ -40,33 +40,65 @@ export default function FloatingInput({
   const animatedValue = useRef(
     new Animated.Value(value ? 1 : 0),
   ).current;
+  const isMountedRef = useRef(true);
+  const animationRef = useRef<{stop: () => void} | null>(null);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (animationRef.current) {
+        animationRef.current.stop();
+      }
+    };
+  }, []);
 
   const handleFocus = () => {
+    if (!isMountedRef.current) return;
     setIsFocused(true);
-    Animated.timing(animatedValue, {
-      toValue: 1,
-      duration: 150,
-      useNativeDriver: false,
-    }).start();
+    try {
+      const anim = Animated.timing(animatedValue, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: false,
+      });
+      animationRef.current = anim;
+      anim.start();
+    } catch (e) {
+      console.warn('FloatingInput focus animation error:', e);
+    }
   };
 
   const handleBlur = () => {
+    if (!isMountedRef.current) return;
     setIsFocused(false);
     if (!value) {
-      Animated.timing(animatedValue, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: false,
-      }).start();
+      try {
+        const anim = Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: false,
+        });
+        animationRef.current = anim;
+        anim.start();
+      } catch (e) {
+        console.warn('FloatingInput blur animation error:', e);
+      }
     }
   };
 
   useEffect(() => {
-    Animated.timing(animatedValue, {
-      toValue: value ? 1 : 0,
-      duration: 150,
-      useNativeDriver: false,
-    }).start();
+    if (!isMountedRef.current) return;
+    try {
+      const anim = Animated.timing(animatedValue, {
+        toValue: value ? 1 : 0,
+        duration: 150,
+        useNativeDriver: false,
+      });
+      animationRef.current = anim;
+      anim.start();
+    } catch (e) {
+      console.warn('FloatingInput value change animation error:', e);
+    }
   }, [animatedValue, value]);
 
   const labelTop = animatedValue.interpolate({

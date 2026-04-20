@@ -1,15 +1,22 @@
 ﻿import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
+  Animated,
   ActivityIndicator,
   Alert,
+  Easing,
+  LayoutAnimation,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Svg, {Path} from 'react-native-svg';
 import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
@@ -43,6 +50,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     Number.isInteger(Number(routePhaseId)) && Number(routePhaseId) > 0 ? Number(routePhaseId) : null,
   );
   const [currentPhaseProgress, setCurrentPhaseProgress] = useState<any>(null);
+  const [currentKnowledgePayload, setCurrentKnowledgePayload] = useState<any>(null);
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [profileAdaptationMode, setProfileAdaptationMode] = useState<string | null>(null);
   const [submittingPreLearningDecision, setSubmittingPreLearningDecision] = useState(false);
@@ -60,6 +68,158 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   });
   const reviewCreationAttemptedRef = useRef<Set<string>>(new Set());
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<number[]>([]);
+  const [selectedKnowledgeId, setSelectedKnowledgeId] = useState<number | null>(null);
+  const [knowledgeQuizMap, setKnowledgeQuizMap] = useState<Record<number, any[]>>({});
+  const [viewMode, setViewMode] = useState<'overview' | 'detail'>('overview');
+  const [journeyPanelVisible, setJourneyPanelVisible] = useState(false);
+  const [followCurrentPhase, setFollowCurrentPhase] = useState(true);
+  const userManuallySelectedPhaseRef = useRef(false);
+  const journeyPanelScrollRef = useRef<ScrollView | null>(null);
+  const panelItemYRef = useRef<Record<number, number>>({});
+  const panelEntranceAnim = useRef(new Animated.Value(0)).current;
+  const overviewScrollRef = useRef<ScrollView | null>(null);
+  const [overviewZoom, setOverviewZoom] = useState(1);
+  const panelAnimationRef = useRef<{stop: () => void} | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    if (
+      Platform.OS === 'android' &&
+      UIManager.setLayoutAnimationEnabledExperimental
+    ) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+
+    return () => {
+      isMountedRef.current = false;
+      if (panelAnimationRef.current) {
+        panelAnimationRef.current.stop();
+      }
+    };
+  }, []);
+
+  const animateLayout = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  }, []);
+
+  const handleSelectPhase = useCallback(
+    (
+      phaseId: number | null,
+      options: {
+        fromUser?: boolean;
+        closePanel?: boolean;
+      } = {},
+    ) => {
+      const {fromUser = true, closePanel = false} = options;
+
+      animateLayout();
+      setSelectedPhaseId(phaseId);
+
+      if (fromUser) {
+        userManuallySelectedPhaseRef.current = true;
+        setFollowCurrentPhase(false);
+      }
+
+      if (closePanel) {
+        setJourneyPanelVisible(false);
+      }
+    },
+    [animateLayout],
+  );
+
+  const getPanelTargetPhaseId = useCallback(() => {
+    const selected = Number(selectedPhaseId || 0);
+    if (Number.isInteger(selected) && selected > 0) {
+      return selected;
+    }
+
+    const current = Number(currentPhaseProgress?.phaseId || 0);
+    if (Number.isInteger(current) && current > 0) {
+      return current;
+    }
+
+    const firstPhaseId = Number(structure?.phases?.[0]?.phaseId || 0);
+    return Number.isInteger(firstPhaseId) && firstPhaseId > 0 ? firstPhaseId : null;
+  }, [currentPhaseProgress?.phaseId, selectedPhaseId, structure?.phases]);
+
+  const scrollJourneyPanelToPhase = useCallback((phaseId?: number | null) => {
+    const normalizedPhaseId = Number(phaseId || 0);
+    if (!journeyPanelScrollRef.current) {
+      return;
+    }
+    if (!Number.isInteger(normalizedPhaseId) || normalizedPhaseId <= 0) {
+      return;
+    }
+
+    const y = panelItemYRef.current[normalizedPhaseId];
+    if (!Number.isFinite(y)) {
+      return;
+    }
+
+    journeyPanelScrollRef.current.scrollTo({
+      y: Math.max(0, y - 72),
+      animated: true,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!journeyPanelVisible) {
+      panelEntranceAnim.setValue(0);
+      if (panelAnimationRef.current) {
+        panelAnimationRef.current.stop();
+      }
+      return;
+    }
+
+    if (!isMountedRef.current) return;
+
+    try {
+      if (panelAnimationRef.current) {
+        panelAnimationRef.current.stop();
+      }
+      const anim = Animated.timing(panelEntranceAnim, {
+        toValue: 1,
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      });
+      panelAnimationRef.current = anim;
+      anim.start();
+    } catch (e) {
+      console.warn('RoadmapJourneyScreen panel animation error:', e);
+    }
+
+    const targetPhaseId = getPanelTargetPhaseId();
+    if (targetPhaseId) {
+      const timer = setTimeout(() => {
+        if (isMountedRef.current) {
+          scrollJourneyPanelToPhase(targetPhaseId);
+        }
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+
+    return;
+  }, [
+    getPanelTargetPhaseId,
+    journeyPanelVisible,
+    panelEntranceAnim,
+    scrollJourneyPanelToPhase,
+  ]);
+
+  useEffect(() => {
+    if (!journeyPanelVisible) {
+      return;
+    }
+
+    scrollJourneyPanelToPhase(getPanelTargetPhaseId());
+  }, [
+    currentPhaseProgress?.phaseId,
+    getPanelTargetPhaseId,
+    journeyPanelVisible,
+    selectedPhaseId,
+    scrollJourneyPanelToPhase,
+  ]);
 
   const normalizeMaterialStatus = useCallback((material: any) => {
     return String(material?.final_status || material?.status || '').toUpperCase();
@@ -151,10 +311,13 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   );
 
   const selectedRoadmap = useMemo(
-    () => roadmaps.find(item => (item.roadmapId || item.id) === selectedRoadmapId),
+    () =>
+      roadmaps.find(
+        item => Number(item.roadmapId || item.id || 0) === Number(selectedRoadmapId || 0),
+      ),
     [roadmaps, selectedRoadmapId],
   );
-  const activeRoadmapId = selectedRoadmap?.roadmapId || selectedRoadmap?.id;
+  const activeRoadmapId = Number(selectedRoadmap?.roadmapId || selectedRoadmap?.id || 0);
 
   const fetchRoadmaps = useCallback(async () => {
     try {
@@ -189,9 +352,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         const hasRouteRoadmap =
           Number.isInteger(normalizedRouteRoadmapId) &&
           normalizedRouteRoadmapId > 0 &&
-          list.some((item: any) => (item.roadmapId || item.id) === normalizedRouteRoadmapId);
+          list.some((item: any) => Number(item.roadmapId || item.id || 0) === normalizedRouteRoadmapId);
         setSelectedRoadmapId(
-          hasRouteRoadmap ? normalizedRouteRoadmapId : list[0].roadmapId || list[0].id,
+          hasRouteRoadmap ? normalizedRouteRoadmapId : Number(list[0].roadmapId || list[0].id || 0),
         );
       }
     } catch {
@@ -256,9 +419,17 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       } catch {
         setCurrentPhaseProgress(null);
       }
+
+      try {
+        const currentKnowledgeRes = await RoadmapAPI.getCurrentRoadmapKnowledgeProgress(roadmapId);
+        setCurrentKnowledgePayload(currentKnowledgeRes.data || null);
+      } catch {
+        setCurrentKnowledgePayload(null);
+      }
     } catch {
       setStructure(null);
       setCurrentPhaseProgress(null);
+      setCurrentKnowledgePayload(null);
     }
   }, []);
 
@@ -282,9 +453,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   useEffect(() => {
     const normalizedPhaseId = Number(routePhaseId);
     if (Number.isInteger(normalizedPhaseId) && normalizedPhaseId > 0) {
-      setSelectedPhaseId(normalizedPhaseId);
+      handleSelectPhase(normalizedPhaseId, {fromUser: false});
     }
-  }, [routePhaseId]);
+  }, [handleSelectPhase, routePhaseId]);
 
   const handleGeneratePreLearning = async (roadmapId: number, phaseId: number) => {
     const key = `pre-${phaseId}`;
@@ -457,9 +628,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       normalizedCurrent > 0 &&
       phases.some((phase: any) => Number(phase?.phaseId) === normalizedCurrent);
     if (!hasCurrent) {
-      setSelectedPhaseId(Number(phases[0]?.phaseId) || null);
+      handleSelectPhase(Number(phases[0]?.phaseId) || null, {fromUser: false});
     }
-  }, [phases, selectedPhaseId]);
+  }, [handleSelectPhase, phases, selectedPhaseId]);
 
   const adaptationMode = String(
     route?.params?.adaptationMode || profileAdaptationMode || structure?.adaptationMode || '',
@@ -478,6 +649,42 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     }
     return phases.find((phase: any) => Number(phase?.phaseId) === normalizedSelected) || phases[0] || null;
   }, [phases, selectedPhaseId]);
+
+  const activePhaseIndex = useMemo(() => {
+    const normalizedPhaseId = Number(activePhase?.phaseId || 0);
+    return phases.findIndex((phase: any) => Number(phase?.phaseId) === normalizedPhaseId);
+  }, [activePhase?.phaseId, phases]);
+
+  useEffect(() => {
+    if (!followCurrentPhase) {
+      return;
+    }
+
+    const currentPhaseId = Number(currentPhaseProgress?.phaseId || 0);
+    if (!Number.isInteger(currentPhaseId) || currentPhaseId <= 0) {
+      return;
+    }
+
+    const existsInRoadmap = phases.some((phase: any) => Number(phase?.phaseId) === currentPhaseId);
+    if (!existsInRoadmap) {
+      return;
+    }
+
+    if (Number(selectedPhaseId) !== currentPhaseId) {
+      handleSelectPhase(currentPhaseId, {fromUser: false});
+    }
+  }, [
+    currentPhaseProgress?.phaseId,
+    followCurrentPhase,
+    handleSelectPhase,
+    phases,
+    selectedPhaseId,
+  ]);
+
+  useEffect(() => {
+    userManuallySelectedPhaseRef.current = false;
+    setFollowCurrentPhase(true);
+  }, [selectedRoadmapId]);
 
   useEffect(() => {
     const roadmapId = Number(activeRoadmapId || 0);
@@ -668,6 +875,69 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     } as const;
   }, []);
 
+  const formatPhaseDurationLabel = useCallback((phase: any) => {
+    const estimatedDays = Number(
+      phase?.estimatedDays ?? phase?.studyDurationInDay ?? phase?.durationInDay ?? 0,
+    );
+    const estimatedMinutesPerDay = Number(
+      phase?.estimatedMinutesPerDay ?? phase?.recommendedMinutesPerDay ?? phase?.minutesPerDay ?? 0,
+    );
+
+    if (estimatedDays > 0 && estimatedMinutesPerDay > 0) {
+      return `${estimatedDays} ngày • ${estimatedMinutesPerDay} phút/ngày`;
+    }
+    if (estimatedDays > 0) {
+      return `${estimatedDays} ngày`;
+    }
+    if (estimatedMinutesPerDay > 0) {
+      return `${estimatedMinutesPerDay} phút/ngày`;
+    }
+
+    return null;
+  }, []);
+
+  const isCompletedQuiz = useCallback((quiz: any) => {
+    const normalizedStatus = String(quiz?.status || '').toUpperCase();
+    return (
+      quiz?.myAttempted === true ||
+      quiz?.myPassed === true ||
+      normalizedStatus === 'DONE' ||
+      normalizedStatus === 'COMPLETED' ||
+      normalizedStatus === 'SKIPPED' ||
+      normalizedStatus === 'PASSED' ||
+      normalizedStatus === 'FINISHED' ||
+      normalizedStatus === 'SUBMITTED'
+    );
+  }, []);
+
+  const isCompletedKnowledge = useCallback((knowledge: any) => {
+    const normalizedStatus = String(knowledge?.status || '').toUpperCase();
+    return ['DONE', 'COMPLETED', 'SKIPPED'].includes(normalizedStatus);
+  }, []);
+
+  const isPhaseEffectivelyDone = useCallback((phase: any) => {
+    const phaseStatus = String(phase?.status || '').toUpperCase();
+    if (['COMPLETED', 'DONE', 'SKIPPED', 'PASSED', 'FINISHED', 'SUBMITTED'].includes(phaseStatus)) {
+      return true;
+    }
+
+    const preLearningQuizzes = Array.isArray(phase?.preLearningQuizzes) ? phase.preLearningQuizzes : [];
+    const knowledges = Array.isArray(phase?.knowledges) ? phase.knowledges : [];
+    const postLearningQuizzes = Array.isArray(phase?.postLearningQuizzes) ? phase.postLearningQuizzes : [];
+
+    const hasAnyChildStage =
+      preLearningQuizzes.length > 0 || knowledges.length > 0 || postLearningQuizzes.length > 0;
+    if (!hasAnyChildStage) {
+      return false;
+    }
+
+    const preLearningDone = preLearningQuizzes.length === 0 || preLearningQuizzes.every(isCompletedQuiz);
+    const knowledgeDone = knowledges.length === 0 || knowledges.every(isCompletedKnowledge);
+    const postLearningDone = postLearningQuizzes.length === 0 || postLearningQuizzes.some(isCompletedQuiz);
+
+    return preLearningDone && knowledgeDone && postLearningDone;
+  }, [isCompletedKnowledge, isCompletedQuiz]);
+
   const maxUnlockedPhaseIndex = useMemo(() => {
     if (!Array.isArray(phases) || phases.length === 0) {
       return 0;
@@ -681,15 +951,14 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
     let contiguousFinishedCount = 0;
     for (let i = 0; i < phases.length; i += 1) {
-      const status = String(phases[i]?.status || '').toUpperCase();
-      if (status !== 'COMPLETED' && status !== 'SKIPPED') {
+      if (!isPhaseEffectivelyDone(phases[i])) {
         break;
       }
       contiguousFinishedCount += 1;
     }
 
     return Math.max(0, currentIndex, Math.min(phases.length - 1, contiguousFinishedCount));
-  }, [currentPhaseProgress?.phaseId, phases]);
+  }, [currentPhaseProgress?.phaseId, isPhaseEffectivelyDone, phases]);
 
   const hasRoadmapPhases = useMemo(() => {
     const fromStructure = Array.isArray(structure?.phases) && structure.phases.length > 0;
@@ -709,6 +978,231 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   );
   const currentPayloadPhaseId = Number(currentPhaseProgress?.phaseId);
   const currentPayloadPhaseIndex = Number(currentPhaseProgress?.phaseIndex);
+  const currentKnowledgePhaseId = Number(currentKnowledgePayload?.phaseId);
+  const currentKnowledgeId = Number(currentKnowledgePayload?.knowledgeId);
+  const currentKnowledgeStatus = String(currentKnowledgePayload?.status || '').toUpperCase();
+  const isCurrentKnowledgeDoneStatus = ['DONE', 'COMPLETED', 'SKIPPED'].includes(currentKnowledgeStatus);
+  const currentKnowledgePhaseIndex = Number.isInteger(currentKnowledgePhaseId) && currentKnowledgePhaseId > 0
+    ? phases.findIndex((phase: any) => Number(phase?.phaseId) === currentKnowledgePhaseId)
+    : -1;
+
+  const getPhaseVisualState = useCallback(
+    (phase: any, index: number, isLockedPhase: boolean) => {
+      if (isLockedPhase) {
+        return 'locked';
+      }
+
+      if (isPhaseEffectivelyDone(phase)) {
+        return 'done';
+      }
+
+      const normalizedCurrentPhaseId = Number(currentPhaseProgress?.phaseId);
+      if (
+        Number.isInteger(normalizedCurrentPhaseId) &&
+        normalizedCurrentPhaseId > 0 &&
+        Number(phase?.phaseId) === normalizedCurrentPhaseId
+      ) {
+        return 'current';
+      }
+
+      if (index < maxUnlockedPhaseIndex) {
+        return 'done';
+      }
+
+      if (index === maxUnlockedPhaseIndex) {
+        return 'current';
+      }
+
+      if (index === maxUnlockedPhaseIndex + 1) {
+        return 'next';
+      }
+
+      return 'locked';
+    },
+    [currentPhaseProgress?.phaseId, isPhaseEffectivelyDone, maxUnlockedPhaseIndex],
+  );
+
+  const getPhaseVisualMeta = useCallback(
+    (state: 'done' | 'current' | 'next' | 'locked') => {
+      switch (state) {
+        case 'done':
+          return {
+            icon: 'check-circle-outline',
+            label: 'Hoàn thành',
+            dotColor: '#10b981',
+            badgeBorder: '#86efac',
+            badgeBackground: isDark ? 'rgba(22,101,52,0.28)' : '#dcfce7',
+            badgeText: isDark ? '#86efac' : '#166534',
+          };
+        case 'current':
+          return {
+            icon: 'progress-clock',
+            label: 'Hiện tại',
+            dotColor: '#0ea5e9',
+            badgeBorder: '#7dd3fc',
+            badgeBackground: isDark ? 'rgba(3,105,161,0.28)' : '#e0f2fe',
+            badgeText: isDark ? '#7dd3fc' : '#075985',
+          };
+        case 'next':
+          return {
+            icon: 'clock-outline',
+            label: 'Sắp tới',
+            dotColor: '#f59e0b',
+            badgeBorder: '#fcd34d',
+            badgeBackground: isDark ? 'rgba(146,64,14,0.28)' : '#fef3c7',
+            badgeText: isDark ? '#fcd34d' : '#92400e',
+          };
+        default:
+          return {
+            icon: 'lock-outline',
+            label: 'Đã khóa',
+            dotColor: '#94a3b8',
+            badgeBorder: '#cbd5e1',
+            badgeBackground: isDark ? 'rgba(71,85,105,0.35)' : '#e2e8f0',
+            badgeText: isDark ? '#cbd5e1' : '#475569',
+          };
+      }
+    },
+    [isDark],
+  );
+
+  const activePhaseVisualMeta = useMemo(() => {
+    return getPhaseVisualMeta(getPhaseVisualState(activePhase, Math.max(0, activePhaseIndex), false));
+  }, [activePhase, activePhaseIndex, getPhaseVisualMeta, getPhaseVisualState]);
+
+  const activePhaseKnowledges = useMemo(() => {
+    return Array.isArray(activePhase?.knowledges) ? activePhase.knowledges : [];
+  }, [activePhase?.knowledges]);
+
+  const selectedKnowledge = useMemo(() => {
+    const normalizedKnowledgeId = Number(selectedKnowledgeId || 0);
+    if (!Number.isInteger(normalizedKnowledgeId) || normalizedKnowledgeId <= 0) {
+      return null;
+    }
+    return (
+      activePhaseKnowledges.find(
+        (knowledge: any) => Number(knowledge?.knowledgeId || knowledge?.id || 0) === normalizedKnowledgeId,
+      ) || null
+    );
+  }, [activePhaseKnowledges, selectedKnowledgeId]);
+
+  const selectedKnowledgeQuizzes = useMemo(() => {
+    const normalizedKnowledgeId = Number(selectedKnowledgeId || 0);
+    const inlineQuizzes = Array.isArray(selectedKnowledge?.quizzes) ? selectedKnowledge.quizzes : [];
+    if (inlineQuizzes.length > 0) {
+      return inlineQuizzes;
+    }
+    return knowledgeQuizMap[normalizedKnowledgeId] || [];
+  }, [knowledgeQuizMap, selectedKnowledge?.quizzes, selectedKnowledgeId]);
+
+  useEffect(() => {
+    if (!Array.isArray(activePhaseKnowledges) || activePhaseKnowledges.length === 0) {
+      setSelectedKnowledgeId(null);
+      return;
+    }
+
+    const normalizedSelectedKnowledgeId = Number(selectedKnowledgeId || 0);
+    const exists = activePhaseKnowledges.some(
+      (knowledge: any) => Number(knowledge?.knowledgeId || knowledge?.id || 0) === normalizedSelectedKnowledgeId,
+    );
+    if (exists) {
+      return;
+    }
+
+    const firstKnowledgeId = Number(activePhaseKnowledges[0]?.knowledgeId || activePhaseKnowledges[0]?.id || 0);
+    setSelectedKnowledgeId(Number.isInteger(firstKnowledgeId) && firstKnowledgeId > 0 ? firstKnowledgeId : null);
+  }, [activePhaseKnowledges, selectedKnowledgeId]);
+
+  useEffect(() => {
+    const normalizedKnowledgeId = Number(selectedKnowledgeId || 0);
+    if (!Number.isInteger(normalizedKnowledgeId) || normalizedKnowledgeId <= 0) {
+      return;
+    }
+
+    if (Array.isArray(selectedKnowledge?.quizzes) && selectedKnowledge.quizzes.length > 0) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await QuizAPI.getByContext('KNOWLEDGE', normalizedKnowledgeId);
+        if (cancelled) {
+          return;
+        }
+        const list = Array.isArray(res?.data) ? res.data : [];
+        setKnowledgeQuizMap(prev => ({
+          ...prev,
+          [normalizedKnowledgeId]: list,
+        }));
+      } catch {
+        if (!cancelled) {
+          setKnowledgeQuizMap(prev => ({
+            ...prev,
+            [normalizedKnowledgeId]: [],
+          }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedKnowledge?.quizzes, selectedKnowledgeId]);
+
+  const showLegacyDetailList = false;
+
+  const overviewWave = useMemo(() => {
+    const count = Math.max(1, phases.length);
+    const phaseGap = 210 * overviewZoom;
+    const pad = 130 * overviewZoom;
+    const width = Math.max(920, pad * 2 + (count - 1) * phaseGap + 120);
+    const height = 420;
+    const centerY = 230;
+    const amplitude = 58 * overviewZoom;
+
+    const points = Array.from({length: count}, (_, index) => ({
+      x: pad + index * phaseGap,
+      y: centerY + (index % 2 === 0 ? -amplitude : amplitude),
+    }));
+
+    const path = points.reduce((acc, point, index) => {
+      if (index === 0) {
+        return `M ${point.x} ${point.y}`;
+      }
+      const prev = points[index - 1];
+      const midX = (prev.x + point.x) / 2;
+      return `${acc} C ${midX} ${prev.y}, ${midX} ${point.y}, ${point.x} ${point.y}`;
+    }, '');
+
+    return {
+      width,
+      height,
+      centerY,
+      points,
+      path,
+    };
+  }, [overviewZoom, phases.length]);
+
+  const zoomOverviewIn = useCallback(() => {
+    setOverviewZoom(prev => Math.min(1.45, Number((prev + 0.1).toFixed(2))));
+  }, []);
+
+  const zoomOverviewOut = useCallback(() => {
+    setOverviewZoom(prev => Math.max(0.8, Number((prev - 0.1).toFixed(2))));
+  }, []);
+
+  const resetOverviewViewport = useCallback(() => {
+    setOverviewZoom(1);
+    overviewScrollRef.current?.scrollTo({x: 0, animated: true});
+  }, []);
+
+  const scrollOverviewBy = useCallback((offset: number) => {
+    if (!overviewScrollRef.current) {
+      return;
+    }
+    overviewScrollRef.current.scrollTo({x: Math.max(0, offset), animated: true});
+  }, []);
 
   if (loading) {
     return <LoadingSpinner />;
@@ -739,8 +1233,8 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         ) : (
           <View style={styles.chipsWrap}>
             {roadmaps.map(item => {
-              const roadmapId = item.roadmapId || item.id;
-              const selected = roadmapId === selectedRoadmapId;
+              const roadmapId = Number(item.roadmapId || item.id || 0);
+              const selected = roadmapId > 0 && roadmapId === Number(selectedRoadmapId || 0);
               return (
                 <TouchableOpacity
                   key={roadmapId}
@@ -771,13 +1265,441 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
         {!!activeRoadmapId && (
           <View style={styles.phaseWrap}>
-            {phaseReviewState.loading && Number(phaseReviewState.phaseId) === Number(activePhase?.phaseId) ? (
+            <View
+              style={[
+                styles.roadmapHeroCard,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: isDark ? 'rgba(15,23,42,0.9)' : '#f8fafc',
+                },
+              ]}>
+              <Text style={[styles.roadmapHeroTag, {color: colors.textTertiary}]}>Central roadmap</Text>
+              <Text style={[styles.roadmapHeroTitle, {color: colors.heading}]}>
+                {selectedRoadmap?.title || selectedRoadmap?.name || `Roadmap #${activeRoadmapId}`}
+              </Text>
+              <Text style={[styles.roadmapHeroMeta, {color: colors.textSecondary}]}> 
+                {phases.length} phase • {contextType === 'GROUP' ? 'Group' : 'Workspace'}
+              </Text>
+            </View>
+
+            <View style={styles.viewModeToggleRow}>
+              <TouchableOpacity
+                onPress={() => setViewMode('detail')}
+                style={[
+                  styles.viewModeToggleChip,
+                  {
+                    borderColor: viewMode === 'detail' ? '#93c5fd' : colors.border,
+                    backgroundColor: viewMode === 'detail'
+                      ? isDark
+                        ? 'rgba(30,58,138,0.3)'
+                        : '#dbeafe'
+                      : colors.surface,
+                  },
+                ]}>
+                <Icon
+                  name="view-list"
+                  size={14}
+                  color={viewMode === 'detail' ? Colors.primary : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.viewModeToggleText,
+                    {color: viewMode === 'detail' ? Colors.primary : colors.textSecondary},
+                  ]}>
+                  Chi tiết
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setViewMode('overview')}
+                style={[
+                  styles.viewModeToggleChip,
+                  {
+                    borderColor: viewMode === 'overview' ? '#93c5fd' : colors.border,
+                    backgroundColor: viewMode === 'overview'
+                      ? isDark
+                        ? 'rgba(30,58,138,0.3)'
+                        : '#dbeafe'
+                      : colors.surface,
+                  },
+                ]}>
+                <Icon
+                  name="map-outline"
+                  size={14}
+                  color={viewMode === 'overview' ? Colors.primary : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.viewModeToggleText,
+                    {color: viewMode === 'overview' ? Colors.primary : colors.textSecondary},
+                  ]}>
+                  Tổng quan
+                </Text>
+              </TouchableOpacity>
+
+            </View>
+
+            {viewMode === 'overview' ? (
+              <View style={styles.canvasBoardWrap}>
+                <View style={[styles.canvasBoardHeader, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                  <View>
+                    <Text style={[styles.canvasBoardTitle, {color: colors.heading}]}>Canvas roadmap</Text>
+                    <Text style={[styles.canvasBoardSubtitle, {color: colors.textSecondary}]}>Lộ trình dạng sơ đồ như FE</Text>
+                  </View>
+                  <View style={styles.overviewControlsRow}>
+                    <TouchableOpacity
+                      onPress={zoomOverviewOut}
+                      style={[styles.overviewControlBtn, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                      <Icon name="magnify-minus-outline" size={14} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={zoomOverviewIn}
+                      style={[styles.overviewControlBtn, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                      <Icon name="magnify-plus-outline" size={14} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={resetOverviewViewport}
+                      style={[styles.overviewControlBtn, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                      <Icon name="fit-to-page-outline" size={14} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <ScrollView
+                  ref={ref => {
+                    overviewScrollRef.current = ref;
+                  }}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.canvasStrip}>
+                  <View style={[styles.overviewCanvasInner, {width: overviewWave.width, height: overviewWave.height}]}> 
+                    <Svg width={overviewWave.width} height={overviewWave.height} style={StyleSheet.absoluteFillObject}>
+                      <Path d={overviewWave.path} stroke={isDark ? '#0ea5e9' : '#86efac'} strokeWidth={22} fill="none" opacity={0.22} />
+                      <Path d={overviewWave.path} stroke={isDark ? '#22d3ee' : '#10b981'} strokeWidth={5} fill="none" />
+                    </Svg>
+
+                    {phases.map((phase: any, index: number) => {
+                      const point = overviewWave.points[index];
+                      if (!point) return null;
+
+                      const phaseId = Number(phase?.phaseId || 0);
+                      const hasPreLearningQuiz =
+                        Array.isArray(phase?.preLearningQuizzes) && phase.preLearningQuizzes.length > 0;
+                      const isLockedPhase = index > maxUnlockedPhaseIndex && !hasPreLearningQuiz;
+                      const visualState = getPhaseVisualState(phase, index, isLockedPhase);
+                      const visualMeta = getPhaseVisualMeta(visualState);
+                      const isSelected = Number(selectedPhaseId) === phaseId;
+                      const isTopCard = index % 2 === 0;
+                      const cardTop = isTopCard ? Math.max(12, point.y - 160) : point.y + 30;
+
+                      return (
+                        <React.Fragment key={`overview-phase-${phaseId || index}`}>
+                          <View
+                            style={[
+                              styles.overviewNode,
+                              {
+                                left: point.x - 12,
+                                top: point.y - 12,
+                                borderColor: visualMeta.badgeBorder,
+                                backgroundColor: visualMeta.badgeBackground,
+                              },
+                            ]}>
+                            <Text style={[styles.overviewNodeText, {color: visualMeta.badgeText}]}> 
+                              {index + 1}
+                            </Text>
+                          </View>
+
+                          <View
+                            style={[
+                              styles.overviewBone,
+                              {
+                                left: point.x - 1,
+                                top: isTopCard ? cardTop + 124 : point.y + 12,
+                                height: isTopCard ? point.y - (cardTop + 124) : cardTop - (point.y + 12),
+                                backgroundColor: isDark ? '#475569' : '#cbd5e1',
+                              },
+                            ]}
+                          />
+
+                          <TouchableOpacity
+                            onPress={() => handleSelectPhase(phaseId || null, {fromUser: true})}
+                            style={[
+                              styles.overviewPhaseCard,
+                              {
+                                left: point.x - 112,
+                                top: cardTop,
+                                borderColor: isSelected ? '#7dd3fc' : colors.border,
+                                backgroundColor: isSelected
+                                  ? isDark
+                                    ? 'rgba(14,165,233,0.18)'
+                                    : '#ecfeff'
+                                  : colors.surface,
+                                shadowColor: isSelected ? '#0ea5e9' : '#0f172a',
+                              },
+                            ]}>
+                            <Text style={[styles.overviewPhaseTag, {color: colors.textTertiary}]}>GIAI ĐOẠN {index + 1}</Text>
+                            <Text numberOfLines={2} style={[styles.overviewPhaseTitle, {color: colors.heading}]}> 
+                              {phase?.title || `Giai đoạn ${index + 1}`}
+                            </Text>
+                            <Text style={[styles.overviewPhaseStatus, {color: visualMeta.badgeText}]}> 
+                              {visualMeta.label}
+                            </Text>
+                          </TouchableOpacity>
+                        </React.Fragment>
+                      );
+                    })}
+
+                    <TouchableOpacity
+                      onPress={() => scrollOverviewBy(Math.max(0, (overviewWave.points[0]?.x || 0) - 260))}
+                      style={[styles.overviewArrowBtn, styles.overviewArrowLeft, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                      <Icon name="chevron-left" size={16} color={colors.textSecondary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => scrollOverviewBy(Math.max(0, (overviewWave.points[overviewWave.points.length - 1]?.x || 0) - 260))}
+                      style={[styles.overviewArrowBtn, styles.overviewArrowRight, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                      <Icon name="chevron-right" size={16} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+
+                <View style={styles.overviewLegendRow}>
+                  {[
+                    {label: 'Hoàn thành', color: '#10b981'},
+                    {label: 'Hiện tại', color: '#0ea5e9'},
+                    {label: 'Next', color: '#f59e0b'},
+                    {label: 'Đã khóa', color: '#94a3b8'},
+                  ].map(item => (
+                    <View key={item.label} style={styles.overviewLegendItem}>
+                      <View style={[styles.overviewLegendDot, {backgroundColor: item.color}]} />
+                      <Text style={[styles.overviewLegendText, {color: colors.textSecondary}]}>{item.label}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {!!activePhase ? (
+                  <View style={[styles.canvasDetailCard, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                    <View style={styles.canvasDetailHeader}>
+                      <View style={{flex: 1}}>
+                        <Text style={[styles.canvasDetailTitle, {color: colors.heading}]}> 
+                          {activePhase?.title || 'Phase hiện tại'}
+                        </Text>
+                        <Text style={[styles.canvasDetailSubtitle, {color: colors.textSecondary}]}> 
+                          {formatPhaseDurationLabel(activePhase) || 'Không có thời lượng dự kiến'}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.canvasDetailBadge,
+                          {
+                            borderColor: activePhaseVisualMeta.badgeBorder,
+                            backgroundColor: activePhaseVisualMeta.badgeBackground,
+                          },
+                        ]}>
+                        <Text style={[styles.canvasDetailBadgeText, {color: activePhaseVisualMeta.badgeText}]}> 
+                          {activePhaseVisualMeta.label}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.canvasDetailText, {color: colors.textSecondary}]} numberOfLines={3}> 
+                      {activePhase?.description || 'Canvas view đang hiển thị phase hiện tại.'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {viewMode === 'detail' ? (
+              <View style={[styles.detailBoardWrap, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                <Text style={[styles.detailBoardTitle, {color: colors.heading}]}>Lộ trình theo giai đoạn</Text>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.detailRailTrack}>
+                  <View
+                    style={[
+                      styles.detailPhaseBaseLine,
+                      {backgroundColor: isDark ? '#334155' : '#cbd5e1'},
+                    ]}
+                  />
+                  {phases.map((phase: any, index: number) => {
+                    const phaseId = Number(phase?.phaseId || 0);
+                    const hasPreLearningQuiz =
+                      Array.isArray(phase?.preLearningQuizzes) && phase.preLearningQuizzes.length > 0;
+                    const isLockedPhase = index > maxUnlockedPhaseIndex && !hasPreLearningQuiz;
+                    const isSelectedPhase = Number(selectedPhaseId) === phaseId;
+                    return (
+                      <TouchableOpacity
+                        key={`detail-phase-${phaseId || index}`}
+                        onPress={() => handleSelectPhase(phaseId || null, {fromUser: true})}
+                        style={styles.detailPhaseStepWrap}>
+                        <View
+                          style={[
+                            styles.detailPhaseNode,
+                            {
+                              borderColor: isSelectedPhase ? '#7dd3fc' : colors.border,
+                              backgroundColor: isSelectedPhase
+                                ? isDark
+                                  ? 'rgba(14,165,233,0.24)'
+                                  : '#ecfeff'
+                                : colors.surface,
+                            },
+                          ]}>
+                          <Text style={[styles.detailPhaseNodeText, {color: isSelectedPhase ? Colors.primary : colors.textSecondary}]}> 
+                            {index + 1}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.detailPhaseCard,
+                            {
+                              borderColor: isSelectedPhase ? '#93c5fd' : colors.border,
+                              backgroundColor: isSelectedPhase
+                                ? isDark
+                                  ? 'rgba(30,58,138,0.24)'
+                                  : '#eff6ff'
+                                : isDark
+                                ? Colors.dark.surfaceVariant
+                                : '#f8fafc',
+                            },
+                          ]}>
+                          <Text style={[styles.detailPhaseTag, {color: colors.textTertiary}]}>GIAI ĐOẠN {index + 1}</Text>
+                          <Text numberOfLines={2} style={[styles.detailPhaseName, {color: colors.heading}]}> 
+                            {phase?.title || `Giai đoạn ${index + 1}`}
+                          </Text>
+                          {isLockedPhase ? (
+                            <Icon name="lock-outline" size={14} color={colors.textTertiary} />
+                          ) : null}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.detailRail}>
+                  {activePhaseKnowledges.map((knowledge: any, index: number) => {
+                    const knowledgeId = Number(knowledge?.knowledgeId || 0);
+                    const normalizedStatus = String(knowledge?.status || '').toUpperCase();
+                    const isLocked = normalizedStatus === 'LOCKED';
+                    const isSelectedKnowledge = knowledgeId > 0 && Number(selectedKnowledgeId) === knowledgeId;
+                    return (
+                      <TouchableOpacity
+                        key={`detail-knowledge-${knowledgeId || index}`}
+                        onPress={() => {
+                          if (!isLocked && knowledgeId > 0) {
+                            setSelectedKnowledgeId(knowledgeId);
+                          }
+                        }}
+                        style={[
+                          styles.detailKnowledgeCard,
+                          {
+                            borderColor: isSelectedKnowledge ? '#93c5fd' : colors.border,
+                            backgroundColor: isLocked
+                              ? isDark
+                                ? '#334155'
+                                : '#f1f5f9'
+                              : isSelectedKnowledge
+                              ? isDark
+                                ? 'rgba(30,58,138,0.24)'
+                                : '#eff6ff'
+                              : isDark
+                              ? Colors.dark.surfaceVariant
+                              : '#f8fafc',
+                          },
+                        ]}>
+                        <Text style={[styles.detailKnowledgeTag, {color: colors.textTertiary}]}>KIẾN THỨC {index + 1}</Text>
+                        <Text numberOfLines={2} style={[styles.detailKnowledgeName, {color: colors.heading}]}> 
+                          {knowledge?.title || `Kiến thức ${index + 1}`}
+                        </Text>
+                        {isLocked ? (
+                          <Icon name="lock-outline" size={14} color={colors.textTertiary} />
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {!!selectedKnowledge ? (
+                  <View style={[styles.detailQuizSection, {borderColor: colors.border}]}> 
+                    <Text style={[styles.detailQuizTitle, {color: colors.heading}]}> 
+                      Quiz của {selectedKnowledge?.title || 'knowledge'}
+                    </Text>
+                    {selectedKnowledgeQuizzes.length > 0 ? (
+                      selectedKnowledgeQuizzes.map((quiz: any, index: number) => {
+                        const quizId = Number(quiz?.quizId || quiz?.id || 0);
+                        return (
+                          <View
+                            key={`detail-quiz-${quizId || index}`}
+                            style={[styles.detailQuizCard, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
+                            <View style={{flex: 1}}>
+                              <Text style={[styles.detailQuizName, {color: colors.heading}]}> 
+                                {quiz?.title || `Quiz #${quizId || index + 1}`}
+                              </Text>
+                              <Text style={[styles.detailQuizMeta, {color: colors.textSecondary}]}> 
+                                {String(quiz?.status || 'DRAFT').toUpperCase()}
+                              </Text>
+                            </View>
+                            <Button
+                              title="Làm quiz"
+                              onPress={() => openQuizModeSelector(quiz, Number(activePhase?.phaseId || 0))}
+                              size="sm"
+                              fullWidth={false}
+                              variant="outline"
+                              style={styles.detailQuizActionBtn}
+                            />
+                          </View>
+                        );
+                      })
+                    ) : (
+                      <View style={styles.detailEmptyWrap}>
+                        <Text style={[styles.detailEmptyText, {color: colors.textSecondary}]}>Chưa có quiz cho knowledge này.</Text>
+                        <Button
+                          title="Tạo quiz"
+                          size="sm"
+                          fullWidth={false}
+                          onPress={() => {
+                            const normalizedRoadmapId = Number(activeRoadmapId || 0);
+                            const normalizedKnowledgeId = Number(selectedKnowledgeId || 0);
+                            if (
+                              Number.isInteger(normalizedRoadmapId) &&
+                              normalizedRoadmapId > 0 &&
+                              Number.isInteger(normalizedKnowledgeId) &&
+                              normalizedKnowledgeId > 0
+                            ) {
+                              handleGenerateKnowledgeQuiz(normalizedRoadmapId, normalizedKnowledgeId);
+                            }
+                          }}
+                          loading={runningAction === `knowledge-${Number(selectedKnowledgeId || 0)}`}
+                        />
+                      </View>
+                    )}
+                  </View>
+                ) : null}
+
+                {!!activePhase ? (
+                  <View style={[styles.detailInspector, {borderColor: colors.border}]}> 
+                    <Text style={[styles.detailInspectorTitle, {color: colors.heading}]}> 
+                      {activePhase?.title || 'Chi tiết giai đoạn'}
+                    </Text>
+                    <Text style={[styles.detailInspectorText, {color: colors.textSecondary}]}> 
+                      {activePhase?.description || 'Chọn một giai đoạn để xem chi tiết.'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {showLegacyDetailList && viewMode === 'detail' && phaseReviewState.loading && Number(phaseReviewState.phaseId) === Number(activePhase?.phaseId) ? (
               <View style={[styles.reviewCard, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
                 <Text style={[styles.reviewSummary, {color: colors.textSecondary}]}>Đang đồng bộ đánh giá AI cho phase hiện tại...</Text>
               </View>
             ) : null}
 
-            {phaseReviewState?.data?.summary && Number(phaseReviewState?.phaseId) === Number(activePhase?.phaseId) ? (
+            {showLegacyDetailList && viewMode === 'detail' && phaseReviewState?.data?.summary && Number(phaseReviewState?.phaseId) === Number(activePhase?.phaseId) ? (
               <View
                 style={[
                   styles.reviewCard,
@@ -834,8 +1756,10 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
               </View>
             ) : null}
 
-            <Text style={[styles.sectionTitle, {color: colors.heading}]}>Giai đoạn</Text>
-            {contextType === 'WORKSPACE' && materials.length > 0 && !hasRoadmapPhases && (
+            {showLegacyDetailList && viewMode === 'detail' ? (
+              <Text style={[styles.sectionTitle, {color: colors.heading}]}>Giai đoạn</Text>
+            ) : null}
+            {showLegacyDetailList && viewMode === 'detail' && contextType === 'WORKSPACE' && materials.length > 0 && !hasRoadmapPhases && (
               <>
                 <Text style={[styles.materialTitle, {color: colors.textSecondary}]}>Tài liệu dùng để tạo giai đoạn</Text>
                 <View style={styles.materialWrap}>
@@ -887,31 +1811,34 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                 </View>
               </>
             )}
-            {!hasRoadmapPhases ? (
-              <Button
-                title="Tạo giai đoạn"
-                onPress={() => handleGenerateRoadmapPhases(activeRoadmapId)}
-                loading={runningAction === 'phases'}
-                icon="timeline-plus-outline"
-                size="sm"
-                fullWidth={false}
-                style={styles.generatePhasesBtn}
-              />
-            ) : (
-              <Button
-                title="Làm mới roadmap"
-                onPress={handleRefreshRoadmap}
-                loading={runningAction === 'refresh-roadmap'}
-                icon="refresh"
-                size="sm"
-                variant="outline"
-                fullWidth={false}
-                style={styles.generatePhasesBtn}
-              />
-            )}
-            {!hasRoadmapPhases ? (
-              <Text style={{color: colors.textSecondary}}>Chưa có dữ liệu giai đoạn.</Text>
-            ) : (
+            {showLegacyDetailList && viewMode === 'detail' ? (
+              !hasRoadmapPhases ? (
+                <Button
+                  title="Tạo giai đoạn"
+                  onPress={() => handleGenerateRoadmapPhases(activeRoadmapId)}
+                  loading={runningAction === 'phases'}
+                  icon="timeline-plus-outline"
+                  size="sm"
+                  fullWidth={false}
+                  style={styles.generatePhasesBtn}
+                />
+              ) : (
+                <Button
+                  title="Làm mới roadmap"
+                  onPress={handleRefreshRoadmap}
+                  loading={runningAction === 'refresh-roadmap'}
+                  icon="refresh"
+                  size="sm"
+                  variant="outline"
+                  fullWidth={false}
+                  style={styles.generatePhasesBtn}
+                />
+              )
+            ) : null}
+            {showLegacyDetailList && viewMode === 'detail' ? (
+              !hasRoadmapPhases ? (
+                <Text style={{color: colors.textSecondary}}>Chưa có dữ liệu giai đoạn.</Text>
+              ) : (
               phases.map((phase: any, index: number) => {
                 const phaseId = phase.phaseId;
                 const isSelected = Number(phaseId) === Number(selectedPhaseId);
@@ -981,37 +1908,191 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                   !isLockedPhase &&
                   Number(currentPhaseProgress?.phaseId) === Number(phaseId) &&
                   currentPhaseProgress?.needsRemedialDecision === true;
+                const phaseVisualState = getPhaseVisualState(phase, index, isLockedPhase);
+                const phaseVisualMeta = getPhaseVisualMeta(phaseVisualState);
+                const phaseDurationLabel = formatPhaseDurationLabel(phase);
+                const normalizedPhaseStatus = String(phase?.status || '').toUpperCase();
+                const isProcessingPhase =
+                  !isPhaseFinishedStatus(phase?.status) &&
+                  (
+                    normalizedPhaseStatus === 'PROCESSING' ||
+                    isUnlockingPhase ||
+                    runningAction === preKey ||
+                    runningAction === contentKey
+                  );
+                const isInProgressPhase =
+                  !isPhaseFinishedStatus(phase?.status) &&
+                  !isProcessingPhase &&
+                  !isLockedPhase &&
+                  (
+                    normalizedPhaseStatus === 'IN_PROGRESS' ||
+                    normalizedPhaseStatus === 'INPROGRESS' ||
+                    normalizedPhaseStatus === 'STARTED' ||
+                    normalizedPhaseStatus === 'ONGOING'
+                  );
+
+                let phaseStatusText = 'Đang hoạt động';
+                let phaseStatusColor: string = Colors.primary;
+                if (isPhaseFinishedStatus(phase?.status)) {
+                  phaseStatusText = 'Hoàn thành';
+                  phaseStatusColor = '#10b981';
+                } else if (isProcessingPhase) {
+                  phaseStatusText = 'Đang xử lý';
+                  phaseStatusColor = '#f59e0b';
+                } else if (isInProgressPhase) {
+                  phaseStatusText = 'Đang học';
+                  phaseStatusColor = Colors.primary;
+                } else if (isLockedPhase) {
+                  phaseStatusText = 'Đã khóa';
+                  phaseStatusColor = colors.textTertiary;
+                }
 
                 const showPhaseDetails = isSelected;
 
                 return (
                   <View
                     key={phaseId || index}
-                    style={[
-                      styles.phaseCard,
-                      {borderColor: colors.border, backgroundColor: colors.surface},
-                      isSelected
-                        ? {
-                            borderColor: Colors.primary,
-                            borderWidth: 1.5,
-                          }
-                        : null,
-                    ]}>
-                    <TouchableOpacity onPress={() => setSelectedPhaseId(Number(phaseId) || null)}>
-                    <View style={styles.phaseTitleRow}>
-                      {isLockedPhase ? (
-                        <Icon name="lock-outline" size={16} color={colors.textTertiary} />
-                      ) : null}
-                      <Text style={[styles.phaseTitle, {color: colors.heading}]}>
-                        {phase.title || `Giai đoạn ${index + 1}`}
-                      </Text>
+                    style={styles.phaseTimelineItem}>
+                    {index < phases.length - 1 ? (
+                      <View
+                        style={[
+                          styles.phaseTimelineLine,
+                          {backgroundColor: isDark ? '#334155' : '#cbd5e1'},
+                        ]}
+                      />
+                    ) : null}
+                    <View style={styles.phaseTimelineNodeWrap}>
+                      {isPhaseFinishedStatus(phase?.status) ? (
+                        <View style={styles.phaseTimelineDoneNode}>
+                          <Icon name="check" size={12} color="#10b981" />
+                        </View>
+                      ) : isProcessingPhase ? (
+                        <View
+                          style={[
+                            styles.phaseTimelineIdleNode,
+                            {
+                              borderColor: isDark ? '#475569' : '#cbd5e1',
+                              backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                            },
+                          ]}>
+                          <ActivityIndicator size="small" color="#f59e0b" />
+                        </View>
+                      ) : (
+                        <View
+                          style={[
+                            styles.phaseTimelineIdleNode,
+                            {
+                              borderColor: isLockedPhase
+                                ? isDark
+                                  ? '#475569'
+                                  : '#cbd5e1'
+                                : isSelected
+                                ? '#bfdbfe'
+                                : isDark
+                                ? '#64748b'
+                                : '#cbd5e1',
+                              backgroundColor: isLockedPhase
+                                ? isDark
+                                  ? '#334155'
+                                  : '#f1f5f9'
+                                : isDark
+                                ? '#0f172a'
+                                : '#ffffff',
+                            },
+                          ]}>
+                          <Text
+                            style={[
+                              styles.phaseTimelineOrderText,
+                              {
+                                color: isLockedPhase
+                                  ? colors.textTertiary
+                                  : isSelected
+                                  ? Colors.primary
+                                  : colors.textSecondary,
+                              },
+                            ]}>
+                            {index + 1}
+                          </Text>
+                        </View>
+                      )}
                     </View>
-                    {!!phase.description && (
-                      <Text style={[styles.phaseDesc, {color: colors.textSecondary}]}>
-                        {phase.description}
-                      </Text>
-                    )}
-                    </TouchableOpacity>
+
+                    <View
+                      style={[
+                        styles.phaseCard,
+                        {borderColor: colors.border, backgroundColor: colors.surface},
+                        isSelected
+                          ? {
+                              borderColor: Colors.primary,
+                              borderWidth: 1.5,
+                            }
+                          : null,
+                      ]}>
+                      <TouchableOpacity
+                        onPress={() => handleSelectPhase(Number(phaseId) || null, {fromUser: true})}>
+                      <View style={styles.phaseHeaderRow}>
+                        <View style={styles.phaseHeaderMain}>
+                          <View style={styles.phaseTitleRow}>
+                            <Text style={[styles.phaseTitle, {color: colors.heading}]}>
+                              {phase.title || `Giai đoạn ${index + 1}`}
+                            </Text>
+                            <Icon
+                              name={showPhaseDetails ? 'chevron-up' : 'chevron-down'}
+                              size={16}
+                              color={colors.textTertiary}
+                            />
+                          </View>
+                          <Text style={[styles.phaseStatusText, {color: phaseStatusColor}]}> 
+                            {phaseStatusText}
+                          </Text>
+                          <View style={styles.phaseMetaRow}>
+                            <View
+                              style={[
+                                styles.phaseStateBadge,
+                                {
+                                  borderColor: phaseVisualMeta.badgeBorder,
+                                  backgroundColor: phaseVisualMeta.badgeBackground,
+                                },
+                              ]}>
+                              <Icon
+                                name={phaseVisualMeta.icon}
+                                size={12}
+                                color={phaseVisualMeta.badgeText}
+                              />
+                              <Text
+                                style={[
+                                  styles.phaseStateBadgeText,
+                                  {color: phaseVisualMeta.badgeText},
+                                ]}>
+                                {phaseVisualMeta.label}
+                              </Text>
+                            </View>
+                            {phaseDurationLabel ? (
+                              <View
+                                style={[
+                                  styles.phaseDurationChip,
+                                  {
+                                    borderColor: colors.border,
+                                    backgroundColor: isDark
+                                      ? Colors.dark.surfaceVariant
+                                      : '#f8fafc',
+                                  },
+                                ]}>
+                                <Icon name="timer-outline" size={12} color={colors.textSecondary} />
+                                <Text style={[styles.phaseDurationText, {color: colors.textSecondary}]}>
+                                  {phaseDurationLabel}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
+                      </View>
+                      {!!phase.description && (
+                        <Text style={[styles.phaseDesc, {color: colors.textSecondary}]}>
+                          {phase.description}
+                        </Text>
+                      )}
+                      </TouchableOpacity>
 
                     {showPhaseDetails ? (
                       <>
@@ -1202,6 +2283,53 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                       <View style={styles.knowledgeList}>
                         {knowledges.map((knowledge: any) => {
                           const knowledgeId = knowledge.knowledgeId;
+                          const knowledgeIndex = knowledges.findIndex(
+                            (item: any) => Number(item?.knowledgeId) === Number(knowledgeId),
+                          );
+                          const normalizedKnowledgeStatus = String(knowledge?.status || '').toUpperCase();
+                          const currentKnowledgeIndexInPhase =
+                            Number.isInteger(currentKnowledgePhaseId) &&
+                            currentKnowledgePhaseId === Number(phaseId)
+                              ? knowledges.findIndex(
+                                  (item: any) => Number(item?.knowledgeId) === currentKnowledgeId,
+                                )
+                              : -1;
+                          let contiguousCompletedKnowledgeCount = 0;
+                          for (let idx = 0; idx < knowledges.length; idx += 1) {
+                            if (!isCompletedKnowledge(knowledges[idx])) {
+                              break;
+                            }
+                            contiguousCompletedKnowledgeCount += 1;
+                          }
+                          const shouldUseSequentialFallbackLock =
+                            !isLockedPhase &&
+                            !isPhaseEffectivelyDone(phase) &&
+                            index === maxUnlockedPhaseIndex &&
+                            currentKnowledgePhaseIndex < 0 &&
+                            currentKnowledgeIndexInPhase < 0 &&
+                            knowledges.length > 0;
+                          const isKnowledgeLockedBySequence =
+                            !isPhaseEffectivelyDone(phase) &&
+                            ((index === currentKnowledgePhaseIndex &&
+                              currentKnowledgeIndexInPhase >= 0 &&
+                              knowledgeIndex >
+                                currentKnowledgeIndexInPhase + (isCurrentKnowledgeDoneStatus ? 1 : 0)) ||
+                              (shouldUseSequentialFallbackLock &&
+                                knowledgeIndex > contiguousCompletedKnowledgeCount));
+                          const isKnowledgeLocked =
+                            normalizedKnowledgeStatus === 'LOCKED' || isLockedPhase || isKnowledgeLockedBySequence;
+                          const isKnowledgeCompleted =
+                            isCompletedKnowledge(knowledge) ||
+                            isPhaseEffectivelyDone(phase) ||
+                            (Number.isInteger(currentKnowledgePhaseId) &&
+                              currentKnowledgePhaseId === Number(phaseId) &&
+                              currentKnowledgeIndexInPhase >= 0 &&
+                              knowledgeIndex < currentKnowledgeIndexInPhase);
+                          const isKnowledgeCurrent =
+                            Number.isInteger(currentKnowledgePhaseId) &&
+                            currentKnowledgePhaseId === Number(phaseId) &&
+                            currentKnowledgeIndexInPhase === knowledgeIndex &&
+                            !isCurrentKnowledgeDoneStatus;
                           const quizzes = Array.isArray(knowledge?.quizzes) ? knowledge.quizzes : [];
                           return (
                             <React.Fragment key={knowledgeId}>
@@ -1210,11 +2338,68 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                                   styles.knowledgeItem,
                                   {
                                     borderColor: colors.border,
-                                    backgroundColor: isDark
+                                    backgroundColor: isKnowledgeLocked
+                                      ? isDark
+                                        ? 'rgba(51,65,85,0.6)'
+                                        : '#F1F5F9'
+                                      : isDark
                                       ? Colors.dark.surfaceVariant
                                       : '#F8FAFC',
+                                    opacity: isKnowledgeLocked && !isKnowledgeCompleted ? 0.86 : 1,
                                   },
                                 ]}>
+                                <View style={styles.knowledgeStatusIconWrap}>
+                                  <View
+                                    style={[
+                                      styles.knowledgeStatusIcon,
+                                      {
+                                        borderColor: isKnowledgeLocked
+                                          ? isDark
+                                            ? '#64748b'
+                                            : '#cbd5e1'
+                                          : isKnowledgeCompleted
+                                          ? '#86efac'
+                                          : isKnowledgeCurrent
+                                          ? '#7dd3fc'
+                                          : colors.border,
+                                        backgroundColor: isKnowledgeCompleted
+                                          ? isDark
+                                            ? 'rgba(22,101,52,0.28)'
+                                            : '#dcfce7'
+                                          : isKnowledgeCurrent
+                                          ? isDark
+                                            ? 'rgba(3,105,161,0.28)'
+                                            : '#e0f2fe'
+                                          : isKnowledgeLocked
+                                          ? isDark
+                                            ? '#334155'
+                                            : '#e2e8f0'
+                                          : colors.surface,
+                                      },
+                                    ]}>
+                                    <Icon
+                                      name={
+                                        isKnowledgeCompleted
+                                          ? 'check'
+                                          : isKnowledgeLocked
+                                          ? 'lock-outline'
+                                          : isKnowledgeCurrent
+                                          ? 'progress-clock'
+                                          : 'circle-outline'
+                                      }
+                                      size={12}
+                                      color={
+                                        isKnowledgeCompleted
+                                          ? '#10b981'
+                                          : isKnowledgeCurrent
+                                          ? '#0ea5e9'
+                                          : isKnowledgeLocked
+                                          ? colors.textTertiary
+                                          : colors.textSecondary
+                                      }
+                                    />
+                                  </View>
+                                </View>
                                 <View style={{flex: 1}}>
                                   <Text style={[styles.knowledgeTitle, {color: colors.heading}]}>
                                     {knowledge.title || 'Kiến thức'}
@@ -1226,11 +2411,24 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                                       {knowledge.description}
                                     </Text>
                                   )}
+                                  <Text style={[styles.knowledgeStateText, {color: isKnowledgeLocked ? colors.textTertiary : Colors.primary}]}>
+                                    {isKnowledgeCompleted
+                                      ? 'Hoàn thành'
+                                      : isKnowledgeLocked
+                                      ? 'Đã khóa'
+                                      : isKnowledgeCurrent
+                                      ? 'Đang học'
+                                      : 'Sẵn sàng'}
+                                  </Text>
                                 </View>
                                 <Button
-                                  title="Tạo quiz"
-                                  onPress={() => handleGenerateKnowledgeQuiz(activeRoadmapId, knowledgeId)}
-                                  disabled={isLockedPhase}
+                                  title={isKnowledgeLocked ? 'Đã khóa' : 'Tạo quiz'}
+                                  onPress={() => {
+                                    if (!isKnowledgeLocked) {
+                                      handleGenerateKnowledgeQuiz(activeRoadmapId, knowledgeId);
+                                    }
+                                  }}
+                                  disabled={isKnowledgeLocked}
                                   loading={runningAction === `knowledge-${knowledgeId}`}
                                   size="sm"
                                   fullWidth={false}
@@ -1274,11 +2472,11 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                                           <Button
                                             title="Làm quiz"
                                             onPress={() => {
-                                              if (!isLockedPhase) {
+                                              if (!isKnowledgeLocked) {
                                                 openQuizModeSelector(quiz, phaseId);
                                               }
                                             }}
-                                            disabled={isLockedPhase}
+                                            disabled={isKnowledgeLocked}
                                             size="sm"
                                             fullWidth={false}
                                             variant="outline"
@@ -1439,10 +2637,12 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                     ) : (
                       <Text style={[styles.phaseCollapsedHint, {color: colors.textSecondary}]}>Chạm vào phase để xem pre-learning, knowledge và quiz.</Text>
                     )}
+                    </View>
                   </View>
                 );
               })
-            )}
+              )
+            ) : null}
           </View>
         )}
 
@@ -1453,6 +2653,123 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={journeyPanelVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setJourneyPanelVisible(false)}>
+        <View style={styles.panelOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setJourneyPanelVisible(false)}
+          />
+
+          <View
+            style={[
+              styles.journeyPanel,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}>
+            <View style={styles.journeyPanelHeader}>
+              <View>
+                <Text style={[styles.journeyPanelTitle, {color: colors.heading}]}>Roadmap Panel</Text>
+                <Text style={[styles.journeyPanelSubtitle, {color: colors.textSecondary}]}>Chọn phase để mở nhanh</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setJourneyPanelVisible(false)}
+                style={styles.journeyPanelCloseBtn}>
+                <Icon name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              ref={ref => {
+                journeyPanelScrollRef.current = ref;
+              }}
+              style={styles.journeyPanelList}
+              contentContainerStyle={styles.journeyPanelListContent}
+              showsVerticalScrollIndicator={false}>
+              {phases.map((phase: any, index: number) => {
+                const phaseId = Number(phase?.phaseId || 0);
+                const hasPreLearningQuiz =
+                  Array.isArray(phase?.preLearningQuizzes) && phase.preLearningQuizzes.length > 0;
+                const isLockedPhase = index > maxUnlockedPhaseIndex && !hasPreLearningQuiz;
+                const phaseVisualState = getPhaseVisualState(phase, index, isLockedPhase);
+                const phaseVisualMeta = getPhaseVisualMeta(phaseVisualState);
+                const selected = Number(selectedPhaseId) === phaseId;
+                const itemStart = Math.min(index * 0.08, 0.56);
+                const itemEnd = Math.min(itemStart + 0.28, 1);
+                const animatedOpacity = panelEntranceAnim.interpolate({
+                  inputRange: [itemStart, itemEnd],
+                  outputRange: [0, 1],
+                  extrapolate: 'clamp',
+                });
+                const animatedTranslateY = panelEntranceAnim.interpolate({
+                  inputRange: [itemStart, itemEnd],
+                  outputRange: [10, 0],
+                  extrapolate: 'clamp',
+                });
+
+                return (
+                  <Animated.View
+                    key={`panel-${phaseId || index}`}
+                    style={{
+                      opacity: animatedOpacity,
+                      transform: [{translateY: animatedTranslateY}],
+                    }}>
+                    <TouchableOpacity
+                      onLayout={event => {
+                        if (Number.isInteger(phaseId) && phaseId > 0) {
+                          panelItemYRef.current[phaseId] = event.nativeEvent.layout.y;
+                        }
+                      }}
+                      onPress={() => handleSelectPhase(phaseId || null, {fromUser: true, closePanel: true})}
+                      style={[
+                        styles.journeyPanelItem,
+                        {
+                          borderColor: selected ? '#93c5fd' : colors.border,
+                          backgroundColor: selected
+                            ? isDark
+                              ? 'rgba(30,58,138,0.28)'
+                              : '#eff6ff'
+                            : isDark
+                            ? Colors.dark.surfaceVariant
+                            : '#f8fafc',
+                        },
+                      ]}>
+                      <View
+                        style={[
+                          styles.journeyPanelItemIcon,
+                          {
+                            borderColor: phaseVisualMeta.badgeBorder,
+                            backgroundColor: phaseVisualMeta.badgeBackground,
+                          },
+                        ]}>
+                        <Icon name={phaseVisualMeta.icon} size={14} color={phaseVisualMeta.badgeText} />
+                      </View>
+
+                      <View style={styles.journeyPanelItemBody}>
+                        <Text numberOfLines={1} style={[styles.journeyPanelItemTitle, {color: colors.heading}]}> 
+                          {phase?.title || `Giai đoạn ${index + 1}`}
+                        </Text>
+                        <Text style={[styles.journeyPanelItemStatus, {color: phaseVisualMeta.badgeText}]}> 
+                          {phaseVisualMeta.label}
+                        </Text>
+                      </View>
+
+                      <Icon name="chevron-right" size={16} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1503,6 +2820,444 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   phaseWrap: {marginTop: Spacing.lg, gap: Spacing.sm},
+  roadmapHeroCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.base,
+    gap: 4,
+  },
+  roadmapHeroTag: {
+    fontSize: 10,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    fontWeight: '600',
+  },
+  roadmapHeroTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  roadmapHeroMeta: {
+    fontSize: 12,
+  },
+  roadmapActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  roadmapActionChip: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  roadmapActionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  viewModeToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: Spacing.sm,
+    flexWrap: 'wrap',
+  },
+  viewModeToggleChip: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  viewModeToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  viewModeUtilityBtn: {
+    width: 34,
+    height: 34,
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  canvasBoardWrap: {
+    marginTop: Spacing.md,
+    gap: Spacing.md,
+  },
+  canvasBoardHeader: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+  },
+  canvasBoardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  canvasBoardSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+  },
+  canvasBoardPill: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  canvasBoardPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  overviewControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  overviewControlBtn: {
+    width: 32,
+    height: 32,
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  canvasStrip: {
+    gap: 12,
+    paddingBottom: 4,
+  },
+  overviewCanvasInner: {
+    position: 'relative',
+  },
+  overviewNode: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 4,
+  },
+  overviewNodeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  overviewBone: {
+    position: 'absolute',
+    width: 2,
+    borderRadius: 1,
+    zIndex: 2,
+  },
+  overviewPhaseCard: {
+    position: 'absolute',
+    width: 224,
+    minHeight: 118,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: 5,
+    zIndex: 3,
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  overviewPhaseTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  overviewPhaseTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  overviewPhaseStatus: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  overviewArrowBtn: {
+    position: 'absolute',
+    top: '50%',
+    width: 32,
+    height: 32,
+    marginTop: -16,
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 6,
+  },
+  overviewArrowLeft: {
+    left: 10,
+  },
+  overviewArrowRight: {
+    right: 10,
+  },
+  overviewLegendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 2,
+  },
+  overviewLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  overviewLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  overviewLegendText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  canvasCard: {
+    width: 220,
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  canvasCardTopRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+  },
+  canvasCardNode: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  canvasCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  canvasCardStatus: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  canvasCardDesc: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  canvasCardMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  canvasCardMetaChip: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  canvasCardMetaText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  canvasDetailCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  canvasDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  canvasDetailTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  canvasDetailSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+  },
+  canvasDetailBadge: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  canvasDetailBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  canvasDetailText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  canvasDetailAction: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  canvasDetailActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  detailBoardWrap: {
+    marginTop: Spacing.md,
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  detailBoardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  detailRail: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  detailRailTrack: {
+    gap: 10,
+    paddingBottom: 6,
+    position: 'relative',
+    alignItems: 'flex-start',
+    paddingTop: 8,
+  },
+  detailPhaseBaseLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 20,
+    height: 2,
+  },
+  detailPhaseStepWrap: {
+    width: 190,
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  detailPhaseNode: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    zIndex: 3,
+  },
+  detailPhaseNodeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  detailPhaseCard: {
+    width: 190,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: 6,
+  },
+  detailPhaseTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  detailPhaseName: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  detailKnowledgeCard: {
+    width: 190,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: 6,
+  },
+  detailKnowledgeTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  detailKnowledgeName: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  detailInspector: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: 4,
+  },
+  detailInspectorTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  detailInspectorText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  detailQuizSection: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: 8,
+  },
+  detailQuizTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  detailQuizCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailQuizName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  detailQuizMeta: {
+    marginTop: 2,
+    fontSize: 11,
+  },
+  detailQuizActionBtn: {
+    minWidth: 82,
+  },
+  detailEmptyWrap: {
+    gap: Spacing.sm,
+    alignItems: 'flex-start',
+  },
+  detailEmptyText: {
+    fontSize: 12,
+  },
+  phaseWrapHidden: {display: 'none'},
   reviewCard: {
     borderWidth: 1,
     borderRadius: BorderRadius.md,
@@ -1545,6 +3300,50 @@ const styles = StyleSheet.create({
   preLearningDecisionText: {fontSize: 12, lineHeight: 18},
   preLearningFallbackWrap: {marginTop: Spacing.xs},
   generatePhasesBtn: {minWidth: 150, marginBottom: Spacing.sm},
+  phaseTimelineItem: {
+    position: 'relative',
+    paddingLeft: 34,
+    marginBottom: Spacing.sm,
+  },
+  phaseTimelineLine: {
+    position: 'absolute',
+    left: 10,
+    top: 26,
+    bottom: -14,
+    width: 2,
+    borderRadius: 1,
+  },
+  phaseTimelineNodeWrap: {
+    position: 'absolute',
+    left: 0,
+    top: 10,
+    width: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  phaseTimelineDoneNode: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#dcfce7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  phaseTimelineIdleNode: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+  },
+  phaseTimelineOrderText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
   phaseCard: {
     borderWidth: 1,
     borderRadius: BorderRadius.md,
@@ -1552,8 +3351,59 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
     gap: Spacing.sm,
   },
+  phaseHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  phaseHeaderMain: {
+    flex: 1,
+    gap: 6,
+  },
+  phaseStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  phaseStateDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
   phaseTitle: {fontSize: 15, fontWeight: '600'},
   phaseTitleRow: {flexDirection: 'row', alignItems: 'center', gap: Spacing.xs},
+  phaseMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  phaseStateBadge: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  phaseStateBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  phaseDurationChip: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  phaseDurationText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
   phaseDesc: {fontSize: 13, lineHeight: 18},
   phaseActions: {flexDirection: 'row', gap: Spacing.sm},
   actionBtn: {minWidth: 120},
@@ -1621,8 +3471,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
+  knowledgeStatusIconWrap: {
+    width: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  knowledgeStatusIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
   knowledgeTitle: {fontSize: 13, fontWeight: '600'},
   knowledgeDesc: {fontSize: 12, marginTop: 2},
+  knowledgeStateText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
   smallBtn: {minWidth: 74},
   remedialCard: {
     borderWidth: 1,
@@ -1640,5 +3508,92 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   runningText: {fontSize: 13},
+  journeyFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2563eb',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  panelOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(2,6,23,0.35)',
+  },
+  journeyPanel: {
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    maxHeight: '68%',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
+  },
+  journeyPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  journeyPanelTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  journeyPanelSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  journeyPanelCloseBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  journeyPanelList: {
+    flex: 1,
+  },
+  journeyPanelListContent: {
+    paddingBottom: Spacing['2xl'],
+    gap: Spacing.xs,
+  },
+  journeyPanelItem: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  journeyPanelItemIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  journeyPanelItemBody: {
+    flex: 1,
+  },
+  journeyPanelItemTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  journeyPanelItemStatus: {
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '600',
+  },
 });
 

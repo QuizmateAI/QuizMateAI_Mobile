@@ -1,4 +1,4 @@
-import React, {createContext, useContext, useState, useCallback, useRef} from 'react';
+import React, {createContext, useContext, useState, useCallback, useRef, useEffect} from 'react';
 import {Animated, StyleSheet, Text, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Colors} from '../theme/colors';
@@ -24,26 +24,66 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
   const insets = useSafeAreaInsets();
   const {isDark} = useTheme();
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const animationRef = useRef<{stop: () => void} | null>(null);
+  const isMountedRef = useRef(true);
 
-  const showToast = useCallback(
-    (message: string, type: ToastType = 'info') => {
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      setToast({message: localizeUiText(message), type});
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+      if (animationRef.current) {
+        animationRef.current.stop();
+      }
+    };
+  }, []);
 
-      timeoutRef.current = setTimeout(() => {
-        Animated.timing(fadeAnim, {
-          toValue: 0,
+  const showToast = useCallback(
+    (message: string, type: ToastType = 'info') => {
+      if (!isMountedRef.current) return;
+      
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      if (animationRef.current) {
+        animationRef.current.stop();
+      }
+
+      setToast({message: localizeUiText(message), type});
+      
+      try {
+        const showAnim = Animated.timing(fadeAnim, {
+          toValue: 1,
           duration: 300,
           useNativeDriver: true,
-        }).start(() => setToast(null));
-      }, 3000);
+        });
+        animationRef.current = showAnim;
+        showAnim.start();
+
+        timeoutRef.current = setTimeout(() => {
+          if (!isMountedRef.current) return;
+          try {
+            const hideAnim = Animated.timing(fadeAnim, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            });
+            animationRef.current = hideAnim;
+            hideAnim.start(() => {
+              if (isMountedRef.current) {
+                setToast(null);
+              }
+            });
+          } catch (e) {
+            console.warn('Toast hide animation error:', e);
+            setToast(null);
+          }
+        }, 3000);
+      } catch (e) {
+        console.warn('Toast show animation error:', e);
+        setToast({message: localizeUiText(message), type});
+      }
     },
     [fadeAnim],
   );

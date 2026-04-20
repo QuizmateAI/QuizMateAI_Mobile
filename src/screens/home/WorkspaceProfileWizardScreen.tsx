@@ -17,6 +17,7 @@ import FloatingInput from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import StudyProfileAPI from '../../api/StudyProfileAPI';
 import WorkspaceProfileAPI from '../../api/WorkspaceProfileAPI';
+import GroupWorkspaceProfileAPI from '../../api/GroupWorkspaceProfileAPI';
 
 type LearningMode = 'STUDY_NEW' | 'REVIEW' | 'MOCK_TEST';
 
@@ -83,6 +84,13 @@ const emptyFieldSuggestions = {
 export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
+
+  const contextType = route?.params?.contextType === 'GROUP' ? 'GROUP' : 'WORKSPACE';
+  const contextLabel = contextType === 'GROUP' ? 'nhóm' : 'workspace';
+  const profileApi = useMemo(
+    () => (contextType === 'GROUP' ? GroupWorkspaceProfileAPI : WorkspaceProfileAPI),
+    [contextType],
+  );
 
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
@@ -736,7 +744,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
 
       setLoadingProfile(true);
       try {
-        const res = await WorkspaceProfileAPI.getProfile(workspaceId);
+        const res = await profileApi.getProfile(workspaceId);
         const profile = res.data?.data || res.data || {};
         if (!mounted) {
           return;
@@ -746,7 +754,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         setDomain(profile.domain || '');
         setLearningMode(profile.learningMode || 'STUDY_NEW');
         setCurrentLevel(profile.currentLevel || '');
-        setLearningGoal(profile.learningGoal || '');
+        setLearningGoal(profile.groupLearningGoal || profile.learningGoal || '');
         setStrongAreas(Array.isArray(profile.strongAreas) ? profile.strongAreas.join(', ') : '');
         setWeakAreas(Array.isArray(profile.weakAreas) ? profile.weakAreas.join(', ') : '');
         setExamName(profile.examName || '');
@@ -777,7 +785,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         }
       } catch {
         if (mounted) {
-          showToast('Không thể tải hồ sơ workspace hiện tại', 'warning');
+          showToast(`Không thể tải hồ sơ ${contextLabel} hiện tại`, 'warning');
         }
       } finally {
         if (mounted) {
@@ -790,7 +798,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
     return () => {
       mounted = false;
     };
-  }, [workspaceId, showToast]);
+  }, [contextLabel, profileApi, workspaceId, showToast]);
 
   const handleSuggestFields = async () => {
     await requestSuggestFields();
@@ -813,7 +821,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
 
   const handleSubmitProfile = async () => {
     if (!workspaceId) {
-      showToast('Thiếu workspace id', 'error');
+      showToast(`Thiếu ${contextType === 'GROUP' ? 'groupId' : 'workspace id'}`, 'error');
       return;
     }
     if (!knowledge.trim() || !domain.trim()) {
@@ -824,8 +832,17 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
       showToast('Vui lòng chọn domain từ gợi ý AI', 'error');
       return;
     }
-    if (!currentLevel.trim() || !learningGoal.trim()) {
-      showToast('Bắt buộc nhập trình độ hiện tại và mục tiêu học', 'error');
+    if (contextType === 'WORKSPACE' && !currentLevel.trim()) {
+      showToast('Bắt buộc nhập trình độ hiện tại', 'error');
+      return;
+    }
+    if (!learningGoal.trim()) {
+      showToast(
+        contextType === 'GROUP'
+          ? 'Bắt buộc nhập mục tiêu học nhóm'
+          : 'Bắt buộc nhập mục tiêu học',
+        'error',
+      );
       return;
     }
     if (learningMode === 'MOCK_TEST' && !examName.trim()) {
@@ -841,6 +858,8 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         knowledge,
         currentLevel,
         learningGoal,
+        groupLearningGoal: learningGoal,
+        groupName: String(route?.params?.title || '').trim() || undefined,
         weakAreas: parseListField(weakAreas),
         strongAreas: parseListField(strongAreas),
         examName,
@@ -852,17 +871,17 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         estimatedMinutesPerDay: Number(estimatedMinutesPerDay) || null,
       } as const;
 
-      await WorkspaceProfileAPI.configureProfileDraft(workspaceId, payload as any);
+      await profileApi.configureProfileDraft(workspaceId, payload as any);
 
-      if (!consistencyNote) {
+      if (contextType === 'WORKSPACE' && !consistencyNote) {
         await handleValidate();
       }
 
-      const confirmRes = await WorkspaceProfileAPI.confirm(workspaceId);
+      const confirmRes = await profileApi.confirm(workspaceId);
       const message =
         confirmRes.data?.message ||
         confirmRes.data?.data?.message ||
-        'Cấu hình hồ sơ workspace thành công';
+        `Cấu hình hồ sơ ${contextLabel} thành công`;
       showToast(message, 'success');
       navigation.goBack();
     } catch (error: any) {
@@ -870,7 +889,7 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
         error?.response?.data?.message ||
         error?.response?.data?.error ||
         error?.message ||
-        'Không thể lưu hồ sơ workspace';
+        `Không thể lưu hồ sơ ${contextLabel}`;
       showToast(message, 'error');
     } finally {
       setSaving(false);
@@ -894,7 +913,9 @@ export default function WorkspaceProfileWizardScreen({navigation, route}: any) {
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
         <View>
-          <Text style={[styles.headerTitle, {color: colors.heading}]}>Thiết lập hồ sơ học tập</Text>
+          <Text style={[styles.headerTitle, {color: colors.heading}]}>
+            {contextType === 'GROUP' ? 'Thiết lập hồ sơ nhóm' : 'Thiết lập hồ sơ học tập'}
+          </Text>
           <Text style={[styles.stepText, {color: colors.textSecondary}]}>Bước {step}/3 • {STEP_TITLES[step - 1]}</Text>
         </View>
       </View>

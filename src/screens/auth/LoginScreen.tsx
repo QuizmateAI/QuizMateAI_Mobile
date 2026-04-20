@@ -12,7 +12,11 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {GoogleSignin, statusCodes} from '@react-native-google-signin/google-signin';
 import {getApps, initializeApp} from '@react-native-firebase/app';
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithCredential,
+} from '@react-native-firebase/auth';
 import {GOOGLE_WEB_CLIENT_ID} from '@env';
 import {useTheme} from '../../context/ThemeContext';
 import {useAuth} from '../../context/AuthContext';
@@ -115,8 +119,11 @@ export default function LoginScreen({navigation}: any) {
         throw new Error('Không nhận được ID token từ Google');
       }
 
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      const userCredential = await auth().signInWithCredential(googleCredential);
+      const googleCredential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(
+        getAuth(),
+        googleCredential,
+      );
       const firebaseIdToken = await userCredential.user.getIdToken();
 
       const response = await AuthAPI.firebaseLogin(firebaseIdToken);

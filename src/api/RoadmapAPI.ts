@@ -78,6 +78,15 @@ const RoadmapAPI = {
       ...res,
       data: unwrapData(res),
     })),
+  getCurrentRoadmapKnowledgeProgress: (roadmapId: number) =>
+    api.get('/api/roadmap-knowledges/current', {
+      params: {
+        roadmapId,
+      },
+    }).then(res => ({
+      ...res,
+      data: unwrapData(res),
+    })),
   create: (data: any) =>
     api.post('/api/ai/roadmap:generated', data),
   createPhase: (roadmapId: number, data: any) =>
