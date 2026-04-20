@@ -49,13 +49,16 @@ const mapCreditPackage = (item: any): CreditPackageItem => {
   };
 };
 
-export default function CreditPackagesScreen({navigation}: any) {
+export default function CreditPackagesScreen({navigation, route}: any) {
+  const workspaceId = Number(route?.params?.workspaceId || 0);
+  const workspaceName = String(route?.params?.workspaceName || '');
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [creditSummary, setCreditSummary] = useState(EMPTY_CREDIT_SUMMARY);
   const [packages, setPackages] = useState<CreditPackageItem[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(
     null,
   );
@@ -71,7 +74,9 @@ export default function CreditPackagesScreen({navigation}: any) {
       setLoadError(null);
 
       const [walletResult, packageResult] = await Promise.allSettled([
-        ManagementSystemAPI.getMyWallet(),
+        workspaceId > 0
+          ? ManagementSystemAPI.getGroupWorkspaceWallet(workspaceId)
+          : ManagementSystemAPI.getMyWallet(),
         ManagementSystemAPI.getPurchaseableCreditPackages(),
       ]);
 
@@ -112,6 +117,32 @@ export default function CreditPackagesScreen({navigation}: any) {
         setLoadError('Không thể tải danh sách gói credit');
       }
 
+      if (workspaceId > 0) {
+        const transactionResult = await Promise.allSettled([
+          ManagementSystemAPI.getGroupWorkspaceWalletTransactions(workspaceId, 0, 5),
+        ]);
+        if (
+          transactionResult[0]?.status === 'fulfilled' &&
+          Array.isArray(transactionResult[0].value?.data)
+        ) {
+          setTransactions(transactionResult[0].value.data);
+        } else {
+          setTransactions([]);
+        }
+      } else {
+        const transactionResult = await Promise.allSettled([
+          ManagementSystemAPI.getMyWalletTransactions(0, 5),
+        ]);
+        if (
+          transactionResult[0]?.status === 'fulfilled' &&
+          Array.isArray(transactionResult[0].value?.data)
+        ) {
+          setTransactions(transactionResult[0].value.data);
+        } else {
+          setTransactions([]);
+        }
+      }
+
       setLoading(false);
     };
 
@@ -120,7 +151,7 @@ export default function CreditPackagesScreen({navigation}: any) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [workspaceId]);
 
   const selectedPackage = useMemo(
     () => packages.find(item => item.id === selectedPackageId) ?? null,
@@ -170,7 +201,10 @@ export default function CreditPackagesScreen({navigation}: any) {
         selectedMethod === 'momo'
           ? PaymentAPI.createMomoCreditPayment
           : PaymentAPI.createVnpayCreditPayment;
-      const response = await api(selectedPackage.id);
+      const response =
+        workspaceId > 0
+          ? await api(selectedPackage.id, workspaceId)
+          : await api(selectedPackage.id);
       const payUrl =
         response.data?.payUrl ||
         response.data?.url ||
@@ -209,7 +243,7 @@ export default function CreditPackagesScreen({navigation}: any) {
           <Icon name="chevron-left" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, {color: colors.heading}]}>
-          Mua credit
+          {workspaceId > 0 ? 'Nạp credit nhóm' : 'Mua credit'}
         </Text>
         <View style={styles.backBtn} />
       </View>
@@ -246,7 +280,7 @@ export default function CreditPackagesScreen({navigation}: any) {
             </View>
             <View style={styles.summaryCopy}>
               <Text style={[styles.summaryLabel, {color: colors.textTertiary}]}>
-                Số dư hiện tại
+                {workspaceId > 0 ? 'Số dư nhóm hiện tại' : 'Số dư hiện tại'}
               </Text>
               <Text style={[styles.summaryValue, {color: colors.heading}]}>
                 {formatCredits(creditSummary.totalAvailableCredits)} credit
@@ -299,8 +333,53 @@ export default function CreditPackagesScreen({navigation}: any) {
             Chọn gói credit
           </Text>
           <Text style={[styles.sectionDesc, {color: colors.textSecondary}]}>
-            Credit sẽ được cộng vào ví cá nhân sau khi thanh toán hoàn tất
+            {workspaceId > 0
+              ? `Credit sẽ được cộng vào ví nhóm${workspaceName ? ` (${workspaceName})` : ''} sau khi thanh toán hoàn tất`
+              : 'Credit sẽ được cộng vào ví cá nhân sau khi thanh toán hoàn tất'}
           </Text>
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, {color: colors.heading}]}>Giao dịch gần đây</Text>
+          <Text style={[styles.sectionDesc, {color: colors.textSecondary}]}>5 giao dịch credit mới nhất</Text>
+        </View>
+        <View style={styles.packageList}>
+          {transactions.length === 0 ? (
+            <View
+              style={[
+                styles.emptyState,
+                {backgroundColor: colors.surface, borderColor: colors.border},
+              ]}>
+              <Icon name="history" size={24} color={colors.textTertiary} />
+              <Text style={[styles.emptyTitle, {color: colors.heading}]}>Chưa có giao dịch</Text>
+            </View>
+          ) : (
+            transactions.map((tx: any) => (
+              <View
+                key={String(tx.id)}
+                style={[
+                  styles.packageCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}>
+                <View style={styles.packageTopRow}>
+                  <View style={styles.packageTitleWrap}>
+                    <Text style={[styles.packageTitle, {color: colors.heading}]}>
+                      {tx.type || 'TRANSACTION'}
+                    </Text>
+                    <Text style={[styles.packageSubtitle, {color: colors.textSecondary}]}>
+                      {tx.note || 'Giao dịch credit'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.packagePrice, {color: tx.creditChange >= 0 ? Colors.success : Colors.error}]}>
+                    {tx.creditChange >= 0 ? '+' : ''}{tx.creditChange}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={styles.packageList}>

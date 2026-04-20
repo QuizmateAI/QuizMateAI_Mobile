@@ -7,6 +7,11 @@ import PracticeQuizScreen from '../screens/quiz/PracticeQuizScreen';
 import ExamQuizScreen from '../screens/quiz/ExamQuizScreen';
 import QuizResultScreen from '../screens/quiz/QuizResultScreen';
 import VoicePracticeQuizScreen from '../screens/quiz/VoicePracticeQuizScreen';
+import WorkspaceProfileWizardScreen from '../screens/home/WorkspaceProfileWizardScreen';
+import SubscriptionScreen from '../screens/profile/SubscriptionScreen';
+import CreditPackagesScreen from '../screens/profile/CreditPackagesScreen';
+import PaymentScreen from '../screens/profile/PaymentScreen';
+import PaymentResultScreen from '../screens/profile/PaymentResultScreen';
 import {type VoicePracticeConfig} from '../utils/voicePractice';
 
 export type QuizBackContext =
@@ -26,7 +31,29 @@ export type QuizBackContext =
 export type QuizStackParamList = {
   GroupList: undefined;
   GroupWorkspace: {groupId: number; title?: string};
-  GroupManagement: {groupId: number; title?: string};
+  GroupManagement: {
+    groupId: number;
+    title?: string;
+    initialTab?: 'dashboard' | 'members' | 'ranking' | 'logs' | 'settings';
+  };
+  Subscription: {planType?: 'individual' | 'group'; groupId?: number} | undefined;
+  CreditPackages: {workspaceId?: number; workspaceName?: string} | undefined;
+  Payment: {planId: number; planName?: string; planType?: string; groupId?: number};
+  PaymentResult: {
+    status: string;
+    orderId?: string;
+    amount?: number;
+    orderInfo?: string;
+    transId?: string;
+    payType?: string;
+    responseTime?: string;
+    purchaseType?: 'plan' | 'credit';
+  };
+  WorkspaceProfileWizard: {
+    workspaceId: number;
+    title?: string;
+    contextType?: 'WORKSPACE' | 'GROUP';
+  };
   PracticeQuiz: {quizId: number; title?: string; backContext?: QuizBackContext};
   VoicePracticeQuiz: {
     quizId: number;
@@ -47,6 +74,14 @@ export default function QuizStack() {
       <Stack.Screen name="GroupList" component={GroupListScreen} />
       <Stack.Screen name="GroupWorkspace" component={GroupWorkspaceScreen} />
       <Stack.Screen name="GroupManagement" component={GroupManagementScreen} />
+      <Stack.Screen name="Subscription" component={SubscriptionScreen} />
+      <Stack.Screen name="CreditPackages" component={CreditPackagesScreen} />
+      <Stack.Screen name="Payment" component={PaymentScreen} />
+      <Stack.Screen name="PaymentResult" component={PaymentResultScreen} />
+      <Stack.Screen
+        name="WorkspaceProfileWizard"
+        component={WorkspaceProfileWizardScreen}
+      />
       <Stack.Screen name="PracticeQuiz" component={PracticeQuizScreen} />
       <Stack.Screen name="VoicePracticeQuiz" component={VoicePracticeQuizScreen} />
       <Stack.Screen name="ExamQuiz" component={ExamQuizScreen} />

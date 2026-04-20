@@ -68,7 +68,7 @@ const QuizAPI = {
       const normalized = String(contextType || '').toUpperCase();
       let path: string | null = null;
 
-      if (normalized === 'WORKSPACE') {
+      if (normalized === 'WORKSPACE' || normalized === 'GROUP') {
         path = `/api/quiz/getByWorkspace/${contextId}`;
       } else if (normalized === 'ROADMAP') {
         path = `/api/quiz/getByRoadmap/${contextId}`;

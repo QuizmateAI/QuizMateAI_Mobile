@@ -141,6 +141,29 @@ const ManagementSystemAPI = {
         ...res,
         data: normalizeCreditTransactions(res.data?.data),
       })),
+
+  getGroupWorkspaceWallet: (workspaceId: number) =>
+    api.get(`/api/credit-wallet/group-workspace/${workspaceId}`).then(res => ({
+      ...res,
+      data: normalizeCreditSummary(res.data?.data),
+    })),
+
+  getGroupWorkspaceWalletTransactions: (
+    workspaceId: number,
+    page = 0,
+    size = 10,
+  ) =>
+    api
+      .get(
+        `/api/credit-wallet/group-workspace/${workspaceId}/transactions?page=${page}&size=${size}`,
+      )
+      .then(res => ({
+        ...res,
+        data: normalizeCreditTransactions(res.data?.data),
+      })),
+
+  getWorkspacePayments: (workspaceId: number, page = 0, size = 10) =>
+    api.get(`/api/payment/workspace/${workspaceId}?page=${page}&size=${size}`),
 };
 
 export default ManagementSystemAPI;

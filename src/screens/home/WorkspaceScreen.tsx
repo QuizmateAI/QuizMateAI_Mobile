@@ -494,11 +494,12 @@ export default function WorkspaceScreen({navigation, route}: any) {
       return;
     }
     if (key === 'roadmap') {
-      Alert.alert(
-        'Chưa hỗ trợ trên mobile',
-        'Tính năng Lộ trình hiện chỉ khả dụng trên web app. Vui lòng truy cập trên trình duyệt để sử dụng.',
-        [{text: 'Đã hiểu', style: 'default'}],
-      );
+      navigation.navigate('RoadmapJourney', {
+        contextType: 'WORKSPACE',
+        contextId: Number(workspaceId),
+        title,
+        materials,
+      });
       return;
     }
     if (key === 'flashcard') {
@@ -986,11 +987,12 @@ export default function WorkspaceScreen({navigation, route}: any) {
                         materials,
                       });
                     } else if (item.key === 'roadmap') {
-                      Alert.alert(
-                        'Chưa hỗ trợ trên mobile',
-                        'Tính năng Lộ trình hiện chỉ khả dụng trên web app. Vui lòng truy cập trên trình duyệt để sử dụng.',
-                        [{text: 'Đã hiểu', style: 'default'}],
-                      );
+                      navigation.navigate('RoadmapJourney', {
+                        contextType: 'WORKSPACE',
+                        contextId: Number(workspaceId),
+                        title,
+                        materials,
+                      });
                     } else if (item.key === 'flashcard') {
                       navigation.navigate('CreateAIFlashcard', {
                         workspaceId,

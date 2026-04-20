@@ -31,6 +31,11 @@ const getWorkspaceDisplayName = (item: any): string =>
 const mapWorkspace = (item: any) => ({
   ...item,
   id: item?.workspaceId ?? item?.id,
+  workspaceKind: item?.workspaceKind || item?.type || null,
+  isGroupWorkspace:
+    item?.workspaceKind === 'GROUP' ||
+    item?.type === 'GROUP' ||
+    item?.isGroupWorkspace === true,
   rawName: normalizeWorkspaceText(item?.name) || '',
   rawTitle: normalizeWorkspaceText(item?.title) || '',
   displayName: getWorkspaceDisplayName(item),

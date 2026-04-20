@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -35,6 +36,7 @@ export default function GroupListScreen({navigation}: any) {
 
   const [createDialogVisible, setCreateDialogVisible] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newDescription, setNewDescription] = useState('');
   const [creating, setCreating] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -63,11 +65,45 @@ export default function GroupListScreen({navigation}: any) {
     if (!newName.trim()) {return;}
     setCreating(true);
     try {
-      await GroupAPI.create({name: newName});
+      const res = await GroupAPI.create({name: newName, description: newDescription});
+      const created = res?.data?.data || res?.data || {};
+      const createdGroupId = Number(created?.workspaceId || created?.groupId || created?.id || 0);
+      const createdGroupName = String(
+        created?.groupName || created?.name || newName,
+      );
+
       showToast('Nhóm đã được tạo!', 'success');
       setCreateDialogVisible(false);
       setNewName('');
+      setNewDescription('');
       fetchData();
+
+      if (createdGroupId > 0) {
+        Alert.alert(
+          'Tạo nhóm thành công',
+          'Bạn muốn cấu hình hồ sơ nhóm ngay bây giờ?',
+          [
+            {
+              text: 'Để sau',
+              style: 'cancel',
+              onPress: () =>
+                navigation.navigate('GroupWorkspace', {
+                  groupId: createdGroupId,
+                  title: createdGroupName,
+                }),
+            },
+            {
+              text: 'Cấu hình ngay',
+              onPress: () =>
+                navigation.navigate('WorkspaceProfileWizard', {
+                  workspaceId: createdGroupId,
+                  title: createdGroupName,
+                  contextType: 'GROUP',
+                }),
+            },
+          ],
+        );
+      }
     } catch {
       showToast('Không thể tạo nhóm', 'error');
     } finally {
@@ -128,22 +164,32 @@ export default function GroupListScreen({navigation}: any) {
       {/* List */}
       <FlatList
         data={groups}
-        keyExtractor={item => String(item.id || item.groupId)}
-        renderItem={({item}) => (
-          <GroupCard
-            id={item.id || item.groupId}
-            name={item.name || item.groupName}
-            description={item.description}
-            memberCount={item.memberCount}
-            role={item.role || item.memberRole}
-            onPress={() =>
-              navigation.navigate('GroupWorkspace', {
-                groupId: item.id || item.groupId,
-                title: item.name || item.groupName,
-              })
-            }
-          />
-        )}
+        keyExtractor={item => String(item.groupId || item.workspaceId || item.id)}
+        renderItem={({item}) => {
+          const resolvedGroupId = Number(item.groupId || item.workspaceId || item.id || 0);
+          const groupTitle = item.name || item.groupName;
+
+          return (
+            <GroupCard
+              id={resolvedGroupId}
+              name={groupTitle}
+              description={item.description}
+              memberCount={item.memberCount}
+              role={item.role || item.memberRole}
+              onPress={() => {
+                if (!Number.isInteger(resolvedGroupId) || resolvedGroupId <= 0) {
+                  showToast('Group ID không hợp lệ', 'error');
+                  return;
+                }
+
+                navigation.navigate('GroupWorkspace', {
+                  groupId: resolvedGroupId,
+                  title: groupTitle,
+                });
+              }}
+            />
+          );
+        }}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
@@ -183,6 +229,12 @@ export default function GroupListScreen({navigation}: any) {
           label="Tên nhóm"
           value={newName}
           onChangeText={setNewName}
+        />
+        <FloatingInput
+          label="Mô tả"
+          value={newDescription}
+          onChangeText={setNewDescription}
+          multiline
         />
         <View style={styles.dialogActions}>
           <Button

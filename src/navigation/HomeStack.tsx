@@ -28,7 +28,11 @@ export type HomeStackParamList = {
     phaseId?: number;
   };
   MaterialDetail: {material: any};
-  WorkspaceProfileWizard: {workspaceId: number; title?: string};
+  WorkspaceProfileWizard: {
+    workspaceId: number;
+    title?: string;
+    contextType?: 'WORKSPACE' | 'GROUP';
+  };
 };
 
 const Stack = createStackNavigator<HomeStackParamList>();

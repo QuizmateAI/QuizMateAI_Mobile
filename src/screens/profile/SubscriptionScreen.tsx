@@ -30,13 +30,17 @@ import {
 
 const PLAN_TABS = [
   {key: 'individual', label: 'Cá nhân'},
-  // {key: 'group', label: 'Nhóm'},
+  {key: 'group', label: 'Nhóm'},
 ];
 
-export default function SubscriptionScreen({navigation}: any) {
+export default function SubscriptionScreen({navigation, route}: any) {
   const {isDark, colors} = useTheme();
   const {width: screenWidth} = useWindowDimensions();
-  const [planType, setPlanType] = useState('individual');
+  const preselectedPlanType = String(route?.params?.planType || '').toLowerCase();
+  const preselectedGroupId = Number(route?.params?.groupId || 0);
+  const [planType, setPlanType] = useState(
+    preselectedPlanType === 'group' ? 'group' : 'individual',
+  );
   const [plans, setPlans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -253,7 +257,7 @@ export default function SubscriptionScreen({navigation}: any) {
         </View>
 
         {/* Plan Type Toggle */}
-        {/* <TabBar tabs={PLAN_TABS} activeTab={planType} onTabChange={setPlanType} /> */}
+        <TabBar tabs={PLAN_TABS} activeTab={planType} onTabChange={setPlanType} />
 
         {/* Plans Carousel */}
         <View style={styles.carouselWrapper}>
@@ -335,6 +339,7 @@ export default function SubscriptionScreen({navigation}: any) {
                               planId: plan.id,
                               planName: plan.name,
                               planType: plan.type,
+                              groupId: preselectedGroupId > 0 ? preselectedGroupId : undefined,
                             })
                           }
                           style={styles.planBtn}
