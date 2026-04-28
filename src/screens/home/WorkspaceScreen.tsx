@@ -26,6 +26,7 @@ import FlashcardAPI from '../../api/FlashcardAPI';
 import RoadmapAPI from '../../api/RoadmapAPI';
 import useWebSocket from '../../hooks/useWebSocket';
 import WorkspaceProfileAPI from '../../api/WorkspaceProfileAPI';
+import {isDeletedMaterial} from '../../api/MaterialAPI';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -143,23 +144,47 @@ export default function WorkspaceScreen({navigation, route}: any) {
 
   const fetchData = useCallback(async () => {
     const requestId = ++latestFetchRequestIdRef.current;
+    const normalizedWorkspaceId = Number(workspaceId);
+
+    if (!Number.isInteger(normalizedWorkspaceId) || normalizedWorkspaceId <= 0) {
+      if (requestId === latestFetchRequestIdRef.current) {
+        setWorkspace(null);
+        setMaterials([]);
+        setQuizzes([]);
+        setFlashcards([]);
+        setRoadmaps([]);
+        setOnboardingCompleted(null);
+        setProfileStatusLoading(false);
+        setLoading(false);
+      }
+      return;
+    }
 
     try {
-      const [wsRes, matRes] = await Promise.all([
-        WorkspaceAPI.getById(workspaceId),
-        MaterialAPI.getByWorkspace(workspaceId),
+      const [wsRes, matRes] = await Promise.allSettled([
+        WorkspaceAPI.getById(normalizedWorkspaceId),
+        MaterialAPI.getByWorkspace(normalizedWorkspaceId),
       ]);
 
       if (requestId !== latestFetchRequestIdRef.current) {
         return;
       }
 
-      setWorkspace(wsRes.data);
-      setMaterials(Array.isArray(matRes.data) ? matRes.data : matRes.data?.data || []);
+      if (wsRes.status === 'fulfilled') {
+        setWorkspace(wsRes.value.data || null);
+      } else {
+        setWorkspace(null);
+      }
+
+      if (matRes.status === 'fulfilled') {
+        setMaterials(Array.isArray(matRes.value.data) ? matRes.value.data : matRes.value.data?.data || []);
+      } else {
+        setMaterials([]);
+      }
 
       try {
         setProfileStatusLoading(true);
-        const profileRes = await WorkspaceProfileAPI.getProfile(workspaceId);
+        const profileRes = await WorkspaceProfileAPI.getProfile(normalizedWorkspaceId);
         if (requestId !== latestFetchRequestIdRef.current) {
           return;
         }
@@ -180,8 +205,8 @@ export default function WorkspaceScreen({navigation, route}: any) {
       }
 
       const [quizRes, fcRes] = await Promise.allSettled([
-        QuizAPI.getByContext('WORKSPACE', workspaceId),
-        FlashcardAPI.getByContext('WORKSPACE', workspaceId),
+        QuizAPI.getByContext('WORKSPACE', normalizedWorkspaceId),
+        FlashcardAPI.getByContext('WORKSPACE', normalizedWorkspaceId),
       ]);
 
       if (requestId !== latestFetchRequestIdRef.current) {
@@ -193,35 +218,24 @@ export default function WorkspaceScreen({navigation, route}: any) {
 
       // Roadmaps – separate try/catch so it doesn't block others
       try {
-        const rmRes = await RoadmapAPI.getForWorkspace(workspaceId);
+        const rmRes = await RoadmapAPI.getForWorkspace(normalizedWorkspaceId);
         if (requestId !== latestFetchRequestIdRef.current) {
           return;
         }
         setRoadmaps(rmRes.data || []);
-      } catch {
+      } catch (error) {
         if (requestId !== latestFetchRequestIdRef.current) {
           return;
         }
         setRoadmaps([]);
+        console.warn('Workspace roadmap load failed:', error);
       }
-    } catch {
-      if (requestId !== latestFetchRequestIdRef.current) {
-        return;
-      }
-      setWorkspace(null);
-      setMaterials([]);
-      setQuizzes([]);
-      setFlashcards([]);
-      setRoadmaps([]);
-      setOnboardingCompleted(null);
-      setProfileStatusLoading(false);
-      showToast('Không thể tải dữ liệu workspace', 'error');
     } finally {
       if (requestId === latestFetchRequestIdRef.current) {
         setLoading(false);
       }
     }
-  }, [workspaceId, showToast]);
+  }, [workspaceId]);
 
   useEffect(() => {
     fetchData();
@@ -536,6 +550,8 @@ export default function WorkspaceScreen({navigation, route}: any) {
         return {variant: 'default' as const, label: status || 'Không xác định'};
     }
   };
+
+  const visibleMaterials = materials.filter(material => !isDeletedMaterial(material));
 
   if (loading) {
     return <LoadingSpinner />;
@@ -871,7 +887,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 </TouchableOpacity>
               </View>
             ) : (
-              materials.map((mat: any) => {
+              visibleMaterials.map((mat: any) => {
                 const matId = mat.materialId || mat.id;
                 const status = getStatusBadge(mat.final_status || mat.status);
                 return (

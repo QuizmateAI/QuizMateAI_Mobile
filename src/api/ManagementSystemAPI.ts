@@ -82,24 +82,29 @@ const ManagementSystemAPI = {
 
   getGroupLogs: (groupId: number) => api.get(`/management/groups/${groupId}/logs`),
 
-  getAllPlans: () => api.get('/plan-catalog/all'),
+  getAllPlans: () => api.get('/api/plan-catalog/all'),
 
-  getPlanById: (planId: number) => api.get(`/plan-catalog/${planId}`),
+  getPlanById: (planId: number) => api.get(`/api/plan-catalog/${planId}`),
 
-  createPlan: (data: any) => api.post('/plan-catalog/create', data),
+  createPlan: (data: any) => api.post('/api/plan-catalog/create', data),
 
-  updatePlan: (planId: number, data: any) => api.put(`/plan-catalog/${planId}`, data),
+  updatePlan: (planId: number, data: any) => api.put(`/api/plan-catalog/${planId}`, data),
 
-  deletePlan: (planId: number) => api.delete(`/plan-catalog/${planId}`),
+  deletePlan: (planId: number) => api.delete(`/api/plan-catalog/${planId}`),
 
   updatePlanStatus: (planId: number, status: string) =>
-    api.patch(`/plan-catalog/${planId}/status`, {status}),
+    api.patch(`/api/plan-catalog/${planId}/status`, {status}),
 
-  getActiveUserPlans: () => api.get('/plan-catalog/active/user'),
+  getActiveUserPlans: () => api.get('/api/plan-catalog/active/user'),
 
-  getActiveGroupPlan: () => api.get('/plan-catalog/active/group'),
+  getActiveGroupPlan: () => api.get('/api/plan-catalog/active/group'),
 
-  getPurchasablePlans: (type: string) => api.get(`/plan/purchasable?type=${type}`),
+  getPurchasablePlans: (type: string) =>
+    api.get(
+      type === 'GROUP'
+        ? '/api/plan-catalog/active/group'
+        : '/api/plan-catalog/active/user',
+    ),
 
   getCurrentUserPlan: () =>
     api.get('/api/user/current-plan').then(res => ({

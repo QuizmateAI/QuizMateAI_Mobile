@@ -11,6 +11,8 @@ import {
   isMultipleChoiceQuestion,
   isTextAnswerQuestion,
 } from '../../utils/voicePractice';
+import ContentRenderer from '../ui/ContentRenderer';
+import {buildContentBlocks} from '../../utils/contentBlocks';
 
 interface Answer {
   id: number;
@@ -164,9 +166,14 @@ export default function QuestionCard({
         </View>
       </View>
 
-      <Text style={[styles.questionText, {color: colors.heading}]}>
-        {question}
-      </Text>
+      {(() => {
+        const qBlocks = buildContentBlocks(question);
+        return qBlocks.length > 0 ? (
+          <ContentRenderer blocks={qBlocks} />
+        ) : (
+          <Text style={[styles.questionText, {color: colors.heading}]}>{question}</Text>
+        );
+      })()}
 
       {instructionText ? (
         <View
@@ -251,11 +258,18 @@ export default function QuestionCard({
                   },
                 ]}>
                 <Icon name={style.icon} size={20} color={style.border} />
-                <Text
-                  style={[styles.answerText, {color: style.text}]}
-                  numberOfLines={3}>
-                  {answer.content}
-                </Text>
+                  {(() => {
+                    const aBlocks = buildContentBlocks(answer.content);
+                    return aBlocks.length > 0 ? (
+                      <ContentRenderer blocks={aBlocks} />
+                    ) : (
+                      <Text
+                        style={[styles.answerText, {color: style.text}]}
+                        numberOfLines={3}>
+                        {answer.content}
+                      </Text>
+                    );
+                  })()}
               </TouchableOpacity>
             );
           })}

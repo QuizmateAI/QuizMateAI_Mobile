@@ -17,6 +17,7 @@ import {BorderRadius, Spacing} from '../../theme/spacing';
 import FloatingInput from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import AIAPI from '../../api/AIAPI';
+import SubTopicAPI from '../../api/SubTopicAPI';
 
 const OUTPUT_LANGUAGES = ['Vietnamese', 'English', 'Japanese'] as const;
 const MIN_SECONDS_PER_QUESTION = 30;
@@ -342,6 +343,10 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
   const [selectedQTypes, setSelectedQTypes] = useState<RatioItem[]>([]);
   const [bloomSkills, setBloomSkills] = useState<any[]>([]);
   const [selectedBloomSkills, setSelectedBloomSkills] = useState<RatioItem[]>([]);
+  const [subTopics, setSubTopics] = useState<any[]>([]);
+  const [loadingSubTopics, setLoadingSubTopics] = useState(false);
+  const [subTopicError, setSubTopicError] = useState('');
+  const [selectedSubTopicIds, setSelectedSubTopicIds] = useState<number[]>([]);
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [fieldError, setFieldError] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -387,6 +392,60 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
   useEffect(() => {
     setSelectedMaterialIds(prev => prev.filter(id => selectableMaterialIdSet.has(id)));
   }, [selectableMaterialIdSet]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSubTopics = async () => {
+      const selectedMaterialIdsSafe = selectedMaterialIds.filter(id =>
+        selectableMaterialIdSet.has(id),
+      );
+
+      if (!workspaceId || selectedMaterialIdsSafe.length === 0) {
+        setSubTopics([]);
+        setSelectedSubTopicIds([]);
+        setSubTopicError('');
+        setLoadingSubTopics(false);
+        return;
+      }
+
+      setLoadingSubTopics(true);
+      setSubTopicError('');
+
+      try {
+        const response = await SubTopicAPI.getByMaterials(selectedMaterialIdsSafe, Number(workspaceId));
+        if (cancelled) {
+          return;
+        }
+
+        const data = response?.data?.data ?? response?.data ?? [];
+        const list = Array.isArray(data) ? data : [];
+        setSubTopics(list);
+        setSelectedSubTopicIds(prev => {
+          const availableIds = new Set(
+            list.map((item: any) => Number(item?.subTopicId ?? item?.id)).filter((value: number) => Number.isFinite(value)),
+          );
+          return prev.filter(id => availableIds.has(id));
+        });
+      } catch {
+        if (!cancelled) {
+          setSubTopics([]);
+          setSelectedSubTopicIds([]);
+          setSubTopicError('Không thể tải chủ đề gợi ý');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSubTopics(false);
+        }
+      }
+    };
+
+    void loadSubTopics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectableMaterialIdSet, selectedMaterialIds, workspaceId]);
 
   useEffect(() => {
     setSelectedQTypes(prev => {
@@ -733,6 +792,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
       const payload = {
         title: title.trim(),
         materialIds: selectedMaterialIdsSafe,
+        selectedSubTopicIds,
         overallDifficulty,
         durationInMinute: timerMode ? parsedDurationMinutes : 0,
         durationInSecond: 0,
@@ -1268,6 +1328,60 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           </View>
         )}
 
+        {selectedMaterialIds.length > 0 && (
+          <View style={[styles.subTopicCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+            <View style={styles.subTopicHeader}>
+              <Icon name="tag-multiple-outline" size={18} color={Colors.primary} />
+              <Text style={[styles.subTopicTitle, {color: colors.heading}]}>Chủ đề gợi ý</Text>
+            </View>
+
+            {loadingSubTopics ? (
+              <Text style={[styles.helperText, {color: colors.textSecondary}]}>Đang tải chủ đề...</Text>
+            ) : subTopicError ? (
+              <Text style={[styles.helperText, {color: Colors.error}]}>{subTopicError}</Text>
+            ) : subTopics.length === 0 ? (
+              <Text style={[styles.helperText, {color: colors.textSecondary}]}>Các tài liệu này chưa có chủ đề gợi ý.</Text>
+            ) : (
+              <View style={styles.subTopicWrap}>
+                {subTopics.map((subTopic: any) => {
+                  const id = Number(subTopic?.subTopicId ?? subTopic?.id);
+                  if (!Number.isFinite(id)) {
+                    return null;
+                  }
+
+                  const selected = selectedSubTopicIds.includes(id);
+                  return (
+                    <TouchableOpacity
+                      key={id}
+                      onPress={() =>
+                        setSelectedSubTopicIds(prev =>
+                          prev.includes(id)
+                            ? prev.filter(item => item !== id)
+                            : [...prev, id],
+                        )
+                      }
+                      style={[
+                        styles.subTopicChip,
+                        {
+                          borderColor: selected ? Colors.primary : colors.border,
+                          backgroundColor: selected
+                            ? isDark
+                              ? '#1E3A8A40'
+                              : '#DBEAFE'
+                            : colors.background,
+                        },
+                      ]}>
+                      <Text style={[styles.subTopicChipText, {color: selected ? Colors.primary : colors.textSecondary}]}>
+                        {subTopic?.title || `Subtopic ${id}`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
+
         {!!fieldError && (
           <Text style={styles.errorText}>{fieldError}</Text>
         )}
@@ -1393,6 +1507,37 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   materialList: {gap: Spacing.sm},
+  subTopicCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.lg,
+  },
+  subTopicHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.sm,
+  },
+  subTopicTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  subTopicWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  subTopicChip: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+  },
+  subTopicChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   materialItem: {
     borderWidth: 1,
     borderRadius: BorderRadius.md,

@@ -1,5 +1,5 @@
 import React, {createContext, useContext, useState, useCallback, useRef, useEffect} from 'react';
-import {Animated, StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, Text, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Colors} from '../theme/colors';
 import {useTheme} from './ThemeContext';
@@ -20,11 +20,9 @@ const ToastContext = createContext<ToastContextType>({showToast: () => {}});
 
 export function ToastProvider({children}: {children: React.ReactNode}) {
   const [toast, setToast] = useState<ToastData | null>(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
   const {isDark} = useTheme();
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
-  const animationRef = useRef<{stop: () => void} | null>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -33,59 +31,25 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      if (animationRef.current) {
-        animationRef.current.stop();
-      }
     };
   }, []);
 
   const showToast = useCallback(
     (message: string, type: ToastType = 'info') => {
       if (!isMountedRef.current) return;
-      
+
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      if (animationRef.current) {
-        animationRef.current.stop();
-      }
 
       setToast({message: localizeUiText(message), type});
-      
-      try {
-        const showAnim = Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        });
-        animationRef.current = showAnim;
-        showAnim.start();
 
-        timeoutRef.current = setTimeout(() => {
-          if (!isMountedRef.current) return;
-          try {
-            const hideAnim = Animated.timing(fadeAnim, {
-              toValue: 0,
-              duration: 300,
-              useNativeDriver: true,
-            });
-            animationRef.current = hideAnim;
-            hideAnim.start(() => {
-              if (isMountedRef.current) {
-                setToast(null);
-              }
-            });
-          } catch (e) {
-            console.warn('Toast hide animation error:', e);
-            setToast(null);
-          }
-        }, 3000);
-      } catch (e) {
-        console.warn('Toast show animation error:', e);
-        setToast({message: localizeUiText(message), type});
-      }
+      timeoutRef.current = setTimeout(() => {
+        if (!isMountedRef.current) return;
+        setToast(null);
+      }, 3000);
     },
-    [fadeAnim],
+    [],
   );
 
   const getToastColor = (type: ToastType) => {
@@ -105,11 +69,10 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
     <ToastContext.Provider value={{showToast}}>
       {children}
       {toast && (
-        <Animated.View
+        <View
           style={[
             styles.toast,
             {
-              opacity: fadeAnim,
               top: insets.top + 10,
               backgroundColor: isDark ? Colors.dark.surface : '#FFFFFF',
               borderLeftColor: getToastColor(toast.type),
@@ -129,7 +92,7 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
             ]}>
             {toast.message}
           </Text>
-        </Animated.View>
+        </View>
       )}
     </ToastContext.Provider>
   );

@@ -27,6 +27,7 @@ import QuizAPI from '../../api/QuizAPI';
 import FlashcardAPI from '../../api/FlashcardAPI';
 import RoadmapAPI from '../../api/RoadmapAPI';
 import useWebSocket from '../../hooks/useWebSocket';
+import {isDeletedMaterial} from '../../api/MaterialAPI';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -217,7 +218,9 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
           if (requestId !== latestFetchRequestIdRef.current) {
             return;
           }
-          setPendingReviewMaterials(normalizeArray(pendingRes?.data));
+          setPendingReviewMaterials(
+            normalizeArray(pendingRes?.data).filter(item => !isDeletedMaterial(item)),
+          );
         } catch {
           setPendingReviewMaterials([]);
         }
@@ -349,6 +352,12 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const handleReviewMaterial = async (material: any, isApproved: boolean) => {
     const materialId = Number(material?.materialId || material?.id || 0);
     if (!materialId) {
+      return;
+    }
+
+    if (isDeletedMaterial(material)) {
+      showToast('Tài liệu đã bị xóa', 'error');
+      triggerMaterialRefresh();
       return;
     }
 
@@ -683,7 +692,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 {pendingReviewMaterials.length === 0 ? (
                   <Text style={[styles.pendingReviewEmpty, {color: colors.textSecondary}]}>Không có tài liệu cần duyệt</Text>
                 ) : (
-                  pendingReviewMaterials.map((mat: any) => {
+                  pendingReviewMaterials.filter(mat => !isDeletedMaterial(mat)).map((mat: any) => {
                     const matId = Number(mat?.materialId || mat?.id || 0);
                     const isLoading = reviewingMaterialId === matId;
                     return (
@@ -751,7 +760,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 </TouchableOpacity>
               </View>
             ) : (
-              materials.map((src: any, i: number) => (
+              materials.filter(src => !isDeletedMaterial(src)).map((src: any, i: number) => (
                 <View
                   key={src.id || i}
                   style={[

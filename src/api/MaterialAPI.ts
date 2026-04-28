@@ -1,5 +1,14 @@
 import api from './api';
 
+export const isDeletedMaterial = (material: any) => {
+  const status = String(material?.final_status || material?.status || '').trim().toUpperCase();
+  return (
+    status === 'DELETED' ||
+    Boolean(material?.deletedAt) ||
+    Boolean(material?.isDeleted)
+  );
+};
+
 const normalizeMaterials = (payload: any) => {
   const list = Array.isArray(payload)
     ? payload
@@ -8,7 +17,9 @@ const normalizeMaterials = (payload: any) => {
     : Array.isArray(payload?.data?.content)
     ? payload.data.content
     : [];
-  return list.map((m: any) => ({
+  return list
+    .filter((m: any) => !isDeletedMaterial(m))
+    .map((m: any) => ({
     ...m,
     id: m?.materialId ?? m?.id,
     title: m?.title ?? m?.fileName ?? m?.name,
@@ -31,10 +42,26 @@ const MaterialAPI = {
       ...res,
       data: res.data?.data || res.data || '',
     })),
-  getExtractedSummary: (materialId: number) =>
-    api.get(`/api/materials/${materialId}/extracted-summary`).then(res => ({
+  getModerationReportDetail: (materialId: number) =>
+    api.get(`/api/materials/${materialId}/moderation-report/detail`).then(res => ({
       ...res,
-      data: res.data?.data || res.data || '',
+      data: res.data?.data || res.data || null,
+    })),
+  reviewMaterial: (materialId: number, isApproved: boolean) =>
+    api.post(`/api/materials/${materialId}/review`, null, {
+      params: {isApproved},
+      timeout: 60000,
+    }).then(res => ({
+      ...res,
+      data: res.data?.data || res.data || null,
+    })),
+  reviewGroupMaterial: (materialId: number, isApproved: boolean) =>
+    api.post(`/api/materials/${materialId}/group-review`, null, {
+      params: {isApproved},
+      timeout: 60000,
+    }).then(res => ({
+      ...res,
+      data: res.data?.data || res.data || null,
     })),
   upload: (formData: FormData) =>
     api.post('/api/materials/upload', formData, {
@@ -43,10 +70,6 @@ const MaterialAPI = {
   uploadGroupPending: (formData: FormData) =>
     api.post('/api/materials/upload/group-pending', formData, {
       headers: {'Content-Type': 'multipart/form-data'},
-    }),
-  reviewGroupMaterial: (materialId: number, isApproved: boolean) =>
-    api.post(`/api/materials/${materialId}/group-review`, null, {
-      params: {isApproved},
     }),
   delete: (id: number, contextType: 'WORKSPACE' | 'GROUP' = 'WORKSPACE') =>
     api.delete(`/api/materials/${id}?contextType=${contextType}`),
