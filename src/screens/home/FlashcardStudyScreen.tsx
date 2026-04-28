@@ -14,6 +14,8 @@ import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import FlashcardAPI from '../../api/FlashcardAPI';
+import ContentRenderer from '../../components/ui/ContentRenderer';
+import {buildContentBlocks} from '../../utils/contentBlocks';
 
 const shuffleArray = <T,>(array: T[]) => {
   const cloned = [...array];
@@ -318,12 +320,27 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
                   <Text style={[styles.listBadgeText, {color: Colors.primary}]}>#{index + 1}</Text>
                 </View>
                 <View style={{flex: 1, gap: 4}}>
-                  <Text style={[styles.listFront, {color: colors.heading}]} numberOfLines={2}>
-                    {item.front || 'Không có mặt trước'}
-                  </Text>
-                  <Text style={[styles.listBack, {color: colors.textSecondary}]} numberOfLines={2}>
-                    {item.back || 'Không có mặt sau'}
-                  </Text>
+                  {(() => {
+                    const fBlocks = buildContentBlocks(item.front);
+                    return fBlocks.length > 0 ? (
+                      <ContentRenderer blocks={fBlocks} />
+                    ) : (
+                      <Text style={[styles.listFront, {color: colors.heading}]} numberOfLines={2}>
+                        {item.front || 'Không có mặt trước'}
+                      </Text>
+                    );
+                  })()}
+
+                  {(() => {
+                    const bBlocks = buildContentBlocks(item.back);
+                    return bBlocks.length > 0 ? (
+                      <ContentRenderer blocks={bBlocks} />
+                    ) : (
+                      <Text style={[styles.listBack, {color: colors.textSecondary}]} numberOfLines={2}>
+                        {item.back || 'Không có mặt sau'}
+                      </Text>
+                    );
+                  })()}
                 </View>
               </View>
             ))}
