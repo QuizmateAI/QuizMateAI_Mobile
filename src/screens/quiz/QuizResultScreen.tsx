@@ -1,5 +1,6 @@
 import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import {
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
@@ -7,6 +8,7 @@ import {
   Dimensions,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {useTranslation} from 'react-i18next';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
@@ -49,11 +51,15 @@ export default function QuizResultScreen({navigation, route}: any) {
   const {attemptId, backContext} = route.params || {};
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
+  const {t} = useTranslation();
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [showReview, setShowReview] = useState(false);
+  const [assessmentData, setAssessmentData] = useState<any>(null);
+  const [assessmentStatus, setAssessmentStatus] = useState('NOT_AVAILABLE');
+  const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [loadingCurrentPhase, setLoadingCurrentPhase] = useState(false);
   const [currentPhaseProgress, setCurrentPhaseProgress] = useState<any>(null);
   const [submittingRoadmapDecision, setSubmittingRoadmapDecision] = useState(false);
@@ -116,6 +122,88 @@ export default function QuizResultScreen({navigation, route}: any) {
       .finally(() => setLoading(false));
   }, [attemptId, reloadKey, showToast]);
 
+  const applyAssessmentPayload = useCallback((payload: any) => {
+    const nextStatus = String(payload?.status || 'NOT_AVAILABLE').toUpperCase();
+    setAssessmentStatus(nextStatus);
+    setAssessmentData(payload || null);
+  }, []);
+
+  const fetchAssessment = useCallback(async (showLoader = true) => {
+    if (!attemptId) {
+      applyAssessmentPayload(null);
+      return;
+    }
+
+    if (showLoader) {
+      setAssessmentLoading(true);
+    }
+
+    try {
+      const response = await QuizAPI.getAttemptAssessment(attemptId);
+      applyAssessmentPayload(response?.data || null);
+    } catch {
+      applyAssessmentPayload(null);
+    } finally {
+      if (showLoader) {
+        setAssessmentLoading(false);
+      }
+    }
+  }, [applyAssessmentPayload, attemptId]);
+
+  useEffect(() => {
+    fetchAssessment();
+  }, [fetchAssessment, reloadKey]);
+
+  useEffect(() => {
+    if (assessmentStatus !== 'PROCESSING') {
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      fetchAssessment(false);
+    }, 8000);
+
+    return () => clearInterval(intervalId);
+  }, [assessmentStatus, fetchAssessment]);
+
+  const handleRefreshAssessment = useCallback(async () => {
+    if (!attemptId) {
+      return;
+    }
+
+    if (assessmentStatus !== 'FAILED') {
+      await fetchAssessment();
+      return;
+    }
+
+    setAssessmentLoading(true);
+    try {
+      const response = await QuizAPI.refreshAttemptAssessment(attemptId);
+      applyAssessmentPayload(response?.data || null);
+      showToast(
+        t('quizResult.assessmentRefreshQueued', 'AI assessment refresh has started.'),
+        'success',
+      );
+    } catch (error: any) {
+      showToast(
+        error?.response?.data?.message ||
+          error?.message ||
+          t('quizResult.assessmentRefreshFailed', 'Unable to refresh AI assessment right now.'),
+        'error',
+      );
+      await fetchAssessment(false);
+    } finally {
+      setAssessmentLoading(false);
+    }
+  }, [
+    applyAssessmentPayload,
+    assessmentStatus,
+    attemptId,
+    fetchAssessment,
+    showToast,
+    t,
+  ]);
+
   const roadmapContext = useMemo(() => {
     if (backContext?.type !== 'roadmap') {
       return {
@@ -148,9 +236,15 @@ export default function QuizResultScreen({navigation, route}: any) {
 
   const isRoadmapPreLearningQuiz =
     roadmapContext.isRoadmap && roadmapContext.quizIntent === 'PRE_LEARNING';
+  const isCompletedAttempt = String(result?.status || '').toUpperCase() === 'COMPLETED';
+  const isAssessmentReady = assessmentStatus === 'READY' && Boolean(assessmentData);
+  const canTriggerKnowledgeAfterPreLearning =
+    isRoadmapPreLearningQuiz &&
+    isCompletedAttempt &&
+    Boolean(roadmapContext.roadmapId);
 
   const fetchCurrentRoadmapPhase = useCallback(async () => {
-    if (!roadmapContext.roadmapId || !isRoadmapPreLearningQuiz) {
+    if (!roadmapContext.roadmapId || !canTriggerKnowledgeAfterPreLearning || !isAssessmentReady) {
       setCurrentPhaseProgress(null);
       return null;
     }
@@ -167,15 +261,15 @@ export default function QuizResultScreen({navigation, route}: any) {
     } finally {
       setLoadingCurrentPhase(false);
     }
-  }, [isRoadmapPreLearningQuiz, roadmapContext.roadmapId]);
+  }, [canTriggerKnowledgeAfterPreLearning, isAssessmentReady, roadmapContext.roadmapId]);
 
   useEffect(() => {
-    if (!isRoadmapPreLearningQuiz) {
+    if (!canTriggerKnowledgeAfterPreLearning || !isAssessmentReady) {
       setCurrentPhaseProgress(null);
       return;
     }
     fetchCurrentRoadmapPhase();
-  }, [fetchCurrentRoadmapPhase, isRoadmapPreLearningQuiz]);
+  }, [canTriggerKnowledgeAfterPreLearning, fetchCurrentRoadmapPhase, isAssessmentReady]);
 
   const score = result?.score || 0;
   const accuracyPercent = result?.accuracyPercent || 0;
@@ -274,6 +368,10 @@ export default function QuizResultScreen({navigation, route}: any) {
   ]);
 
   const handleGenerateKnowledgeAfterPreLearning = useCallback(async () => {
+    if (!canTriggerKnowledgeAfterPreLearning || !isAssessmentReady) {
+      return;
+    }
+
     const roadmapId = Number(roadmapContext.roadmapId || 0);
     const phaseId = Number(currentPhaseProgress?.phaseId ?? roadmapContext.phaseId ?? 0);
     if (!Number.isInteger(roadmapId) || roadmapId <= 0) {
@@ -304,7 +402,9 @@ export default function QuizResultScreen({navigation, route}: any) {
       setTriggeringKnowledge(false);
     }
   }, [
+    canTriggerKnowledgeAfterPreLearning,
     currentPhaseProgress?.phaseId,
+    isAssessmentReady,
     navigateBackToRoadmap,
     roadmapContext.phaseId,
     roadmapContext.roadmapId,
@@ -351,15 +451,26 @@ export default function QuizResultScreen({navigation, route}: any) {
   );
 
   const canShowSkipDecision =
-    isRoadmapPreLearningQuiz &&
+    canTriggerKnowledgeAfterPreLearning &&
+    isAssessmentReady &&
     currentPhaseProgress?.skipable === true &&
     !knowledgeGenerationTriggered;
 
   const canShowGenerateKnowledgeFallback =
-    isRoadmapPreLearningQuiz &&
+    canTriggerKnowledgeAfterPreLearning &&
+    isAssessmentReady &&
     !loadingCurrentPhase &&
     !canShowSkipDecision &&
     !knowledgeGenerationTriggered;
+  const shouldShowAssessmentSection =
+    assessmentLoading || assessmentStatus !== 'NOT_AVAILABLE';
+  const assessmentSummary = assessmentData?.summary;
+  const assessmentStrengths = Array.isArray(assessmentData?.strengths)
+    ? assessmentData.strengths.filter(Boolean)
+    : [];
+  const assessmentWeaknesses = Array.isArray(assessmentData?.weaknesses)
+    ? assessmentData.weaknesses.filter(Boolean)
+    : [];
 
   const handleBack = () => {
     if (
@@ -535,10 +646,197 @@ export default function QuizResultScreen({navigation, route}: any) {
           ))}
         </View>
 
+        {shouldShowAssessmentSection && (
+          <View
+            style={[
+              styles.assessmentCard,
+              {
+                borderColor: isDark ? '#6D28D9' : '#DDD6FE',
+                backgroundColor: isDark ? 'rgba(76,29,149,0.2)' : '#FFFFFF',
+              },
+            ]}>
+            <View style={styles.assessmentHeader}>
+              <View style={styles.assessmentTitleRow}>
+                <Icon name="sparkles" size={18} color="#8B5CF6" />
+                <Text style={[styles.assessmentTitle, {color: colors.heading}]}>
+                  {t('quizResult.aiAssessment', 'AI Assessment')}
+                </Text>
+              </View>
+              <Button
+                title={t('quizResult.refreshAssessment', 'Refresh')}
+                variant="outline"
+                size="sm"
+                fullWidth={false}
+                icon="refresh"
+                loading={assessmentLoading}
+                onPress={handleRefreshAssessment}
+                style={styles.assessmentRefreshButton}
+              />
+            </View>
+
+            {assessmentLoading && !assessmentData ? (
+              <Text style={[styles.assessmentText, {color: colors.textSecondary}]}>
+                {t('quizResult.assessmentLoading', 'Loading AI assessment...')}
+              </Text>
+            ) : null}
+
+            {assessmentStatus === 'PROCESSING' ? (
+              <View
+                style={[
+                  styles.assessmentNotice,
+                  {
+                    borderColor: isDark ? '#92400E' : '#FDE68A',
+                    backgroundColor: isDark ? 'rgba(146,64,14,0.2)' : '#FFFBEB',
+                  },
+                ]}>
+                <ActivityIndicator size="small" color="#F59E0B" />
+                <Text style={[styles.assessmentNoticeText, {color: isDark ? '#FCD34D' : '#92400E'}]}>
+                  {t(
+                    'quizResult.assessmentProcessing',
+                    'AI assessment is still processing. This page will refresh automatically.',
+                  )}
+                </Text>
+              </View>
+            ) : null}
+
+            {assessmentStatus === 'FAILED' ? (
+              <View
+                style={[
+                  styles.assessmentNotice,
+                  {
+                    borderColor: isDark ? '#991B1B' : '#FECACA',
+                    backgroundColor: isDark ? 'rgba(127,29,29,0.25)' : '#FEF2F2',
+                  },
+                ]}>
+                <Text style={[styles.assessmentNoticeText, {color: isDark ? '#FCA5A5' : '#B91C1C'}]}>
+                  {assessmentData?.message ||
+                    t(
+                      'quizResult.assessmentFailed',
+                      'AI assessment could not be completed yet. Try refreshing after grading finishes.',
+                    )}
+                </Text>
+              </View>
+            ) : null}
+
+            {assessmentStatus === 'READY' && assessmentData ? (
+              <View style={styles.assessmentReadyContent}>
+                {assessmentStrengths.length > 0 || assessmentWeaknesses.length > 0 ? (
+                  <View style={styles.assessmentInsightGrid}>
+                    {assessmentStrengths.length > 0 ? (
+                      <View
+                        style={[
+                          styles.assessmentInsightBox,
+                          {
+                            borderColor: isDark ? '#047857' : '#A7F3D0',
+                            backgroundColor: isDark ? 'rgba(6,95,70,0.2)' : '#ECFDF5',
+                          },
+                        ]}>
+                        <Text style={[styles.assessmentInsightTitle, {color: isDark ? '#6EE7B7' : '#047857'}]}>
+                          {t('quizResult.strengths', 'Strengths')}
+                        </Text>
+                        {assessmentStrengths.map((item: string, index: number) => (
+                          <Text
+                            key={`assessment-strength-${index}`}
+                            style={[styles.assessmentBullet, {color: colors.text}]}>
+                            {'• '}{item}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+
+                    {assessmentWeaknesses.length > 0 ? (
+                      <View
+                        style={[
+                          styles.assessmentInsightBox,
+                          {
+                            borderColor: isDark ? '#B45309' : '#FDE68A',
+                            backgroundColor: isDark ? 'rgba(146,64,14,0.18)' : '#FFFBEB',
+                          },
+                        ]}>
+                        <Text style={[styles.assessmentInsightTitle, {color: isDark ? '#FCD34D' : '#B45309'}]}>
+                          {t('quizResult.weaknesses', 'Needs improvement')}
+                        </Text>
+                        {assessmentWeaknesses.map((item: string, index: number) => (
+                          <Text
+                            key={`assessment-weakness-${index}`}
+                            style={[styles.assessmentBullet, {color: colors.text}]}>
+                            {'• '}{item}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                <Text style={[styles.assessmentText, {color: colors.text}]}>
+                  {assessmentSummary ||
+                    t('quizResult.assessmentNoSummary', 'No AI assessment summary yet.')}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+
+        {canTriggerKnowledgeAfterPreLearning && isAssessmentReady && (
+          <View
+            style={[
+              styles.decisionCard,
+              {
+                borderColor: colors.border,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF',
+              },
+            ]}>
+            <Text style={[styles.decisionTitle, {color: colors.heading}]}>
+              {t('quizResult.preLearningDecisionTitle', 'Decision after Pre-learning')}
+            </Text>
+            <Text style={[styles.decisionText, {color: colors.textSecondary}]}>
+              {t(
+                'quizResult.preLearningDecisionDescription',
+                'Based on the pre-learning result, choose whether to skip this phase or generate practice content.',
+              )}
+            </Text>
+
+            {loadingCurrentPhase ? (
+              <Text style={[styles.decisionHint, {color: colors.textSecondary}]}>
+                {t('quizResult.loadingCurrentPhase', 'Checking your current phase...')}
+              </Text>
+            ) : canShowSkipDecision ? (
+              <View style={styles.decisionActions}>
+                <Button
+                  title={t('quizResult.skipPhaseAction', 'Skip this phase')}
+                  variant="outline"
+                  onPress={() => handleSkipDecision(true)}
+                  loading={submittingRoadmapDecision}
+                  icon="skip-next"
+                />
+                <Button
+                  title={t('quizResult.continuePracticeAction', 'Continue practicing')}
+                  onPress={() => handleSkipDecision(false)}
+                  loading={submittingRoadmapDecision || triggeringKnowledge}
+                  icon="book-open-variant"
+                />
+              </View>
+            ) : canShowGenerateKnowledgeFallback ? (
+              <View style={styles.decisionActions}>
+                <Button
+                  title={t('quizResult.generateKnowledgeAction', 'Generate practice knowledge')}
+                  onPress={handleGenerateKnowledgeAfterPreLearning}
+                  loading={triggeringKnowledge}
+                  icon="lightning-bolt-outline"
+                />
+              </View>
+            ) : null}
+          </View>
+        )}
+
         {/* Actions */}
         <View style={styles.actions}>
           <Button
-            title={showReview ? 'Ẩn phần xem lại' : 'Xem lại đáp án'}
+            title={
+              showReview
+                ? t('quizResult.hideReview', 'Hide review')
+                : t('quizResult.reviewAnswers', 'Review answers')
+            }
             variant="outline"
             icon={showReview ? 'eye-off-outline' : 'eye-outline'}
             onPress={() => setShowReview(!showReview)}
@@ -549,49 +847,6 @@ export default function QuizResultScreen({navigation, route}: any) {
             icon="arrow-left"
           />
         </View>
-
-        {isRoadmapPreLearningQuiz && (
-          <View
-            style={[
-              styles.decisionCard,
-              {
-                borderColor: colors.border,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF',
-              },
-            ]}>
-            <Text style={[styles.decisionTitle, {color: colors.heading}]}>Lựa chọn cho giai đoạn hiện tại</Text>
-            <Text style={[styles.decisionText, {color: colors.textSecondary}]}>Sau quiz trước học, bạn có thể bỏ qua phase hoặc tiếp tục tạo nội dung để học sâu hơn.</Text>
-
-            {loadingCurrentPhase ? (
-              <Text style={[styles.decisionHint, {color: colors.textSecondary}]}>Đang tải trạng thái phase hiện tại...</Text>
-            ) : canShowSkipDecision ? (
-              <View style={styles.decisionActions}>
-                <Button
-                  title="Bỏ qua phase"
-                  variant="outline"
-                  onPress={() => handleSkipDecision(true)}
-                  loading={submittingRoadmapDecision}
-                  icon="skip-next"
-                />
-                <Button
-                  title="Tiếp tục học phase này"
-                  onPress={() => handleSkipDecision(false)}
-                  loading={submittingRoadmapDecision || triggeringKnowledge}
-                  icon="book-open-variant"
-                />
-              </View>
-            ) : canShowGenerateKnowledgeFallback ? (
-              <View style={styles.decisionActions}>
-                <Button
-                  title="Tạo nội dung cho phase"
-                  onPress={handleGenerateKnowledgeAfterPreLearning}
-                  loading={triggeringKnowledge}
-                  icon="lightning-bolt-outline"
-                />
-              </View>
-            ) : null}
-          </View>
-        )}
 
         {/* Review Questions */}
         {showReview && result?.questions && (
@@ -672,6 +927,71 @@ const styles = StyleSheet.create({
   actions: {
     gap: Spacing.sm,
     marginBottom: Spacing.xl,
+  },
+
+  assessmentCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  assessmentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  assessmentTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  assessmentTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  assessmentRefreshButton: {
+    minWidth: 92,
+  },
+  assessmentText: {
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  assessmentNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    gap: 8,
+  },
+  assessmentNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  assessmentReadyContent: {
+    gap: Spacing.sm,
+  },
+  assessmentInsightGrid: {
+    gap: Spacing.sm,
+  },
+  assessmentInsightBox: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    gap: 4,
+  },
+  assessmentInsightTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  assessmentBullet: {
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   decisionCard: {

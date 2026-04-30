@@ -77,6 +77,10 @@ export default function WorkspaceScreen({navigation, route}: any) {
     null,
   );
 
+  const handleBackToWorkspaceList = useCallback(() => {
+    navigation.navigate('HomeMain');
+  }, [navigation]);
+
   const openQuizModeSelector = useCallback(
     (quiz: any) => {
       const quizId = Number(quiz?.id || quiz?.quizId);
@@ -86,41 +90,24 @@ export default function WorkspaceScreen({navigation, route}: any) {
       }
 
       const quizTitle = quiz?.name || quiz?.title;
-      Alert.alert('Chọn chế độ làm quiz', 'Bạn muốn làm quiz theo cách nào?', [
-        {
-          text: 'Luyện tập',
-          onPress: () =>
-            navigation.navigate('Quiz', {
-              screen: 'PracticeQuiz',
-              params: {
-                quizId,
-                title: quizTitle,
-                backContext: {
-                  type: 'workspace',
-                  workspaceId: Number(workspaceId),
-                  title,
-                },
-              },
-            }),
+      const backContext = {
+        type: 'workspace',
+        workspaceId: Number(workspaceId),
+        title,
+      };
+
+      navigation.navigate('Quiz', {
+        screen: 'QuizDetail',
+        params: {
+          quizId,
+          quiz,
+          title: quizTitle,
+          backContext,
+          contextType: 'WORKSPACE',
+          contextId: Number(workspaceId),
+          workspaceId: Number(workspaceId),
         },
-        {
-          text: 'Thi thử',
-          onPress: () =>
-            navigation.navigate('Quiz', {
-              screen: 'ExamQuiz',
-              params: {
-                quizId,
-                title: quizTitle,
-                backContext: {
-                  type: 'workspace',
-                  workspaceId: Number(workspaceId),
-                  title,
-                },
-              },
-            }),
-        },
-        {text: 'Hủy', style: 'cancel'},
-      ]);
+      });
     },
     [navigation, showToast, title, workspaceId],
   );
@@ -568,7 +555,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
           {backgroundColor: colors.surface, borderBottomColor: colors.border},
         ]}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBackToWorkspaceList}
           style={styles.backBtn}>
           <Icon name="chevron-left" size={26} color={colors.text} />
         </TouchableOpacity>

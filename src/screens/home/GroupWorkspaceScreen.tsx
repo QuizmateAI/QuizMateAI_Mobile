@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   Dimensions,
-  Alert,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -104,43 +103,26 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       }
 
       const quizTitle = quiz?.name || quiz?.title;
-      Alert.alert('Chọn chế độ làm quiz', 'Bạn muốn làm quiz theo cách nào?', [
-        {
-          text: 'Luyện tập',
-          onPress: () =>
-            navigation.navigate('Quiz', {
-              screen: 'PracticeQuiz',
-              params: {
-                quizId,
-                title: quizTitle,
-                backContext: {
-                  type: 'group',
-                  groupId: normalizedGroupId,
-                  title,
-                },
-              },
-            }),
+      const backContext = {
+        type: 'group',
+        groupId: normalizedGroupId,
+        title,
+      };
+
+      navigation.navigate('Quiz', {
+        screen: 'QuizDetail',
+        params: {
+          quizId,
+          quiz,
+          title: quizTitle,
+          backContext,
+          contextType: 'GROUP',
+          contextId: normalizedGroupId,
+          groupId: normalizedGroupId,
         },
-        {
-          text: 'Thi thử',
-          onPress: () =>
-            navigation.navigate('Quiz', {
-              screen: 'ExamQuiz',
-              params: {
-                quizId,
-                title: quizTitle,
-                backContext: {
-                  type: 'group',
-                  groupId: normalizedGroupId,
-                  title,
-                },
-              },
-            }),
-        },
-        {text: 'Hủy', style: 'cancel'},
-      ]);
+      });
     },
-    [groupId, navigation, showToast, title],
+    [navigation, normalizedGroupId, showToast, title],
   );
 
   const openFlashcardDetail = useCallback(
@@ -685,7 +667,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                   <Text style={[styles.pendingReviewTitle, {color: colors.heading}]}>Duyệt tài liệu chờ</Text>
                   <Badge
                     label={`${pendingReviewMaterials.length}`}
-                    variant={pendingReviewMaterials.length > 0 ? 'warning' : 'neutral'}
+                    variant={pendingReviewMaterials.length > 0 ? 'warning' : 'default'}
                     size="sm"
                   />
                 </View>

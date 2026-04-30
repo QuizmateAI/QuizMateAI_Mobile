@@ -17,7 +17,8 @@ type UseWebSocketOptions = {
   onProgress?: ProgressCallback;
 };
 
-const ACCESS_TOKEN_KEY = '@quizmate_access_token';
+const ACCESS_TOKEN_KEY = '@quizmate_token';
+const LEGACY_ACCESS_TOKEN_KEY = '@quizmate_access_token';
 
 function normalizeStatus(status?: string) {
   if (!status) {
@@ -59,6 +60,131 @@ function normalizeMaterialPayload(payload: any) {
       ? {final_status: normalizeStatus(payload.final_status)}
       : {}),
   };
+}
+
+function toNumberOrNull(value: any) {
+  const normalized = Number(value);
+  return Number.isInteger(normalized) && normalized > 0 ? normalized : null;
+}
+
+function buildProcessingObjectFromProgressPayload(payload: any) {
+  if (!payload || typeof payload !== 'object') {
+    return undefined;
+  }
+
+  const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+  const source =
+    payload?.processingObject && typeof payload.processingObject === 'object'
+      ? payload.processingObject
+      : {};
+  const taskType = String(
+    source?.taskType ??
+      source?.task_type ??
+      data?.taskType ??
+      data?.task_type ??
+      payload?.taskType ??
+      payload?.task_type ??
+      '',
+  ).toUpperCase();
+  const workspaceId = toNumberOrNull(
+    source?.workspaceId ??
+      source?.workspace_id ??
+      data?.workspaceId ??
+      data?.workspace_id ??
+      payload?.workspaceId ??
+      payload?.workspace_id,
+  );
+  const roadmapId = toNumberOrNull(
+    source?.roadmapId ??
+      source?.roadmap_id ??
+      data?.roadmapId ??
+      data?.roadmap_id ??
+      payload?.roadmapId ??
+      payload?.roadmap_id,
+  );
+  const phaseId = toNumberOrNull(
+    source?.phaseId ??
+      source?.phase_id ??
+      data?.phaseId ??
+      data?.phase_id ??
+      payload?.phaseId ??
+      payload?.phase_id,
+  );
+  const knowledgeId = toNumberOrNull(
+    source?.knowledgeId ??
+      source?.knowledge_id ??
+      data?.knowledgeId ??
+      data?.knowledge_id ??
+      payload?.knowledgeId ??
+      payload?.knowledge_id,
+  );
+  const quizId = toNumberOrNull(
+    source?.quizId ??
+      source?.quiz_id ??
+      data?.quizId ??
+      data?.quiz_id ??
+      payload?.quizId ??
+      payload?.quiz_id,
+  );
+  const materialId = toNumberOrNull(
+    source?.materialId ??
+      source?.material_id ??
+      data?.materialId ??
+      data?.material_id ??
+      payload?.materialId ??
+      payload?.material_id,
+  );
+
+  const processingObject = {
+    ...(taskType ? {taskType} : {}),
+    ...(workspaceId ? {workspaceId} : {}),
+    ...(roadmapId ? {roadmapId} : {}),
+    ...(phaseId ? {phaseId} : {}),
+    ...(knowledgeId ? {knowledgeId} : {}),
+    ...(quizId ? {quizId} : {}),
+    ...(materialId ? {materialId} : {}),
+  };
+
+  return Object.keys(processingObject).length > 0 ? processingObject : undefined;
+}
+
+function isRoadmapScopedProgressPayload(payload: any, processingObject: any = {}) {
+  const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+  const status = String(
+    payload?.status ?? payload?.final_status ?? data?.status ?? data?.final_status ?? '',
+  ).toUpperCase();
+  const taskType = String(
+    processingObject?.taskType ??
+      processingObject?.task_type ??
+      data?.taskType ??
+      data?.task_type ??
+      payload?.taskType ??
+      payload?.task_type ??
+      '',
+  ).toUpperCase();
+  const roadmapId = toNumberOrNull(
+    processingObject?.roadmapId ??
+      processingObject?.roadmap_id ??
+      data?.roadmapId ??
+      data?.roadmap_id ??
+      payload?.roadmapId ??
+      payload?.roadmap_id,
+  );
+  const phaseId = toNumberOrNull(
+    processingObject?.phaseId ??
+      processingObject?.phase_id ??
+      data?.phaseId ??
+      data?.phase_id ??
+      payload?.phaseId ??
+      payload?.phase_id,
+  );
+
+  return Boolean(
+    status.startsWith('ROADMAP_') ||
+      taskType.includes('ROADMAP') ||
+      roadmapId ||
+      phaseId,
+  );
 }
 
 type WebSocketTransport = 'sockjs' | 'native';
@@ -171,7 +297,9 @@ export default function useWebSocket({
     const wsConfig = buildWebSocketConfig();
 
     const connect = async () => {
-      const token = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+      const token =
+        (await AsyncStorage.getItem(ACCESS_TOKEN_KEY)) ||
+        (await AsyncStorage.getItem(LEGACY_ACCESS_TOKEN_KEY));
       const connectHeaders: Record<string, string> | undefined = token
         ? {Authorization: `Bearer ${token}`}
         : undefined;
@@ -198,14 +326,23 @@ export default function useWebSocket({
               try {
                 const response = JSON.parse(message.body);
                 const status = extractStatusFromProgressEnvelope(response);
+                const processingObject =
+                  response?.processingObject && typeof response.processingObject === 'object'
+                    ? response.processingObject
+                    : buildProcessingObjectFromProgressPayload(response);
                 const payload = normalizeMaterialPayload(
                   typeof response?.data === 'object' ? response.data : response,
                 );
                 const normalizedResponse = {
                   ...response,
                   ...(status ? {status} : {}),
+                  ...(processingObject ? {processingObject} : {}),
                   data: payload,
                 };
+                const isRoadmapScoped = isRoadmapScopedProgressPayload(
+                  normalizedResponse,
+                  processingObject || {},
+                );
 
                 setLastMessage({
                   type: 'progress',
@@ -215,6 +352,7 @@ export default function useWebSocket({
                 callbackRefs.current.onProgress?.(normalizedResponse);
 
                 if (
+                  !isRoadmapScoped &&
                   status &&
                   ['ACTIVE', 'ERROR', 'WARN', 'REJECT', 'PROCESSING'].includes(
                     status,

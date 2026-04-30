@@ -69,9 +69,11 @@ export default function QuizListScreen({navigation}: any) {
                 showToast('Thiếu Quiz ID', 'error');
                 return;
               }
-              navigation.navigate('PracticeQuiz', {
+              navigation.navigate('QuizDetail', {
                 quizId,
                 title: item.name || item.title,
+                quiz: item,
+                backContext: {type: 'quiz-list'},
               });
             }}
             activeOpacity={0.7}
@@ -118,6 +120,7 @@ export default function QuizListScreen({navigation}: any) {
                     navigation.navigate('PracticeQuiz', {
                       quizId,
                       title: item.name || item.title,
+                      backContext: {type: 'quiz-list'},
                     });
                   }}
                   style={[
@@ -139,6 +142,7 @@ export default function QuizListScreen({navigation}: any) {
                     navigation.navigate('ExamQuiz', {
                       quizId,
                       title: item.name || item.title,
+                      backContext: {type: 'quiz-list'},
                     });
                   }}
                   style={[
