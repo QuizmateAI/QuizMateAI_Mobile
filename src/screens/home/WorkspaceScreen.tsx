@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Dimensions,
   ActivityIndicator,
   Alert,
@@ -19,6 +18,8 @@ import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Badge from '../../components/ui/Badge';
+import WelcomeBackground from '../../components/ui/WelcomeBackground';
+import WorkspaceStatisticsPanel from '../../components/features/WorkspaceStatisticsPanel';
 import WorkspaceAPI from '../../api/WorkspaceAPI';
 import MaterialAPI from '../../api/MaterialAPI';
 import QuizAPI from '../../api/QuizAPI';
@@ -30,7 +31,13 @@ import {isDeletedMaterial} from '../../api/MaterialAPI';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
-type BottomTab = 'chat' | 'sources' | 'studio';
+type BottomTab = 'chat' | 'sources' | 'stats' | 'studio';
+type WorkspaceActivity = {
+  name: string;
+  type: string;
+  actionKey: string;
+  accessedAt: string;
+};
 
 /* ──── Quick‑action data ──── */
 const QUICK_ACTIONS = [
@@ -50,7 +57,8 @@ const STUDIO_ITEMS = (counts: {q: number; f: number; s: number; r: number}) => [
 
 export default function WorkspaceScreen({navigation, route}: any) {
   const {workspaceId, title} = route.params;
-  const {isDark, colors} = useTheme();
+  const {isDark, colors: themeColors} = useTheme();
+  const colors = isDark ? {...themeColors, ...Colors.light} : themeColors;
   const {showToast} = useToast();
   const [workspace, setWorkspace] = useState<any>(null);
   const [materials, setMaterials] = useState<any[]>([]);
@@ -61,7 +69,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('chat');
-  const [chatMessage, setChatMessage] = useState('');
+  const [, setAccessHistory] = useState<WorkspaceActivity[]>([]);
   const [deletingMaterial, setDeletingMaterial] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const hasAutoOpenedWizardRef = useRef(false);
@@ -81,6 +89,24 @@ export default function WorkspaceScreen({navigation, route}: any) {
     navigation.navigate('HomeMain');
   }, [navigation]);
 
+  const addAccessHistory = useCallback(
+    (name: string, type: string, actionKey: string) => {
+      setAccessHistory(prev => {
+        const filtered = prev.filter(item => item.actionKey !== actionKey);
+        return [
+          {
+            name,
+            type,
+            actionKey,
+            accessedAt: new Date().toISOString(),
+          },
+          ...filtered,
+        ].slice(0, 20);
+      });
+    },
+    [],
+  );
+
   const openQuizModeSelector = useCallback(
     (quiz: any) => {
       const quizId = Number(quiz?.id || quiz?.quizId);
@@ -90,6 +116,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
       }
 
       const quizTitle = quiz?.name || quiz?.title;
+      addAccessHistory(quizTitle || 'Quiz', 'quiz', `quiz:${quizId}`);
       const backContext = {
         type: 'workspace',
         workspaceId: Number(workspaceId),
@@ -109,7 +136,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
         },
       });
     },
-    [navigation, showToast, title, workspaceId],
+    [addAccessHistory, navigation, showToast, title, workspaceId],
   );
 
   const openFlashcardDetail = useCallback(
@@ -120,13 +147,48 @@ export default function WorkspaceScreen({navigation, route}: any) {
         return;
       }
 
+      addAccessHistory(
+        flashcard?.name || flashcard?.title || 'Flashcard',
+        'flashcard',
+        `flashcard:${flashcardId}`,
+      );
       navigation.navigate('FlashcardStudy', {
         flashcardId,
         title: flashcard?.name || flashcard?.title,
         contextType: 'WORKSPACE',
       });
     },
-    [navigation, showToast],
+    [addAccessHistory, navigation, showToast],
+  );
+
+  const handleChangeBottomTab = useCallback(
+    (tab: BottomTab) => {
+      const activityMap: Record<BottomTab, {name: string; type: string}> = {
+        chat: {name: 'Tổng quan', type: 'overview'},
+        sources: {name: 'Tài liệu', type: 'sources'},
+        stats: {name: 'Thống kê', type: 'stats'},
+        studio: {name: 'Studio', type: 'studio'},
+      };
+      const activity = activityMap[tab];
+      addAccessHistory(activity.name, activity.type, tab);
+      setActiveBottomTab(tab);
+    },
+    [addAccessHistory],
+  );
+
+  const handleOpenMaterialDetail = useCallback(
+    (material: any) => {
+      const materialId = Number(material?.materialId || material?.id || 0);
+      addAccessHistory(
+        material?.title || material?.fileName || material?.name || 'Tài liệu',
+        'source',
+        `source:${materialId || material?.title || 'unknown'}`,
+      );
+      navigation.navigate('MaterialDetail', {
+        material,
+      });
+    },
+    [addAccessHistory, navigation],
   );
 
   const fetchData = useCallback(async () => {
@@ -474,6 +536,11 @@ export default function WorkspaceScreen({navigation, route}: any) {
       formData.append('workspaceID', String(workspaceId));
 
       await MaterialAPI.upload(formData);
+      addAccessHistory(
+        picked.name || 'Tài liệu mới',
+        'upload',
+        `upload:${picked.name || Date.now()}`,
+      );
       showToast('Đã bắt đầu tải lên, hệ thống đang xử lý nền', 'success');
       fetchData();
     } catch (error: any) {
@@ -487,6 +554,13 @@ export default function WorkspaceScreen({navigation, route}: any) {
   };
 
   const handleQuickAction = (key: string) => {
+    const labelMap: Record<string, string> = {
+      roadmap: 'Lộ trình',
+      quiz: 'Quiz',
+      flashcard: 'Flashcard',
+      mockTest: 'Thi thử',
+    };
+    addAccessHistory(labelMap[key] || 'Tác vụ nhanh', 'quick-action', `quick:${key}`);
     if (key === 'quiz' || key === 'mockTest') {
       navigation.navigate('CreateAIQuiz', {
         workspaceId,
@@ -510,7 +584,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
       });
       return;
     }
-    setActiveBottomTab('studio');
+    handleChangeBottomTab('stats');
   };
 
   /* ──── Status badge colors ──── */
@@ -548,6 +622,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
     <SafeAreaView
       style={[styles.container, {backgroundColor: colors.backgroundSecondary}]}
       edges={['top']}>
+      <WelcomeBackground isDark={isDark} />
       {/* ─── Header ─── */}
       <View
         style={[
@@ -880,11 +955,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 return (
                   <TouchableOpacity
                     key={matId}
-                    onPress={() =>
-                      navigation.navigate('MaterialDetail', {
-                        material: mat,
-                      })
-                    }
+                    onPress={() => handleOpenMaterialDetail(mat)}
                     style={[
                       styles.sourceItem,
                       {
@@ -1101,6 +1172,13 @@ export default function WorkspaceScreen({navigation, route}: any) {
             )}
           </View>
         )}
+
+        {activeBottomTab === 'stats' && (
+          <WorkspaceStatisticsPanel
+            workspaceId={Number(workspaceId)}
+            colors={colors}
+          />
+        )}
       </ScrollView>
 
 
@@ -1117,22 +1195,22 @@ export default function WorkspaceScreen({navigation, route}: any) {
           icon="view-dashboard-outline"
           label="Tổng quan"
           active={activeBottomTab === 'chat'}
-          onPress={() => setActiveBottomTab('chat')}
+          onPress={() => handleChangeBottomTab('chat')}
           colors={colors}
         />
         <ToolbarTab
           icon="folder-outline"
           label="Tài liệu"
           active={activeBottomTab === 'sources'}
-          onPress={() => setActiveBottomTab('sources')}
+          onPress={() => handleChangeBottomTab('sources')}
           colors={colors}
           badge={materials.length > 0 ? materials.length : undefined}
         />
         <ToolbarTab
-          icon="palette-outline"
+          icon="chart-box-outline"
           label="Công cụ"
-          active={activeBottomTab === 'studio'}
-          onPress={() => setActiveBottomTab('studio')}
+          active={activeBottomTab === 'stats'}
+          onPress={() => handleChangeBottomTab('stats')}
           colors={colors}
         />
       </View>
@@ -1196,6 +1274,7 @@ function ToolbarTab({
   colors: any;
   badge?: number;
 }) {
+  const resolvedLabel = icon === 'chart-box-outline' ? 'Thống kê' : label;
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -1223,7 +1302,7 @@ function ToolbarTab({
             fontWeight: active ? '600' : '400',
           },
         ]}>
-        {label}
+        {resolvedLabel}
       </Text>
     </TouchableOpacity>
   );

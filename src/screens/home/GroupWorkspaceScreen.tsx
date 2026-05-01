@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Dimensions,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
@@ -20,6 +19,7 @@ import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Dialog from '../../components/ui/Dialog';
 import FloatingInput from '../../components/ui/Input';
+import WelcomeBackground from '../../components/ui/WelcomeBackground';
 import GroupAPI from '../../api/GroupAPI';
 import MaterialAPI from '../../api/MaterialAPI';
 import QuizAPI from '../../api/QuizAPI';
@@ -42,7 +42,8 @@ const QUICK_ACTIONS = [
 export default function GroupWorkspaceScreen({navigation, route}: any) {
   const {groupId, title} = route.params;
   const normalizedGroupId = Number(groupId || route?.params?.workspaceId || 0);
-  const {isDark, colors} = useTheme();
+  const {isDark, colors: themeColors} = useTheme();
+  const colors = isDark ? {...themeColors, ...Colors.light} : themeColors;
   const {showToast} = useToast();
   const [members, setMembers] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
@@ -53,7 +54,6 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const [roadmaps, setRoadmaps] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('chat');
-  const [chatMessage, setChatMessage] = useState('');
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
   const [reviewingMaterialId, setReviewingMaterialId] = useState<number | null>(null);
   const latestFetchRequestIdRef = useRef(0);
@@ -384,6 +384,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     <SafeAreaView
       style={[styles.container, {backgroundColor: colors.backgroundSecondary}]}
       edges={['top']}>
+      <WelcomeBackground isDark={isDark} />
       {/* ─── Header ─── */}
       <View
         style={[
@@ -495,13 +496,13 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
 
             {canReviewMaterials ? (
               <>
-                <Text style={[styles.sectionTitle, {color: colors.heading}]}> 
+                <Text style={[styles.sectionTitle, {color: colors.heading}]}>
                   Quản trị nhóm
                 </Text>
                 <View style={styles.adminQuickGrid}>
                   <TouchableOpacity
                     onPress={() => setActiveBottomTab('sources')}
-                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}>
                     <Icon name="file-check-outline" size={18} color={Colors.primary} />
                     <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Duyệt tài liệu</Text>
                   </TouchableOpacity>
@@ -513,7 +514,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                         initialTab: 'members',
                       })
                     }
-                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}>
                     <Icon name="account-group-outline" size={18} color="#2563EB" />
                     <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Thành viên</Text>
                   </TouchableOpacity>
@@ -525,7 +526,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                         initialTab: 'ranking',
                       })
                     }
-                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}>
                     <Icon name="trophy-outline" size={18} color="#F59E0B" />
                     <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Xếp hạng</Text>
                   </TouchableOpacity>
@@ -537,7 +538,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                         initialTab: 'logs',
                       })
                     }
-                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}>
                     <Icon name="history" size={18} color="#64748B" />
                     <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Hoạt động</Text>
                   </TouchableOpacity>
@@ -549,7 +550,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                         initialTab: 'dashboard',
                       })
                     }
-                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}>
                     <Icon name="chart-line" size={18} color="#10B981" />
                     <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Tổng quan</Text>
                   </TouchableOpacity>
@@ -561,7 +562,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                         initialTab: 'settings',
                       })
                     }
-                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}> 
+                    style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}>
                     <Icon name="cog-outline" size={18} color="#8B5CF6" />
                     <Text style={[styles.adminQuickLabel, {color: colors.heading}]}>Cài đặt</Text>
                   </TouchableOpacity>
@@ -678,7 +679,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                     const matId = Number(mat?.materialId || mat?.id || 0);
                     const isLoading = reviewingMaterialId === matId;
                     return (
-                      <View key={String(matId || mat?.title)} style={[styles.pendingReviewItem, {borderBottomColor: colors.border}]}> 
+                      <View key={String(matId || mat?.title)} style={[styles.pendingReviewItem, {borderBottomColor: colors.border}]}>
                         <View style={[styles.pendingReviewIcon, {backgroundColor: '#F59E0B20'}]}>
                           <Icon name="alert-circle-outline" size={16} color="#F59E0B" />
                         </View>

@@ -37,6 +37,7 @@ const FlashcardAPI = {
     })),
   create: (data: any) => api.post('/api/flashcards/create', data),
   generateAI: (data: any) => api.post('/api/ai/flashcard:generated', data),
+  addItem: (flashcardSetId: number, data: any) => api.post(`/api/flashcards/${flashcardSetId}/items`, data),
   updateItem: (id: number, data: any) => api.put(`/api/flashcards/items/${id}`, data),
   deleteItem: (id: number) => api.delete(`/api/flashcards/items/${id}`),
 };
