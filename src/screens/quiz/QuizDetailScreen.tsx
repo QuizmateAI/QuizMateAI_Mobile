@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -494,6 +495,8 @@ export default function QuizDetailScreen({navigation, route}: any) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const effectiveQuiz = useMemo(
     () => ({
@@ -521,6 +524,9 @@ export default function QuizDetailScreen({navigation, route}: any) {
     backContext.type === 'roadmap' ||
     String(params.contextType || '').toUpperCase() === 'ROADMAP' ||
     Boolean(params.roadmapId || params.phaseId);
+  const isGroupContext =
+    backContext.type === 'group' ||
+    String(params.contextType || '').toUpperCase() === 'GROUP';
   const groupHistoryContextId = useMemo(() => {
     if (backContext.type === 'group') {
       return backContext.groupId;
@@ -780,6 +786,69 @@ export default function QuizDetailScreen({navigation, route}: any) {
     [backContext, displayTitle, effectiveQuiz, navigation, normalizedIntent, params, quizId, showToast],
   );
 
+  const handleToggleCommunityShare = useCallback(async () => {
+    if (!quizId || shareLoading) {
+      return;
+    }
+
+    const nextShared = !(effectiveQuiz?.communityShared === true);
+    const title = nextShared ? 'Công khai quiz?' : 'Chuyển quiz về riêng tư?';
+    const message = nextShared
+      ? 'Quiz sẽ hiển thị cho cộng đồng và có thể được tìm thấy.'
+      : 'Quiz sẽ chỉ hiển thị trong workspace của bạn.';
+
+    Alert.alert(title, message, [
+      {text: 'Hủy', style: 'cancel'},
+      {
+        text: nextShared ? 'Công khai' : 'Chuyển về riêng tư',
+        onPress: async () => {
+          setShareLoading(true);
+          try {
+            await QuizAPI.shareToCommunity(quizId, nextShared);
+            setQuiz((prev: any) => ({
+              ...(prev || {}),
+              communityShared: nextShared,
+            }));
+            showToast(
+              nextShared ? 'Đã công khai quiz' : 'Đã chuyển quiz về riêng tư',
+              'success',
+            );
+          } catch {
+            showToast('Không thể cập nhật trạng thái công khai', 'error');
+          } finally {
+            setShareLoading(false);
+          }
+        },
+      },
+    ]);
+  }, [effectiveQuiz?.communityShared, quizId, shareLoading, showToast]);
+
+  const handleDeleteQuiz = useCallback(() => {
+    if (!quizId || deleteLoading) {
+      return;
+    }
+
+    Alert.alert('Xóa quiz?', 'Quiz sẽ bị xóa và không thể khôi phục.', [
+      {text: 'Hủy', style: 'cancel'},
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: async () => {
+          setDeleteLoading(true);
+          try {
+            await QuizAPI.delete(quizId);
+            showToast('Đã xóa quiz', 'success');
+            handleBack();
+          } catch {
+            showToast('Không thể xóa quiz', 'error');
+          } finally {
+            setDeleteLoading(false);
+          }
+        },
+      },
+    ]);
+  }, [deleteLoading, handleBack, quizId, showToast]);
+
   const handleOpenAttempt = useCallback(
     (attempt: any) => {
       const attemptId = toPositiveNumber(attempt?.attemptId || attempt?.id);
@@ -823,6 +892,40 @@ export default function QuizDetailScreen({navigation, route}: any) {
           <Text style={[styles.headerSubtitle, {color: colors.textSecondary}]} numberOfLines={1}>
             {displayTitle}
           </Text>
+        </View>
+        <View style={styles.headerActions}>
+          {!isGroupContext ? (
+            <TouchableOpacity
+              onPress={handleToggleCommunityShare}
+              disabled={shareLoading}
+              accessibilityLabel="Công khai quiz"
+              style={[
+                styles.iconButton,
+                styles.headerActionButton,
+                {backgroundColor: colors.surfaceVariant},
+                shareLoading && styles.disabledButton,
+              ]}
+              activeOpacity={0.7}>
+              <Icon
+                name={effectiveQuiz?.communityShared ? 'earth' : 'earth-off'}
+                size={20}
+                color={effectiveQuiz?.communityShared ? Colors.primary : colors.textSecondary}
+              />
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            onPress={handleDeleteQuiz}
+            disabled={deleteLoading}
+            accessibilityLabel="Xóa quiz"
+            style={[
+              styles.iconButton,
+              styles.headerActionButton,
+              {backgroundColor: colors.surfaceVariant},
+              deleteLoading && styles.disabledButton,
+            ]}
+            activeOpacity={0.7}>
+            <Icon name="trash-can-outline" size={20} color={Colors.error} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -1357,6 +1460,18 @@ const styles = StyleSheet.create({
   headerText: {flex: 1, minWidth: 0},
   headerTitle: {fontSize: 18, fontWeight: '700'},
   headerSubtitle: {fontSize: 12, marginTop: 2},
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerActionButton: {
+    width: 36,
+    height: 36,
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
   scroll: {flex: 1},
   content: {
     padding: Spacing.base,

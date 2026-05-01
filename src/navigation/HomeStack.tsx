@@ -16,7 +16,7 @@ export type HomeStackParamList = {
   Workspace: {workspaceId: number; title?: string};
   GroupWorkspace: {groupId: number; title?: string};
   GroupManagement: {groupId: number; title?: string};
-  CreateAIQuiz: {workspaceId: number; materials?: any[]};
+  CreateAIQuiz: {workspaceId: number; materials?: any[]; initialMode?: 'ai' | 'manual'};
   CreateAIFlashcard: {workspaceId: number; materials?: any[]};
   FlashcardStudy: {flashcardId: number; title?: string; contextType?: 'WORKSPACE' | 'GROUP'};
   RoadmapJourney: {

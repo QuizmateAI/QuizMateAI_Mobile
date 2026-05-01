@@ -203,6 +203,8 @@ const QuizAPI = {
       })),
   create: (data: any) => api.post('/api/quiz/create', data),
   update: (quizId: number, data: any) => api.put(`/api/quiz/${quizId}`, data),
+  shareToCommunity: (quizId: number, shared = true) =>
+    api.post(`/api/quiz/${quizId}/community-share?shared=${shared}`),
   toggleStatus: (quizId: number) =>
     api.patch(`/api/quiz/${quizId}/toggle-status`),
   delete: (quizId: number) => api.delete(`/api/quiz/${quizId}`),
@@ -317,6 +319,8 @@ const QuizAPI = {
   },
   submitAttempt: (attemptId: number) =>
     api.post(`/api/quiz-attempts/${attemptId}/submit`),
+  createManualQuizBulk: (data: any) =>
+    api.post('/api/quiz/manual:create-bulk', data),
   getAttemptAssessment: (attemptId: number) =>
     api.get(`/api/quiz-attempts/${attemptId}/assessment`).then(res => ({
       ...res,

@@ -192,18 +192,22 @@ type WebSocketTransport = 'sockjs' | 'native';
 function buildWebSocketConfig(): {url: string; transport: WebSocketTransport} {
   const explicitWsUrl = String(WS_URL || '').trim();
   if (explicitWsUrl) {
-    if (
-      explicitWsUrl.startsWith('ws://') ||
-      explicitWsUrl.startsWith('wss://')
-    ) {
+    const normalizedUrl = explicitWsUrl.replace(/\/websocket$/i, '');
+    if (normalizedUrl.startsWith('ws://')) {
       return {
-        url: explicitWsUrl,
-        transport: 'native',
+        url: normalizedUrl.replace(/^ws:\/\//i, 'http://'),
+        transport: 'sockjs',
+      };
+    }
+    if (normalizedUrl.startsWith('wss://')) {
+      return {
+        url: normalizedUrl.replace(/^wss:\/\//i, 'https://'),
+        transport: 'sockjs',
       };
     }
 
     return {
-      url: explicitWsUrl,
+      url: normalizedUrl,
       transport: 'sockjs',
     };
   }
