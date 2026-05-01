@@ -88,6 +88,14 @@ const WorkspaceAPI = {
       name: data.name,
       description: data.description,
     }),
+  getQuestionStats: (workspaceId: number, attemptMode = 'OFFICIAL') =>
+    api.get(`/api/workspace/${workspaceId}/question-stats`, {
+      params: {attemptMode},
+    }),
+  getQuizStats: (workspaceId: number, attemptMode = 'OFFICIAL') =>
+    api.get(`/api/workspace/${workspaceId}/quiz-stats`, {
+      params: {attemptMode},
+    }),
   delete: (id: number) => api.delete(`/api/workspace/individual/${id}`),
 };
 

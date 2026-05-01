@@ -1,6 +1,7 @@
-import React from 'react';
+import React, {useMemo} from 'react';
 import {StyleSheet, View, Platform} from 'react-native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import {getFocusedRouteNameFromRoute, RouteProp} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import HomeStack from './HomeStack';
 import QuizStack from './QuizStack';
@@ -19,20 +20,41 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 export default function MainTabNavigator() {
   const {isDark, colors} = useTheme();
 
+  const baseTabBarStyle = useMemo(
+    () => ({
+      backgroundColor: isDark ? Colors.dark.surface : '#FFFFFF',
+      borderTopColor: colors.border,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      height: Platform.OS === 'ios' ? 88 : 64,
+      paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+      paddingTop: 8,
+      elevation: 0,
+      shadowOpacity: 0,
+    }),
+    [colors.border, isDark],
+  );
+
+  const getHomeTabBarStyle = (route: RouteProp<MainTabParamList, 'Home'>) => {
+    const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'HomeMain';
+    if (focusedRoute === 'Workspace' || focusedRoute === 'GroupWorkspace') {
+      return {display: 'none'};
+    }
+    return baseTabBarStyle;
+  };
+
+  const getQuizTabBarStyle = (route: RouteProp<MainTabParamList, 'Quiz'>) => {
+    const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'GroupList';
+    if (focusedRoute === 'GroupWorkspace' || focusedRoute === 'GroupManagement') {
+      return {display: 'none'};
+    }
+    return baseTabBarStyle;
+  };
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: isDark ? Colors.dark.surface : '#FFFFFF',
-          borderTopColor: colors.border,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
-          paddingTop: 8,
-          elevation: 0,
-          shadowOpacity: 0,
-        },
+        tabBarStyle: baseTabBarStyle,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: colors.textTertiary,
         tabBarLabelStyle: {
@@ -43,12 +65,13 @@ export default function MainTabNavigator() {
       <Tab.Screen
         name="Home"
         component={HomeStack}
-        options={{
+        options={({route}) => ({
           tabBarLabel: 'Cá nhân',
+          tabBarStyle: getHomeTabBarStyle(route),
           tabBarIcon: ({color, size, focused}) => (
             <TabIcon name={focused ? 'account' : 'account-outline'} color={color} size={size} />
           ),
-        }}
+        })}
       />
       <Tab.Screen
         name="Quiz"
@@ -59,12 +82,13 @@ export default function MainTabNavigator() {
             navigation.navigate('Quiz', {screen: 'GroupList'} as never);
           },
         })}
-        options={{
+        options={({route}) => ({
           tabBarLabel: 'Nhóm',
+          tabBarStyle: getQuizTabBarStyle(route),
           tabBarIcon: ({color, size, focused}) => (
             <TabIcon name={focused ? 'account-group' : 'account-group-outline'} color={color} size={size} />
           ),
-        }}
+        })}
       />
       <Tab.Screen
         name="Profile"

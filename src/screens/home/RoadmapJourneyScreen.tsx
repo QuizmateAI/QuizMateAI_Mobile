@@ -70,6 +70,56 @@ const resolveProgressPercent = (payload: any) =>
       0,
   );
 
+const isCentralRoadmap = (item: any) => {
+  if (!item || typeof item !== 'object') {
+    return false;
+  }
+
+  const flags = [
+    item.isCentral,
+    item.isCentralRoadmap,
+    item.isMain,
+    item.isPrimary,
+    item.isCenter,
+    item.isCentralized,
+    item.central,
+    item.centralRoadmap,
+  ];
+
+  if (flags.some(Boolean)) {
+    return true;
+  }
+
+  const rawType =
+    item.roadmapType || item.type || item.category || item.scope || item.mode || '';
+  const typeLabel = String(rawType).trim().toUpperCase();
+  if (['CENTRAL', 'CENTER', 'CORE', 'MAIN', 'PRIMARY'].includes(typeLabel)) {
+    return true;
+  }
+
+  const title = String(item.title || item.name || '').trim().toLowerCase();
+  return title.includes('trung tâm') || title.includes('central') || title.includes('core');
+};
+
+const resolveDefaultRoadmapId = (list: any[], preferredId?: number) => {
+  const normalizedPreferredId = Number(preferredId);
+  if (
+    Number.isInteger(normalizedPreferredId) &&
+    normalizedPreferredId > 0 &&
+    list.some((item: any) => Number(item.roadmapId || item.id || 0) === normalizedPreferredId)
+  ) {
+    return normalizedPreferredId;
+  }
+
+  const central = list.find(isCentralRoadmap);
+  if (central) {
+    return Number(central.roadmapId || central.id || 0) || null;
+  }
+
+  const first = list[0];
+  return first ? Number(first.roadmapId || first.id || 0) || null : null;
+};
+
 const updateProgressMap = (
   setter: React.Dispatch<React.SetStateAction<ProgressMap>>,
   phaseId: number,
@@ -452,14 +502,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       const list = res.data || [];
       setRoadmaps(list);
       if (list.length > 0) {
-        const normalizedRouteRoadmapId = Number(routeRoadmapId);
-        const hasRouteRoadmap =
-          Number.isInteger(normalizedRouteRoadmapId) &&
-          normalizedRouteRoadmapId > 0 &&
-          list.some((item: any) => Number(item.roadmapId || item.id || 0) === normalizedRouteRoadmapId);
-        setSelectedRoadmapId(
-          hasRouteRoadmap ? normalizedRouteRoadmapId : Number(list[0].roadmapId || list[0].id || 0),
-        );
+        setSelectedRoadmapId(resolveDefaultRoadmapId(list, Number(routeRoadmapId)));
       }
     } catch {
       setRoadmaps([]);
@@ -2159,10 +2202,15 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   }, [activePhase, selectedKnowledge, stageSelectedType]);
 
   useEffect(() => {
-    setStageSelectedType(phases.length > 0 ? 'phase' : 'roadmap');
+    const normalizedRoutePhaseId = Number(routePhaseId);
+    const hasRoutePhase = Number.isInteger(normalizedRoutePhaseId) && normalizedRoutePhaseId > 0;
+    setStageSelectedType(hasRoutePhase ? 'phase' : 'roadmap');
+    if (!hasRoutePhase) {
+      setSelectedPhaseId(null);
+    }
     setRoadmapStageCollapsed(false);
     setExpandedStagePhaseId(null);
-  }, [activeRoadmapId, phases.length]);
+  }, [activeRoadmapId, phases.length, routePhaseId]);
 
   const effectiveStageSelectedType: StageSelectedType =
     stageSelectedType === 'knowledge' && selectedKnowledge

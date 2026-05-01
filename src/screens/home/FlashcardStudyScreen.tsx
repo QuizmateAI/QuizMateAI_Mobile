@@ -1,10 +1,14 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
+  Alert,
+  Animated,
   ActivityIndicator,
+  Easing,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -16,15 +20,6 @@ import {BorderRadius, Spacing} from '../../theme/spacing';
 import FlashcardAPI from '../../api/FlashcardAPI';
 import ContentRenderer from '../../components/ui/ContentRenderer';
 import {buildContentBlocks} from '../../utils/contentBlocks';
-
-const shuffleArray = <T,>(array: T[]) => {
-  const cloned = [...array];
-  for (let i = cloned.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [cloned[i], cloned[j]] = [cloned[j], cloned[i]];
-  }
-  return cloned;
-};
 
 const normalizeItems = (rawItems: any[]) => {
   return (Array.isArray(rawItems) ? rawItems : [])
@@ -55,15 +50,19 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
-  const [studyQueue, setStudyQueue] = useState<any[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
-  const [studyStarted, setStudyStarted] = useState(false);
-  const [shuffleOnStart, setShuffleOnStart] = useState(true);
-  const [studyRound, setStudyRound] = useState(1);
-  const [cardOutcomeByUid, setCardOutcomeByUid] = useState<
-    Record<string, 'remembered' | 'learning'>
-  >({});
+  const flipAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newFront, setNewFront] = useState('');
+  const [newBack, setNewBack] = useState('');
+  const [addingSaving, setAddingSaving] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editFront, setEditFront] = useState('');
+  const [editBack, setEditBack] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     const normalizedId = Number(flashcardId || 0);
@@ -81,106 +80,176 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
 
       setDetail(data);
       setItems(normalizedItems);
-      setStudyQueue([]);
-      setCurrentIndex(0);
+      setActiveIndex(0);
       setIsFlipped(false);
-      setStudyStarted(false);
-      setStudyRound(1);
-      setCardOutcomeByUid({});
+      flipAnim.setValue(0);
+      slideAnim.setValue(0);
     } catch {
       showToast('Không thể tải chi tiết flashcard', 'error');
       navigation.goBack();
     } finally {
       setLoading(false);
     }
-  }, [flashcardId, navigation, showToast]);
+  }, [flashcardId, flipAnim, navigation, showToast, slideAnim]);
 
   useEffect(() => {
     fetchDetail();
   }, [fetchDetail]);
 
-  const canPrev = currentIndex > 0;
-  const canNext = currentIndex < studyQueue.length - 1;
-  const currentCard = studyQueue[currentIndex] || null;
-  const rememberedCount = useMemo(
-    () => Object.values(cardOutcomeByUid).filter(value => value === 'remembered').length,
-    [cardOutcomeByUid],
-  );
-  const learningCount = useMemo(
-    () => Object.values(cardOutcomeByUid).filter(value => value === 'learning').length,
-    [cardOutcomeByUid],
-  );
-  const remainingInQueue = useMemo(() => {
-    return studyQueue.filter((item: any) => cardOutcomeByUid[item.uid] !== 'remembered');
-  }, [cardOutcomeByUid, studyQueue]);
-  const progressPercent = useMemo(() => {
-    if (studyQueue.length === 0) {
-      return 0;
-    }
-    return Math.round(((currentIndex + 1) / studyQueue.length) * 100);
-  }, [currentIndex, studyQueue.length]);
+  const canPrev = activeIndex > 0;
+  const canNext = activeIndex < items.length - 1;
+  const currentCard = items[activeIndex] || null;
 
-  const goPrev = () => {
-    if (!canPrev) {
-      return;
+  const cardTitle = title || detail?.name || detail?.title || 'Flashcard';
+  const cardMeta = useMemo(() => {
+    const metaList = [`${items.length} thẻ`];
+    if (detail?.createVia) {
+      metaList.push(`Tạo bởi ${detail.createVia}`);
     }
-    setCurrentIndex(prev => prev - 1);
-    setIsFlipped(false);
-  };
+    if (detail?.status) {
+      metaList.push(String(detail.status).toUpperCase());
+    }
+    return metaList.join(' • ');
+  }, [detail?.createVia, detail?.status, items.length]);
 
-  const goNext = () => {
-    if (!canNext) {
-      return;
-    }
-    setCurrentIndex(prev => prev + 1);
-    setIsFlipped(false);
+  const frontBlocks = useMemo(() => buildContentBlocks(currentCard?.front || ''), [currentCard]);
+  const backBlocks = useMemo(() => buildContentBlocks(currentCard?.back || ''), [currentCard]);
+
+  const animateFlip = (nextFlipped: boolean) => {
+    Animated.timing(flipAnim, {
+      toValue: nextFlipped ? 1 : 0,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
   };
 
   const toggleFlip = () => {
     if (!currentCard) {
       return;
     }
-    setIsFlipped(prev => !prev);
+    setIsFlipped(prev => {
+      const next = !prev;
+      animateFlip(next);
+      return next;
+    });
   };
 
-  const startStudy = () => {
-    if (items.length === 0) {
+  const animateSlide = (direction: 'prev' | 'next') => {
+    slideAnim.stopAnimation();
+    slideAnim.setValue(direction === 'next' ? 26 : -26);
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const goPrev = () => {
+    if (!canPrev) {
       return;
     }
-    const queue = shuffleOnStart ? shuffleArray(items) : [...items];
-    setStudyQueue(queue);
-    setCurrentIndex(0);
+    setActiveIndex(prev => Math.max(0, prev - 1));
     setIsFlipped(false);
-    setStudyRound(1);
-    setCardOutcomeByUid({});
-    setStudyStarted(true);
+    flipAnim.setValue(0);
+    animateSlide('prev');
   };
 
-  const markCurrentCard = (outcome: 'remembered' | 'learning') => {
-    if (!currentCard) {
+  const goNext = () => {
+    if (!canNext) {
       return;
     }
-
-    setCardOutcomeByUid(prev => ({
-      ...prev,
-      [currentCard.uid]: outcome,
-    }));
-
-    if (canNext) {
-      setCurrentIndex(prev => prev + 1);
-      setIsFlipped(false);
-    }
-  };
-
-  const reviewUnknownCards = () => {
-    if (remainingInQueue.length === 0) {
-      return;
-    }
-
-    setStudyQueue(shuffleOnStart ? shuffleArray(remainingInQueue) : [...remainingInQueue]);
-    setCurrentIndex(0);
+    setActiveIndex(prev => Math.min(items.length - 1, prev + 1));
     setIsFlipped(false);
-    setStudyRound(prev => prev + 1);
+    flipAnim.setValue(0);
+    animateSlide('next');
+  };
+
+  const renderCardFaceContent = (blocks: any[], fallback: string, textStyle: any) => {
+    if (blocks.length > 0) {
+      return <ContentRenderer blocks={blocks} />;
+    }
+
+    return (
+      <Text style={textStyle}>
+        {fallback}
+      </Text>
+    );
+  };
+
+  const handleAddItem = async () => {
+    if (!detail?.flashcardSetId || !newFront.trim() || !newBack.trim()) {
+      showToast('Vui lòng nhập cả mặt trước và mặt sau', 'error');
+      return;
+    }
+
+    setAddingSaving(true);
+    try {
+      const res = await FlashcardAPI.addItem(detail.flashcardSetId, {
+        frontContent: newFront.trim(),
+        backContent: newBack.trim(),
+      });
+      const newItem = res?.data || {};
+      const normalized = {
+        uid: `${newItem.flashcardItemId}-${items.length}`,
+        id: newItem.flashcardItemId,
+        front: newItem.frontContent,
+        back: newItem.backContent,
+      };
+      setItems([...items, normalized]);
+      setNewFront('');
+      setNewBack('');
+      setShowAddForm(false);
+      showToast('Đã thêm thẻ mới', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể thêm thẻ', 'error');
+    } finally {
+      setAddingSaving(false);
+    }
+  };
+
+  const handleUpdateItem = async (itemId: number) => {
+    if (!editFront.trim() || !editBack.trim()) {
+      showToast('Vui lòng nhập cả mặt trước và mặt sau', 'error');
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      const res = await FlashcardAPI.updateItem(itemId, {
+        frontContent: editFront.trim(),
+        backContent: editBack.trim(),
+      });
+      const updated = res?.data || {};
+      setItems(prev =>
+        prev.map(item =>
+          item.id === itemId
+            ? {
+                ...item,
+                front: updated.frontContent || editFront.trim(),
+                back: updated.backContent || editBack.trim(),
+              }
+            : item,
+        ),
+      );
+      setEditingItemId(null);
+      showToast('Đã cập nhật thẻ', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể cập nhật thẻ', 'error');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteItem = async (itemId: number) => {
+    try {
+      await FlashcardAPI.deleteItem(itemId);
+      setItems(prev => prev.filter(item => item.id !== itemId));
+      showToast('Đã xóa thẻ', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể xóa thẻ', 'error');
+    }
   };
 
   if (loading) {
@@ -194,170 +263,6 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
     );
   }
 
-  if (items.length === 0) {
-    return (
-      <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}> 
-        <View style={[styles.header, {borderBottomColor: colors.border, backgroundColor: colors.surface}]}> 
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-            <Icon name="chevron-left" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, {color: colors.heading}]} numberOfLines={1}>
-            {title || detail?.name || detail?.title || 'Flashcard'}
-          </Text>
-          <View style={styles.iconBtn} />
-        </View>
-
-        <View style={styles.emptyWrap}>
-          <Icon name="cards-outline" size={40} color={colors.textTertiary} />
-          <Text style={[styles.emptyTitle, {color: colors.heading}]}>Bộ thẻ chưa có nội dung</Text>
-          <Text style={[styles.emptyDesc, {color: colors.textSecondary}]}>Hãy tạo hoặc chờ AI tạo thêm card để bắt đầu học.</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (studyStarted && !currentCard) {
-    return (
-      <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}> 
-        <View style={[styles.header, {borderBottomColor: colors.border, backgroundColor: colors.surface}]}> 
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-            <Icon name="chevron-left" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, {color: colors.heading}]} numberOfLines={1}>
-            {title || detail?.name || detail?.title || 'Flashcard'}
-          </Text>
-          <TouchableOpacity onPress={() => setStudyStarted(false)} style={styles.iconBtn}>
-            <Icon name="format-list-bulleted" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.emptyWrap}>
-          <Icon name="information-outline" size={40} color={colors.textTertiary} />
-          <Text style={[styles.emptyTitle, {color: colors.heading}]}>Chưa có thẻ để hiển thị</Text>
-          <Text style={[styles.emptyDesc, {color: colors.textSecondary}]}>Vui lòng quay lại danh sách và bắt đầu lại phiên học.</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (!studyStarted) {
-    return (
-      <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}> 
-        <View style={[styles.header, {borderBottomColor: colors.border, backgroundColor: colors.surface}]}> 
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-            <Icon name="chevron-left" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <View style={{flex: 1}}>
-            <Text style={[styles.headerTitle, {color: colors.heading}]} numberOfLines={1}>
-              {title || detail?.name || detail?.title || 'Flashcard'}
-            </Text>
-            <Text style={[styles.headerSub, {color: colors.textSecondary}]}> 
-              Danh sách {items.length} thẻ
-            </Text>
-          </View>
-          <TouchableOpacity onPress={fetchDetail} style={styles.iconBtn}>
-            <Icon name="refresh" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.listContent}>
-          <View
-            style={[
-              styles.summaryCard,
-              {
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-              },
-            ]}>
-            <View style={styles.summaryRow}>
-              <Text style={[styles.summaryTitle, {color: colors.heading}]}>Chế độ học</Text>
-              <TouchableOpacity
-                onPress={() => setShuffleOnStart(prev => !prev)}
-                style={[
-                  styles.shuffleToggle,
-                  {
-                    borderColor: shuffleOnStart ? Colors.primary : colors.border,
-                    backgroundColor: shuffleOnStart
-                      ? isDark
-                        ? '#1E3A8A30'
-                        : '#EFF6FF'
-                      : colors.surface,
-                  },
-                ]}>
-                <Icon
-                  name={shuffleOnStart ? 'shuffle-variant' : 'shuffle-disabled'}
-                  size={16}
-                  color={shuffleOnStart ? Colors.primary : colors.textTertiary}
-                />
-                <Text
-                  style={[
-                    styles.shuffleText,
-                    {color: shuffleOnStart ? Colors.primary : colors.textSecondary},
-                  ]}>
-                  {shuffleOnStart ? 'Shuffle bật' : 'Shuffle tắt'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={[styles.summaryDesc, {color: colors.textSecondary}]}> 
-              Vào học theo vòng, có thể đánh dấu Đã nhớ hoặc Chưa nhớ để ôn lại đúng phần còn yếu.
-            </Text>
-          </View>
-
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listWrap}>
-            {items.map((item: any, index: number) => (
-              <View
-                key={`${item.id}-${index}`}
-                style={[
-                  styles.listItem,
-                  {
-                    borderColor: colors.border,
-                    backgroundColor: colors.surface,
-                  },
-                ]}>
-                <View style={[styles.listBadge, {backgroundColor: isDark ? '#1E293B' : '#EEF2FF'}]}>
-                  <Text style={[styles.listBadgeText, {color: Colors.primary}]}>#{index + 1}</Text>
-                </View>
-                <View style={{flex: 1, gap: 4}}>
-                  {(() => {
-                    const fBlocks = buildContentBlocks(item.front);
-                    return fBlocks.length > 0 ? (
-                      <ContentRenderer blocks={fBlocks} />
-                    ) : (
-                      <Text style={[styles.listFront, {color: colors.heading}]} numberOfLines={2}>
-                        {item.front || 'Không có mặt trước'}
-                      </Text>
-                    );
-                  })()}
-
-                  {(() => {
-                    const bBlocks = buildContentBlocks(item.back);
-                    return bBlocks.length > 0 ? (
-                      <ContentRenderer blocks={bBlocks} />
-                    ) : (
-                      <Text style={[styles.listBack, {color: colors.textSecondary}]} numberOfLines={2}>
-                        {item.back || 'Không có mặt sau'}
-                      </Text>
-                    );
-                  })()}
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-
-          <TouchableOpacity
-            onPress={startStudy}
-            style={[styles.startBtn, {backgroundColor: Colors.primary}]}
-            activeOpacity={0.9}>
-            <Icon name="play-circle-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.startBtnText}>Bắt đầu học</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}> 
       <View style={[styles.header, {borderBottomColor: colors.border, backgroundColor: colors.surface}]}> 
@@ -366,182 +271,365 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
         </TouchableOpacity>
         <View style={{flex: 1}}>
           <Text style={[styles.headerTitle, {color: colors.heading}]} numberOfLines={1}>
-            {title || detail?.name || detail?.title || 'Flashcard'}
+            {cardTitle}
           </Text>
-          <Text style={[styles.headerSub, {color: colors.textSecondary}]}>
-            Vòng {studyRound} • {currentIndex + 1}/{studyQueue.length} thẻ
-          </Text>
+          {!!cardMeta && (
+            <Text style={[styles.headerSub, {color: colors.textSecondary}]}>
+              {cardMeta}
+            </Text>
+          )}
         </View>
-        <TouchableOpacity onPress={() => setStudyStarted(false)} style={styles.iconBtn}>
-          <Icon name="format-list-bulleted" size={20} color={colors.textSecondary} />
+        <TouchableOpacity onPress={fetchDetail} style={styles.iconBtn}>
+          <Icon name="refresh" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.metricsRow}>
-          <View
-            style={[
-              styles.metricChip,
-              {
-                borderColor: isDark ? '#14532d' : '#86efac',
-                backgroundColor: isDark ? 'rgba(20,83,45,0.35)' : '#f0fdf4',
-              },
-            ]}>
-            <Text style={[styles.metricText, {color: isDark ? '#86efac' : '#166534'}]}>
-              Đã nhớ: {rememberedCount}
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.metricChip,
-              {
-                borderColor: isDark ? '#7f1d1d' : '#fecaca',
-                backgroundColor: isDark ? 'rgba(127,29,29,0.35)' : '#fef2f2',
-              },
-            ]}>
-            <Text style={[styles.metricText, {color: isDark ? '#fca5a5' : '#b91c1c'}]}>
-              Chưa nhớ: {learningCount}
-            </Text>
-          </View>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.cardStage}>
+          {currentCard ? (
+            <Animated.View
+              style={[
+                styles.cardMotion,
+                {
+                  opacity: slideAnim.interpolate({
+                    inputRange: [-26, 0, 26],
+                    outputRange: [0.6, 1, 0.6],
+                  }),
+                  transform: [{translateX: slideAnim}],
+                },
+              ]}>
+              <TouchableOpacity
+                activeOpacity={0.95}
+                onPress={toggleFlip}
+                style={styles.cardTapArea}>
+                <View style={styles.cardPerspective}>
+                  <Animated.View
+                    style={[
+                      styles.cardFace,
+                      styles.cardFront,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                        transform: [
+                          {perspective: 1000},
+                          {
+                            rotateX: flipAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ['0deg', '180deg'],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}>
+                    <Text style={[styles.faceLabel, {color: isDark ? '#94a3b8' : '#cbd5e1'}]}>Mặt trước</Text>
+                    <View style={styles.cardBody}>
+                      {renderCardFaceContent(
+                        frontBlocks,
+                        currentCard?.front || 'Không có nội dung',
+                        [styles.cardText, {color: isDark ? '#ffffff' : '#0f172a'}],
+                      )}
+                    </View>
+                    <Text style={[styles.hintText, {color: isDark ? '#94a3b8' : '#cbd5e1'}]}>Nhấn để lật thẻ</Text>
+                  </Animated.View>
+
+                  <Animated.View
+                    style={[
+                      styles.cardFace,
+                      styles.cardBack,
+                      {
+                        borderColor: isDark ? '#064e3b' : '#86efac',
+                        backgroundColor: isDark ? 'rgba(16,185,129,0.12)' : '#ecfdf5',
+                        transform: [
+                          {perspective: 1000},
+                          {
+                            rotateX: flipAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ['180deg', '360deg'],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}>
+                    <Text style={[styles.faceLabel, {color: isDark ? '#6ee7b7' : '#047857'}]}>
+                      Mặt sau
+                    </Text>
+                    <View style={styles.cardBody}>
+                      {renderCardFaceContent(
+                        backBlocks,
+                        currentCard?.back || 'Không có nội dung',
+                        [styles.cardText, {color: isDark ? '#a7f3d0' : '#065f46'}],
+                      )}
+                    </View>
+                    <Text style={[styles.hintText, {color: isDark ? '#6ee7b7' : '#047857'}]}>
+                      Nhấn để lật thẻ
+                    </Text>
+                  </Animated.View>
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
+          ) : (
+            <View
+              style={[
+                styles.emptyCard,
+                {borderColor: isDark ? '#64748b' : '#e2e8f0', backgroundColor: isDark ? '#1e293b' : '#f8fafc'},
+              ]}>
+              <Icon name="cards-outline" size={40} color={isDark ? '#64748b' : '#cbd5e1'} />
+              <Text style={[styles.emptyCardText, {color: isDark ? '#94a3b8' : '#64748b'}]}>
+                Chưa có thẻ để hiển thị
+              </Text>
+            </View>
+          )}
         </View>
 
-        <View style={[styles.progressTrack, {backgroundColor: isDark ? '#1F2937' : '#E2E8F0'}]}>
-          <View
-            style={[
-              styles.progressFill,
-              {
-                backgroundColor: Colors.primary,
-                width: `${progressPercent}%`,
-              },
-            ]}
-          />
-        </View>
-
-        <TouchableOpacity
-          activeOpacity={0.95}
-          onPress={toggleFlip}
-          style={[
-            styles.card,
-            {
-              borderColor: colors.border,
-              backgroundColor: isFlipped
-                ? isDark
-                  ? '#0F172A'
-                  : '#EFF6FF'
-                : colors.surface,
-            },
-          ]}>
-          <Text style={[styles.faceLabel, {color: colors.textTertiary}]}> 
-            {isFlipped ? 'Mặt sau' : 'Mặt trước'}
-          </Text>
-          <Text style={[styles.cardText, {color: colors.heading}]}> 
-            {(isFlipped ? currentCard.back : currentCard.front) || 'Không có nội dung'}
-          </Text>
-          <Text style={[styles.hintText, {color: colors.textSecondary}]}>Nhấn vào thẻ để lật</Text>
-        </TouchableOpacity>
-
-        <View style={styles.controls}>
+        <View style={styles.navRow}>
           <TouchableOpacity
             onPress={goPrev}
             disabled={!canPrev}
             style={[
-              styles.controlBtn,
+              styles.navBtn,
               {
                 borderColor: colors.border,
                 backgroundColor: colors.surface,
-                opacity: canPrev ? 1 : 0.45,
+                opacity: canPrev ? 1 : 0.5,
               },
             ]}>
-            <Icon name="chevron-left" size={20} color={colors.text} />
-            <Text style={[styles.controlText, {color: colors.text}]}>Trước</Text>
+            <Icon name="chevron-left" size={24} color={canPrev ? colors.text : colors.textTertiary} />
           </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={toggleFlip}
-            style={[
-              styles.flipBtn,
-              {
-                backgroundColor: Colors.primary,
-              },
-            ]}>
-            <Icon name="autorenew" size={18} color="#FFFFFF" />
-            <Text style={styles.flipText}>Lật thẻ</Text>
-          </TouchableOpacity>
-
+          <Text style={[styles.navText, {color: colors.heading}]}>
+            {items.length === 0 ? '0/0' : `${activeIndex + 1}/${items.length}`}
+          </Text>
           <TouchableOpacity
             onPress={goNext}
             disabled={!canNext}
             style={[
-              styles.controlBtn,
+              styles.navBtn,
               {
                 borderColor: colors.border,
                 backgroundColor: colors.surface,
-                opacity: canNext ? 1 : 0.45,
+                opacity: canNext ? 1 : 0.5,
               },
             ]}>
-            <Text style={[styles.controlText, {color: colors.text}]}>Tiếp</Text>
-            <Icon name="chevron-right" size={20} color={colors.text} />
+            <Icon name="chevron-right" size={24} color={canNext ? colors.text : colors.textTertiary} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.rememberActionsWrap}>
-          <TouchableOpacity
-            onPress={() => markCurrentCard('learning')}
-            style={[
-              styles.rememberBtn,
-              {
-                borderColor: isDark ? '#7f1d1d' : '#fecaca',
-                backgroundColor: isDark ? 'rgba(127,29,29,0.3)' : '#fef2f2',
-              },
-            ]}>
-            <Icon name="close-circle-outline" size={18} color={isDark ? '#fca5a5' : '#b91c1c'} />
-            <Text style={[styles.rememberBtnText, {color: isDark ? '#fca5a5' : '#b91c1c'}]}>Chưa nhớ</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => markCurrentCard('remembered')}
-            style={[
-              styles.rememberBtn,
-              {
-                borderColor: isDark ? '#14532d' : '#86efac',
-                backgroundColor: isDark ? 'rgba(20,83,45,0.3)' : '#f0fdf4',
-              },
-            ]}>
-            <Icon name="check-circle-outline" size={18} color={isDark ? '#86efac' : '#166534'} />
-            <Text style={[styles.rememberBtnText, {color: isDark ? '#86efac' : '#166534'}]}>Đã nhớ</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, {color: colors.heading}]}>Danh sách thẻ</Text>
+          <TouchableOpacity onPress={() => setShowAddForm(true)} style={[styles.addBtn]}>
+            <Icon name="plus" size={20} color="white" />
           </TouchableOpacity>
         </View>
-
-        {!canNext ? (
-          <View style={styles.roundActions}>
-            {remainingInQueue.length > 0 ? (
-              <TouchableOpacity
-                onPress={reviewUnknownCards}
-                style={[styles.reviewBtn, {backgroundColor: Colors.primary}]}
-                activeOpacity={0.9}>
-                <Icon name="refresh" size={18} color="#FFFFFF" />
-                <Text style={styles.reviewBtnText}>
-                  Ôn lại {remainingInQueue.length} thẻ chưa nhớ
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View
-                style={[
-                  styles.completedBanner,
-                  {
-                    borderColor: isDark ? '#14532d' : '#86efac',
-                    backgroundColor: isDark ? 'rgba(20,83,45,0.3)' : '#f0fdf4',
-                  },
-                ]}>
-                <Icon name="party-popper" size={18} color={isDark ? '#86efac' : '#166534'} />
-                <Text style={[styles.completedText, {color: isDark ? '#86efac' : '#166534'}]}>
-                  Bạn đã nhớ toàn bộ thẻ ở vòng này
-                </Text>
-              </View>
-            )}
+        {items.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Icon name="cards-outline" size={40} color={isDark ? '#64748b' : '#cbd5e1'} />
+            <Text style={[styles.emptyTitle, {color: colors.heading}]}>Bộ thẻ chưa có nội dung</Text>
+            <Text style={[styles.emptyDesc, {color: isDark ? '#94a3b8' : '#64748b'}]}>Hãy tạo hoặc chờ AI tạo thêm card.</Text>
           </View>
-        ) : null}
-      </View>
+        ) : (
+          <View style={[styles.listWrap, {borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border}]}>
+            {items.map((item: any, index: number) => {
+              const frontPreview = buildContentBlocks(item.front);
+              const backPreview = buildContentBlocks(item.back);
+              const isEditing = editingItemId === item.id;
+              return (
+                <View
+                  key={`${item.id}-${index}`}
+                  style={[
+                    styles.listItem,
+                    {
+                      borderBottomColor: colors.border,
+                    },
+                  ]}>
+                  <View style={styles.listHeaderRow}>
+                    <View style={[styles.listBadge, {backgroundColor: isDark ? '#1e293b' : '#eff6ff'}]}>
+                      <Text style={[styles.listBadgeText, {color: Colors.primary}]}>#{index + 1}</Text>
+                    </View>
+                    {!isEditing ? (
+                      <View style={styles.listActions}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setEditingItemId(item.id);
+                            setEditFront(item.front);
+                            setEditBack(item.back);
+                          }}
+                          style={styles.listActionBtn}
+                          accessibilityLabel="Sửa thẻ"
+                        >
+                          <Icon name="pencil" size={18} color={isDark ? '#94a3b8' : '#94a3b8'} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            Alert.alert(
+                              'Xác nhận xóa',
+                              'Bạn có chắc chắn muốn xóa thẻ này?',
+                              [
+                                {text: 'Hủy', style: 'cancel'},
+                                {text: 'Xóa', style: 'destructive', onPress: () => handleDeleteItem(item.id)},
+                              ],
+                            );
+                          }}
+                          style={styles.listActionBtn}
+                          accessibilityLabel="Xóa thẻ"
+                        >
+                          <Icon name="trash-can-outline" size={18} color={isDark ? '#94a3b8' : '#94a3b8'} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={styles.listContentCol}>
+                    {isEditing ? (
+                      <>
+                        <Text style={[styles.listLabel, {color: isDark ? '#94a3b8' : '#cbd5e1'}]}>Mặt trước</Text>
+                        <TextInput
+                          style={[
+                            styles.formInput,
+                            {
+                              borderColor: colors.border,
+                              backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                              color: colors.heading,
+                            },
+                          ]}
+                          placeholder="Mặt trước"
+                          placeholderTextColor={colors.textSecondary}
+                          value={editFront}
+                          onChangeText={setEditFront}
+                          multiline
+                        />
+                        <Text style={[styles.listLabel, {color: isDark ? '#94a3b8' : '#cbd5e1'}]}>Mặt sau</Text>
+                        <TextInput
+                          style={[
+                            styles.formInput,
+                            {
+                              borderColor: colors.border,
+                              backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                              color: colors.heading,
+                            },
+                          ]}
+                          placeholder="Mặt sau"
+                          placeholderTextColor={colors.textSecondary}
+                          value={editBack}
+                          onChangeText={setEditBack}
+                          multiline
+                        />
+                        <View style={styles.formActions}>
+                          <TouchableOpacity
+                            onPress={() => setEditingItemId(null)}
+                            style={[
+                              styles.formBtn,
+                              {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border},
+                            ]}>
+                            <Text style={{color: colors.heading, fontWeight: '600'}}>Hủy</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleUpdateItem(item.id)}
+                            disabled={editSaving}
+                            style={[
+                              styles.formBtn,
+                              {backgroundColor: '#10b981', opacity: editSaving ? 0.6 : 1},
+                            ]}>
+                            <Text style={{color: 'white', fontWeight: '600'}}>
+                              {editSaving ? 'Đang lưu...' : 'Lưu'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[styles.listLabel, {color: isDark ? '#94a3b8' : '#cbd5e1'}]}>Mặt trước</Text>
+                        {frontPreview.length > 0 ? (
+                          <ContentRenderer blocks={frontPreview} />
+                        ) : (
+                          <Text style={[styles.listFront, {color: colors.heading}]}> 
+                            {item.front || 'Không có mặt trước'}
+                          </Text>
+                        )}
+                        <Text style={[styles.listLabel, {color: isDark ? '#94a3b8' : '#cbd5e1'}]}>Mặt sau</Text>
+                        {backPreview.length > 0 ? (
+                          <ContentRenderer blocks={backPreview} />
+                        ) : (
+                          <Text style={[styles.listBack, {color: isDark ? '#94a3b8' : '#64748b'}]}> 
+                            {item.back || 'Không có mặt sau'}
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {showAddForm && (
+          <View style={[styles.formModal]}>
+            <View
+              style={[
+                styles.formContent,
+                {backgroundColor: colors.surface},
+              ]}>
+              <Text style={[styles.formTitle, {color: colors.heading}]}>Thêm thẻ mới</Text>
+              <TextInput
+                style={[
+                  styles.formInput,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                    color: colors.heading,
+                  },
+                ]}
+                placeholder="Mặt trước"
+                placeholderTextColor={colors.textSecondary}
+                value={newFront}
+                onChangeText={setNewFront}
+                multiline
+              />
+              <TextInput
+                style={[
+                  styles.formInput,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                    color: colors.heading,
+                  },
+                ]}
+                placeholder="Mặt sau"
+                placeholderTextColor={colors.textSecondary}
+                value={newBack}
+                onChangeText={setNewBack}
+                multiline
+              />
+              <View style={styles.formActions}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowAddForm(false);
+                    setNewFront('');
+                    setNewBack('');
+                  }}
+                  style={[
+                    styles.formBtn,
+                    {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border},
+                  ]}>
+                  <Text style={{color: colors.heading, fontWeight: '600'}}>Hủy</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleAddItem}
+                  disabled={addingSaving || !newFront.trim() || !newBack.trim()}
+                  style={[
+                    styles.formBtn,
+                    {backgroundColor: '#10b981', opacity: addingSaving || !newFront.trim() || !newBack.trim() ? 0.6 : 1},
+                  ]}>
+                  <Text style={{color: 'white', fontWeight: '600'}}>
+                    {addingSaving ? 'Đang lưu...' : 'Thêm'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -557,241 +645,234 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   iconBtn: {
-    width: 34,
-    height: 34,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.lg,
   },
   headerTitle: {fontSize: 16, fontWeight: '700'},
-  headerSub: {fontSize: 12, marginTop: 2},
+  headerSub: {fontSize: 12, marginTop: 4, fontWeight: '500'},
   content: {
     flex: 1,
-    padding: Spacing.lg,
-    gap: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.lg,
   },
-  listContent: {
+  contentContainer: {
+    gap: Spacing.xl,
+    paddingBottom: Spacing.xl,
+  },
+  cardStage: {
+    alignItems: 'center',
+  },
+  cardMotion: {
+    width: '100%',
+  },
+  cardTapArea: {
+    height: 360,
+    width: '100%',
+  },
+  cardPerspective: {
     flex: 1,
+    position: 'relative',
+  },
+  cardFace: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 1,
+    borderRadius: 24,
     padding: Spacing.lg,
+    justifyContent: 'space-between',
+    backfaceVisibility: 'hidden',
+  },
+  cardFront: {
+  },
+  cardBack: {
+  },
+  cardBody: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  emptyCard: {
+    width: '100%',
+    height: 360,
+    borderWidth: 1,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: Spacing.md,
   },
-  summaryCard: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.sm,
-    gap: Spacing.xs,
+  emptyCardText: {
+    fontSize: 13,
+    textAlign: 'center',
+    fontWeight: '500',
   },
-  summaryRow: {
+  navRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: Spacing.sm,
+    justifyContent: 'center',
+    gap: Spacing.lg,
+    marginVertical: Spacing.md,
   },
-  summaryTitle: {fontSize: 13, fontWeight: '700'},
-  summaryDesc: {fontSize: 12, lineHeight: 18},
-  shuffleToggle: {
+  navBtn: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderRadius: BorderRadius.full,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 2},
+    elevation: 2,
+  },
+  navText: {
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  sectionTitle: {fontSize: 16, fontWeight: '700', marginBottom: Spacing.sm},
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-between',
+    marginBottom: Spacing.md,
   },
-  shuffleText: {fontSize: 12, fontWeight: '600'},
-  listWrap: {
-    gap: Spacing.sm,
-    paddingBottom: Spacing.md,
-  },
-  listItem: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.sm,
-  },
-  listBadge: {
-    width: 30,
-    height: 30,
+  addBtn: {
+    width: 36,
+    height: 36,
     borderRadius: BorderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
+    backgroundColor: '#10b981',
+  },
+  listWrap: {
+    gap: 0,
+  },
+  listItem: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 0,
+    paddingVertical: Spacing.md,
+    flexDirection: 'column',
+    gap: Spacing.sm,
+  },
+  listHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  listActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: Spacing.xs,
+  },
+  listActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listContentCol: {
+    gap: Spacing.xs,
+  },
+  listLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  listBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   listBadgeText: {
     fontSize: 11,
     fontWeight: '700',
   },
   listFront: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   listBack: {
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  startBtn: {
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  startBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  progressTrack: {
-    width: '100%',
-    height: 8,
-    borderRadius: BorderRadius.full,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: BorderRadius.full,
-  },
-  metricsRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  metricChip: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  metricText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  card: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: Spacing.md,
-    minHeight: 320,
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: '500',
   },
   faceLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
   cardText: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     textAlign: 'center',
-    lineHeight: 32,
+    lineHeight: 34,
   },
   hintText: {
     fontSize: 12,
     textAlign: 'center',
-  },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.sm,
-  },
-  controlBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  controlText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  flipBtn: {
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  flipText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  rememberActionsWrap: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  rememberBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  rememberBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  roundActions: {
-    marginTop: Spacing.xs,
-  },
-  reviewBtn: {
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  reviewBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  completedBanner: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  completedText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '500',
   },
   loaderWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.md,
   },
-  loaderText: {fontSize: 13},
+  loaderText: {fontSize: 13, fontWeight: '500'},
   emptyWrap: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.xl,
-    gap: Spacing.sm,
+    paddingVertical: Spacing.xl,
+    gap: Spacing.md,
   },
-  emptyTitle: {fontSize: 16, fontWeight: '700'},
-  emptyDesc: {fontSize: 13, textAlign: 'center', lineHeight: 20},
+  emptyTitle: {fontSize: 16, fontWeight: '700', textAlign: 'center'},
+  emptyDesc: {fontSize: 13, textAlign: 'center', lineHeight: 20, fontWeight: '500'},
+  formModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  formContent: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+  },
+  formTitle: {fontSize: 16, fontWeight: '700', marginBottom: Spacing.md},
+  formInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    minHeight: 80,
+  },
+  formActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    justifyContent: 'flex-end',
+  },
+  formBtn: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
