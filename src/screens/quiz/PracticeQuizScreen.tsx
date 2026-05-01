@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -139,7 +139,7 @@ function buildVoiceConfigHighlights(config: VoicePracticeConfig) {
 }
 
 export default function PracticeQuizScreen({navigation, route}: any) {
-  const {quizId, title, backContext} = route.params;
+  const {quizId, title, backContext, quizDetailParams} = route.params;
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [quiz, setQuiz] = useState<any>(null);
@@ -166,6 +166,14 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   const [voiceConfigDraft, setVoiceConfigDraft] = useState<VoicePracticeConfig>(
     createDefaultVoicePracticeConfig(),
   );
+
+  const handleBack = useCallback(() => {
+    if (quizDetailParams?.quizId) {
+      navigation.navigate('QuizDetail', quizDetailParams);
+      return;
+    }
+    navigation.goBack();
+  }, [navigation, quizDetailParams]);
 
   useEffect(() => {
     let active = true;
@@ -670,7 +678,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             <Button
               title="Quay lại"
               variant="ghost"
-              onPress={() => navigation.goBack()}
+              onPress={handleBack}
             />
           </View>
         </View>
@@ -910,7 +918,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
           {backgroundColor: colors.surface, borderBottomColor: colors.border},
         ]}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           style={styles.backBtn}>
           <Icon name="close" size={24} color={colors.text} />
         </TouchableOpacity>

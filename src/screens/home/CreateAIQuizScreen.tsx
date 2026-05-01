@@ -1,6 +1,7 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +19,7 @@ import FloatingInput from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import AIAPI from '../../api/AIAPI';
 import SubTopicAPI from '../../api/SubTopicAPI';
+import QuizAPI from '../../api/QuizAPI';
 
 const OUTPUT_LANGUAGES = ['Vietnamese', 'English', 'Japanese'] as const;
 const MIN_SECONDS_PER_QUESTION = 30;
@@ -27,6 +29,196 @@ type RatioItem = {
   key: number;
   label: string;
   ratio: number;
+};
+
+type QuizMode = 'ai' | 'manual';
+
+type ManualQuestionType =
+  | 'multipleChoice'
+  | 'multipleSelect'
+  | 'trueFalse'
+  | 'shortAnswer'
+  | 'fillBlank'
+  | 'matching';
+
+type ManualAnswer = {
+  id: string;
+  content?: string;
+  isCorrect?: boolean;
+  leftKey?: string;
+  rightKey?: string;
+};
+
+type ManualQuestion = {
+  id: string;
+  questionType: ManualQuestionType;
+  content: string;
+  explanation: string;
+  duration: string;
+  answers: ManualAnswer[];
+};
+
+const MANUAL_QUESTION_TYPES: Array<{
+  key: ManualQuestionType;
+  label: string;
+  icon: string;
+}> = [
+  {key: 'multipleChoice', label: 'Một đáp án', icon: 'radiobox-marked'},
+  {key: 'multipleSelect', label: 'Nhiều đáp án', icon: 'checkbox-marked'},
+  {key: 'trueFalse', label: 'Đúng/Sai', icon: 'toggle-switch-outline'},
+  {key: 'shortAnswer', label: 'Trả lời ngắn', icon: 'text-short'},
+  {key: 'fillBlank', label: 'Điền khuyết', icon: 'format-text'},
+  {key: 'matching', label: 'Ghép cặp', icon: 'call-merge'},
+];
+
+const FRONTEND_TO_BACKEND_TYPE_NAMES: Record<ManualQuestionType, string[]> = {
+  multipleChoice: ['SINGLE_CHOICE'],
+  multipleSelect: ['MULTIPLE_CHOICE', 'MULTIPLE_SELECT', 'MULTIPLE_ANSWERS'],
+  trueFalse: ['TRUE_FALSE'],
+  shortAnswer: ['SHORT_ANSWER'],
+  fillBlank: ['FILL_IN_BLANK', 'FILL_BLANK'],
+  matching: ['MATCHING'],
+};
+
+const normalizeQuestionTypeName = (value: any) =>
+  String(value || '')
+    .trim()
+    .replace(/[\s-]+/g, '_')
+    .toUpperCase();
+
+const createLocalId = (prefix: string) =>
+  `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+const createManualAnswer = (
+  questionType: ManualQuestionType,
+  index = 0,
+): ManualAnswer => {
+  if (questionType === 'trueFalse') {
+    return {
+      id: createLocalId('a'),
+      content: index === 0 ? 'Đúng' : 'Sai',
+      isCorrect: index === 0,
+    };
+  }
+
+  if (questionType === 'matching') {
+    return {
+      id: createLocalId('p'),
+      leftKey: '',
+      rightKey: '',
+      isCorrect: true,
+    };
+  }
+
+  return {
+    id: createLocalId('a'),
+    content: '',
+    isCorrect:
+      questionType === 'multipleChoice'
+        ? index === 0
+        : questionType === 'multipleSelect'
+        ? index < 2
+        : true,
+  };
+};
+
+const createManualAnswers = (questionType: ManualQuestionType): ManualAnswer[] => {
+  if (questionType === 'shortAnswer' || questionType === 'fillBlank') {
+    return [createManualAnswer(questionType, 0)];
+  }
+
+  if (questionType === 'matching') {
+    return [createManualAnswer(questionType, 0), createManualAnswer(questionType, 1)];
+  }
+
+  if (questionType === 'trueFalse') {
+    return [createManualAnswer(questionType, 0), createManualAnswer(questionType, 1)];
+  }
+
+  return Array.from({length: 4}, (_, index) =>
+    createManualAnswer(questionType, index),
+  );
+};
+
+const createManualQuestion = (index = 0): ManualQuestion => ({
+  id: createLocalId(`q${index + 1}`),
+  questionType: 'multipleChoice',
+  content: '',
+  explanation: '',
+  duration: '60',
+  answers: createManualAnswers('multipleChoice'),
+});
+
+const getManualQuestionTypeLabel = (questionType: ManualQuestionType) =>
+  MANUAL_QUESTION_TYPES.find(item => item.key === questionType)?.label || 'Câu hỏi';
+
+const buildQuestionTypeLookup = (items: any[]) => {
+  const lookup = new Map<string, number>();
+
+  (Array.isArray(items) ? items : []).forEach(item => {
+    const id = Number(item?.questionTypeId ?? item?.id);
+    if (!Number.isFinite(id)) {
+      return;
+    }
+
+    [
+      item?.questionType,
+      item?.name,
+      item?.type,
+      item?.code,
+      item?.questionTypeName,
+    ].forEach(label => {
+      const normalized = normalizeQuestionTypeName(label);
+      if (normalized) {
+        lookup.set(normalized, id);
+      }
+    });
+  });
+
+  return lookup;
+};
+
+const resolveManualQuestionTypeId = (
+  questionType: ManualQuestionType,
+  lookup: Map<string, number>,
+) => {
+  const aliases = FRONTEND_TO_BACKEND_TYPE_NAMES[questionType] || [];
+  for (const alias of aliases) {
+    const id = lookup.get(normalizeQuestionTypeName(alias));
+    if (Number.isFinite(id)) {
+      return id as number;
+    }
+  }
+
+  return null;
+};
+
+const buildManualAnswerPayload = (question: ManualQuestion) => {
+  if (question.questionType === 'matching') {
+    return [
+      {
+        matchingPairs: question.answers.map(answer => ({
+          leftKey: String(answer.leftKey || '').trim(),
+          rightKey: String(answer.rightKey || '').trim(),
+        })),
+        isCorrect: true,
+      },
+    ];
+  }
+
+  if (question.questionType === 'shortAnswer' || question.questionType === 'fillBlank') {
+    return question.answers
+      .filter(answer => String(answer.content || '').trim())
+      .map(answer => ({
+        content: String(answer.content || '').trim(),
+        isCorrect: true,
+      }));
+  }
+
+  return question.answers.map(answer => ({
+    content: String(answer.content || '').trim(),
+    isCorrect: Boolean(answer.isCorrect),
+  }));
 };
 
 const toList = (payload: any): any[] => {
@@ -315,10 +507,13 @@ const getDominantDifficulty = (ratios: {easy: number; medium: number; hard: numb
 };
 
 export default function CreateAIQuizScreen({navigation, route}: any) {
-  const {workspaceId, materials = []} = route.params || {};
+  const {workspaceId, materials = [], initialMode = 'ai'} = route.params || {};
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
 
+  const [mode, setMode] = useState<QuizMode>(
+    initialMode === 'manual' ? 'manual' : 'ai',
+  );
   const [title, setTitle] = useState('AI Practice Quiz');
   const [prompt, setPrompt] = useState('');
   const [totalQuestion, setTotalQuestion] = useState('10');
@@ -326,8 +521,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
   const [easyDurationSeconds, setEasyDurationSeconds] = useState('60');
   const [mediumDurationSeconds, setMediumDurationSeconds] = useState('120');
   const [hardDurationSeconds, setHardDurationSeconds] = useState('180');
-  const [outputLanguage, setOutputLanguage] =
-    useState<(typeof OUTPUT_LANGUAGES)[number]>('Vietnamese');
+  const outputLanguage: (typeof OUTPUT_LANGUAGES)[number] = 'Vietnamese';
   const [timerMode, setTimerMode] = useState(true);
   const [questionTypeUnit, setQuestionTypeUnit] = useState(false);
   const [bloomUnit, setBloomUnit] = useState(false);
@@ -351,9 +545,21 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
   const [fieldError, setFieldError] = useState('');
   const [generating, setGenerating] = useState(false);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<number[]>([]);
+  const [manualTitle, setManualTitle] = useState('Quiz luyện tập thủ công');
+  const [manualDescription, setManualDescription] = useState('');
+  const [manualQuestionCount, setManualQuestionCount] = useState('5');
+  const [manualTimerMode, setManualTimerMode] = useState(true);
+  const [manualDurationMinutes, setManualDurationMinutes] = useState('15');
+  const [manualQuestions, setManualQuestions] = useState<ManualQuestion[]>(() =>
+    Array.from({length: 5}, (_, index) => createManualQuestion(index)),
+  );
+  const [activeManualQuestionId, setActiveManualQuestionId] = useState('');
+  const [manualError, setManualError] = useState('');
+  const [manualSubmitting, setManualSubmitting] = useState(false);
   const prevQuestionTypeUnitRef = useRef(questionTypeUnit);
   const prevBloomUnitRef = useRef(bloomUnit);
   const prevDifficultyUnitRef = useRef(questionUnit);
+  const manualSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const parsedTotalQuestion = useMemo(() => {
     return toInt(totalQuestion);
@@ -369,6 +575,17 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
   const qTypeTarget = questionTypeUnit ? parsedTotalQuestion : 100;
   const bloomTarget = bloomUnit ? parsedTotalQuestion : 100;
   const difficultyTarget = questionUnit ? parsedTotalQuestion : 100;
+  const manualQuestionTypeLookup = useMemo(
+    () => buildQuestionTypeLookup(questionTypes),
+    [questionTypes],
+  );
+  const manualActiveQuestionIndex = useMemo(() => {
+    const index = manualQuestions.findIndex(
+      question => question.id === activeManualQuestionId,
+    );
+    return index >= 0 ? index : 0;
+  }, [activeManualQuestionId, manualQuestions]);
+  const manualActiveQuestion = manualQuestions[manualActiveQuestionIndex];
 
   const normalizedMaterials = useMemo(() => {
     return (Array.isArray(materials) ? materials : []).map((material: any) => {
@@ -388,6 +605,16 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
       .map(item => item.normalizedId as number);
     return new Set(ids);
   }, [normalizedMaterials]);
+
+  useEffect(() => {
+    if (manualQuestions.length === 0) {
+      return;
+    }
+    if (!manualQuestions.some(question => question.id === activeManualQuestionId)) {
+      setActiveManualQuestionId(manualQuestions[0].id);
+    }
+  }, [activeManualQuestionId, manualQuestions]);
+
 
   useEffect(() => {
     setSelectedMaterialIds(prev => prev.filter(id => selectableMaterialIdSet.has(id)));
@@ -440,7 +667,7 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
       }
     };
 
-    void loadSubTopics();
+    loadSubTopics();
 
     return () => {
       cancelled = true;
@@ -680,6 +907,343 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
     return '';
   };
 
+  const handleModeChange = (nextMode: QuizMode) => {
+    setMode(nextMode);
+    setFieldError('');
+    setManualError('');
+  };
+
+  const updateManualQuestion = (
+    questionId: string,
+    patch: Partial<ManualQuestion>,
+  ) => {
+    setManualQuestions(prev =>
+      prev.map(question =>
+        question.id === questionId ? {...question, ...patch} : question,
+      ),
+    );
+    setManualError('');
+  };
+
+  const updateManualAnswer = (
+    questionId: string,
+    answerId: string,
+    patch: Partial<ManualAnswer>,
+  ) => {
+    setManualQuestions(prev =>
+      prev.map(question =>
+        question.id === questionId
+          ? {
+              ...question,
+              answers: question.answers.map(answer =>
+                answer.id === answerId ? {...answer, ...patch} : answer,
+              ),
+            }
+          : question,
+      ),
+    );
+    setManualError('');
+  };
+
+  const setSingleCorrectManualAnswer = (
+    questionId: string,
+    answerId: string,
+  ) => {
+    setManualQuestions(prev =>
+      prev.map(question =>
+        question.id === questionId
+          ? {
+              ...question,
+              answers: question.answers.map(answer => ({
+                ...answer,
+                isCorrect: answer.id === answerId,
+              })),
+            }
+          : question,
+      ),
+    );
+    setManualError('');
+  };
+
+  const handleManualTypeChange = (
+    question: ManualQuestion,
+    questionType: ManualQuestionType,
+  ) => {
+    updateManualQuestion(question.id, {
+      questionType,
+      answers: createManualAnswers(questionType),
+    });
+  };
+
+  const applyManualQuestionCount = (targetCount: number) => {
+    const safeTarget = Math.max(1, Math.min(100, Math.round(targetCount)));
+    setManualQuestionCount(String(safeTarget));
+    setManualQuestions(prev => {
+      if (prev.length === safeTarget) {
+        return prev;
+      }
+      if (prev.length > safeTarget) {
+        return prev.slice(0, safeTarget);
+      }
+      return [
+        ...prev,
+        ...Array.from({length: safeTarget - prev.length}, (_, index) =>
+          createManualQuestion(prev.length + index),
+        ),
+      ];
+    });
+    setManualError('');
+  };
+
+  const syncManualQuestionCount = useCallback((shouldConfirm = true) => {
+    const targetCount = toInt(manualQuestionCount, 1);
+    if (targetCount < manualQuestions.length && shouldConfirm) {
+      Alert.alert(
+        'Giảm số câu hỏi?',
+        `Sẽ xóa ${manualQuestions.length - targetCount} câu cuối.`,
+        [
+          {
+            text: 'Hủy',
+            style: 'cancel',
+            onPress: () => setManualQuestionCount(String(manualQuestions.length)),
+          },
+          {
+            text: 'Tiếp tục',
+            style: 'destructive',
+            onPress: () => applyManualQuestionCount(targetCount),
+          },
+        ],
+      );
+      return;
+    }
+
+    applyManualQuestionCount(targetCount);
+  }, [manualQuestionCount, manualQuestions.length]);
+
+  useEffect(() => {
+    if (manualSyncTimerRef.current) {
+      clearTimeout(manualSyncTimerRef.current);
+    }
+
+    if (!manualQuestionCount.trim()) {
+      return;
+    }
+
+    manualSyncTimerRef.current = setTimeout(() => {
+      const targetCount = toInt(manualQuestionCount, 1);
+      if (targetCount === manualQuestions.length) {
+        return;
+      }
+      syncManualQuestionCount(false);
+    }, 500);
+
+    return () => {
+      if (manualSyncTimerRef.current) {
+        clearTimeout(manualSyncTimerRef.current);
+      }
+    };
+  }, [manualQuestionCount, manualQuestions.length, syncManualQuestionCount]);
+
+  const addManualQuestion = () => {
+    const nextQuestion = createManualQuestion(manualQuestions.length);
+    setManualQuestions(prev => [...prev, nextQuestion]);
+    setManualQuestionCount(String(manualQuestions.length + 1));
+    setActiveManualQuestionId(nextQuestion.id);
+    setManualError('');
+  };
+
+  const removeManualQuestion = (questionId: string) => {
+    if (manualQuestions.length <= 1) {
+      showToast('Cần giữ lại ít nhất 1 câu hỏi', 'error');
+      return;
+    }
+
+    Alert.alert('Xóa câu hỏi?', 'Câu hỏi này sẽ bị xóa khỏi bản nháp.', [
+      {text: 'Hủy', style: 'cancel'},
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: () => {
+          setManualQuestions(prev => prev.filter(question => question.id !== questionId));
+          setManualQuestionCount(String(manualQuestions.length - 1));
+          setManualError('');
+        },
+      },
+    ]);
+  };
+
+  const addManualAnswer = (question: ManualQuestion) => {
+    const maxAnswers =
+      question.questionType === 'matching'
+        ? 8
+        : question.questionType === 'shortAnswer' || question.questionType === 'fillBlank'
+        ? 5
+        : 6;
+
+    if (question.answers.length >= maxAnswers) {
+      showToast('Đã đạt số lượng tối đa', 'error');
+      return;
+    }
+
+    updateManualQuestion(question.id, {
+      answers: [
+        ...question.answers,
+        createManualAnswer(question.questionType, question.answers.length),
+      ],
+    });
+  };
+
+  const removeManualAnswer = (question: ManualQuestion, answerId: string) => {
+    const minAnswers =
+      question.questionType === 'matching'
+        ? 2
+        : question.questionType === 'shortAnswer' || question.questionType === 'fillBlank'
+        ? 1
+        : 2;
+
+    if (question.answers.length <= minAnswers) {
+      showToast('Cần giữ lại số đáp án tối thiểu', 'error');
+      return;
+    }
+
+    let nextAnswers = question.answers.filter(answer => answer.id !== answerId);
+    if (
+      (question.questionType === 'multipleChoice' || question.questionType === 'trueFalse') &&
+      !nextAnswers.some(answer => answer.isCorrect)
+    ) {
+      nextAnswers = nextAnswers.map((answer, index) => ({
+        ...answer,
+        isCorrect: index === 0,
+      }));
+    }
+
+    updateManualQuestion(question.id, {answers: nextAnswers});
+  };
+
+  const validateManualQuiz = () => {
+    if (!workspaceId) {
+      return 'Thiếu workspaceId';
+    }
+    if (!manualTitle.trim()) {
+      return 'Vui lòng nhập tiêu đề quiz';
+    }
+    if (manualQuestions.length === 0) {
+      return 'Cần có ít nhất 1 câu hỏi';
+    }
+    if (manualTimerMode && toInt(manualDurationMinutes) < 1) {
+      return 'Tổng thời lượng phải ít nhất 1 phút';
+    }
+    if (manualQuestionTypeLookup.size === 0) {
+      return 'Chưa tải dữ liệu loại câu hỏi';
+    }
+
+    for (let index = 0; index < manualQuestions.length; index += 1) {
+      const question = manualQuestions[index];
+      const number = index + 1;
+      if (!question.content.trim()) {
+        return `Câu ${number}: vui lòng nhập nội dung`;
+      }
+
+      const questionTypeId = resolveManualQuestionTypeId(
+        question.questionType,
+        manualQuestionTypeLookup,
+      );
+      if (!questionTypeId) {
+        return `Câu ${number}: không tìm thấy questionTypeId cho ${getManualQuestionTypeLabel(question.questionType)}`;
+      }
+
+      if (!manualTimerMode && toInt(question.duration) < 1) {
+        return `Câu ${number}: thời lượng phải ít nhất 1 giây`;
+      }
+
+      const filledAnswers = question.answers.filter(answer =>
+        question.questionType === 'matching'
+          ? String(answer.leftKey || '').trim() && String(answer.rightKey || '').trim()
+          : String(answer.content || '').trim(),
+      );
+
+      if (question.questionType === 'multipleChoice' || question.questionType === 'multipleSelect') {
+        if (filledAnswers.length < 2) {
+          return `Câu ${number}: cần ít nhất 2 đáp án`;
+        }
+        if (question.answers.some(answer => !String(answer.content || '').trim())) {
+          return `Câu ${number}: không để trống đáp án`;
+        }
+        if (!question.answers.some(answer => answer.isCorrect)) {
+          return `Câu ${number}: cần chọn đáp án đúng`;
+        }
+      }
+
+      if (question.questionType === 'trueFalse') {
+        if (!question.answers.some(answer => answer.isCorrect)) {
+          return `Câu ${number}: cần chọn Đúng hoặc Sai`;
+        }
+      }
+
+      if (question.questionType === 'shortAnswer' || question.questionType === 'fillBlank') {
+        if (filledAnswers.length < 1) {
+          return `Câu ${number}: cần ít nhất 1 đáp án mẫu`;
+        }
+      }
+
+      if (question.questionType === 'matching') {
+        if (filledAnswers.length < 2 || filledAnswers.length !== question.answers.length) {
+          return `Câu ${number}: cần ít nhất 2 cặp ghép đầy đủ`;
+        }
+      }
+    }
+
+    return '';
+  };
+
+  const handleCreateManualQuiz = async () => {
+    const validationError = validateManualQuiz();
+    if (validationError) {
+      setManualError(validationError);
+      return;
+    }
+
+    setManualError('');
+    setManualSubmitting(true);
+    try {
+      const payload = {
+        workspaceId: Number(workspaceId),
+        title: manualTitle.trim(),
+        description: manualDescription.trim(),
+        timerMode: manualTimerMode,
+        duration: manualTimerMode ? toInt(manualDurationMinutes, 15) * 60 : null,
+        quizIntent: 'REVIEW',
+        overallDifficulty: null,
+        sections: [
+          {
+            content: 'Root',
+            orderIndex: 1,
+            questions: manualQuestions.map(question => ({
+              questionTypeId: resolveManualQuestionTypeId(
+                question.questionType,
+                manualQuestionTypeLookup,
+              ),
+              content: question.content.trim(),
+              explanation: question.explanation.trim(),
+              duration: manualTimerMode ? null : toInt(question.duration, 60),
+              answers: buildManualAnswerPayload(question),
+            })),
+          },
+        ],
+      };
+
+      await QuizAPI.createManualQuizBulk(payload);
+      showToast('Đã lưu quiz thủ công ở bản nháp', 'success');
+      navigation.goBack();
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message || error?.message || 'Không thể lưu quiz thủ công';
+      showToast(message, 'error');
+    } finally {
+      setManualSubmitting(false);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!workspaceId) {
       showToast('Thiếu workspaceId', 'error');
@@ -838,13 +1402,456 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
     }
   };
 
+  const renderManualAnswers = (question: ManualQuestion) => {
+    const isChoice =
+      question.questionType === 'multipleChoice' ||
+      question.questionType === 'multipleSelect' ||
+      question.questionType === 'trueFalse';
+    const canAddAnswer =
+      question.questionType !== 'trueFalse' &&
+      question.answers.length <
+        (question.questionType === 'matching'
+          ? 8
+          : question.questionType === 'shortAnswer' ||
+            question.questionType === 'fillBlank'
+          ? 5
+          : 6);
+
+    return (
+      <View style={styles.manualAnswerBlock}>
+        <View style={styles.manualAnswerHeader}>
+          <Text style={[styles.sectionTitleSmall, {color: colors.heading}]}>
+            Đáp án
+          </Text>
+          {canAddAnswer && (
+            <TouchableOpacity
+              onPress={() => addManualAnswer(question)}
+              style={[
+                styles.smallIconButton,
+                {borderColor: colors.border, backgroundColor: colors.surface},
+              ]}>
+              <Icon name="plus" size={18} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {question.questionType === 'matching' ? (
+          <View style={styles.answerList}>
+            {question.answers.map((answer, index) => (
+              <View
+                key={answer.id}
+                style={[
+                  styles.matchingPairRow,
+                  {borderColor: colors.border, backgroundColor: colors.surface},
+                ]}>
+                <View style={styles.matchingPairInputs}>
+                  <TextInput
+                    value={answer.leftKey || ''}
+                    onChangeText={value =>
+                      updateManualAnswer(question.id, answer.id, {leftKey: value})
+                    }
+                    placeholder={`Vế trái ${index + 1}`}
+                    placeholderTextColor={colors.textTertiary}
+                    style={[
+                      styles.manualInput,
+                      {
+                        borderColor: colors.border,
+                        color: colors.text,
+                        backgroundColor: colors.background,
+                      },
+                    ]}
+                  />
+                  <TextInput
+                    value={answer.rightKey || ''}
+                    onChangeText={value =>
+                      updateManualAnswer(question.id, answer.id, {rightKey: value})
+                    }
+                    placeholder={`Vế phải ${index + 1}`}
+                    placeholderTextColor={colors.textTertiary}
+                    style={[
+                      styles.manualInput,
+                      {
+                        borderColor: colors.border,
+                        color: colors.text,
+                        backgroundColor: colors.background,
+                      },
+                    ]}
+                  />
+                </View>
+                <TouchableOpacity
+                  onPress={() => removeManualAnswer(question, answer.id)}
+                  style={styles.answerRemoveBtn}>
+                  <Icon name="trash-can-outline" size={18} color={Colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.answerList}>
+            {question.answers.map((answer, index) => {
+              const selected = Boolean(answer.isCorrect);
+              const checkIcon =
+                question.questionType === 'multipleSelect'
+                  ? selected
+                    ? 'checkbox-marked'
+                    : 'checkbox-blank-outline'
+                  : selected
+                  ? 'radiobox-marked'
+                  : 'radiobox-blank';
+
+              return (
+                <View
+                  key={answer.id}
+                  style={[
+                    styles.answerRow,
+                    {borderColor: colors.border, backgroundColor: colors.surface},
+                  ]}>
+                  {isChoice && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (question.questionType === 'multipleSelect') {
+                          updateManualAnswer(question.id, answer.id, {
+                            isCorrect: !answer.isCorrect,
+                          });
+                        } else {
+                          setSingleCorrectManualAnswer(question.id, answer.id);
+                        }
+                      }}
+                      style={styles.answerCheckBtn}>
+                      <Icon
+                        name={checkIcon}
+                        size={22}
+                        color={selected ? Colors.primary : colors.textTertiary}
+                      />
+                    </TouchableOpacity>
+                  )}
+                  <TextInput
+                    value={answer.content || ''}
+                    onChangeText={value =>
+                      updateManualAnswer(question.id, answer.id, {content: value})
+                    }
+                    editable={question.questionType !== 'trueFalse'}
+                    placeholder={
+                      question.questionType === 'shortAnswer' ||
+                      question.questionType === 'fillBlank'
+                        ? `Đáp án mẫu ${index + 1}`
+                        : `Lựa chọn ${index + 1}`
+                    }
+                    placeholderTextColor={colors.textTertiary}
+                    style={[
+                      styles.answerInput,
+                      {
+                        color: colors.text,
+                      },
+                    ]}
+                  />
+                  {question.questionType !== 'trueFalse' && (
+                    <TouchableOpacity
+                      onPress={() => removeManualAnswer(question, answer.id)}
+                      style={styles.answerRemoveBtn}>
+                      <Icon name="trash-can-outline" size={18} color={Colors.error} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderManualQuizForm = () => (
+    <>
+      <FloatingInput
+        label="Tiêu đề quiz"
+        value={manualTitle}
+        onChangeText={setManualTitle}
+      />
+
+      <View style={styles.spaceMd} />
+      <Text style={[styles.label, {color: colors.textSecondary}]}>Mô tả</Text>
+      <TextInput
+        value={manualDescription}
+        onChangeText={setManualDescription}
+        placeholder="Ghi chú ngắn cho quiz"
+        placeholderTextColor={colors.textTertiary}
+        multiline
+        style={[
+          styles.manualTextArea,
+          {
+            borderColor: colors.border,
+            color: colors.text,
+            backgroundColor: colors.surface,
+          },
+        ]}
+      />
+
+      <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+        Cấu hình thủ công
+      </Text>
+      <FloatingInput
+        label="Số lượng câu hỏi"
+        value={manualQuestionCount}
+        onChangeText={value => setManualQuestionCount(normalizeIntegerInput(value))}
+        keyboardType="number-pad"
+      />
+
+      <Text style={[styles.sectionTitle, {color: colors.heading}]}>Thời gian</Text>
+      <View style={styles.segmentRow}>
+        <TouchableOpacity
+          onPress={() => setManualTimerMode(true)}
+          style={[
+            styles.segmentBtn,
+            {
+              borderColor: manualTimerMode ? Colors.primary : colors.border,
+              backgroundColor: manualTimerMode
+                ? isDark
+                  ? '#1E3A8A40'
+                  : '#DBEAFE'
+                : colors.surface,
+            },
+          ]}>
+          <Text
+            style={[
+              styles.segmentText,
+              {color: manualTimerMode ? Colors.primary : colors.textSecondary},
+            ]}>
+            Tính giờ tổng
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setManualTimerMode(false)}
+          style={[
+            styles.segmentBtn,
+            {
+              borderColor: !manualTimerMode ? Colors.primary : colors.border,
+              backgroundColor: !manualTimerMode
+                ? isDark
+                  ? '#1E3A8A40'
+                  : '#DBEAFE'
+                : colors.surface,
+            },
+          ]}>
+          <Text
+            style={[
+              styles.segmentText,
+              {color: !manualTimerMode ? Colors.primary : colors.textSecondary},
+            ]}>
+            Theo từng câu
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {manualTimerMode && (
+        <>
+          <View style={styles.spaceMd} />
+          <FloatingInput
+            label="Tổng thời lượng (phút)"
+            value={manualDurationMinutes}
+            onChangeText={value =>
+              setManualDurationMinutes(normalizeIntegerInput(value))
+            }
+            keyboardType="number-pad"
+          />
+        </>
+      )}
+
+      <View style={styles.manualActionRow}>
+        <Button
+          title="Thêm câu"
+          onPress={addManualQuestion}
+          variant="secondary"
+          size="md"
+          fullWidth={false}
+          style={styles.manualActionButton}
+          icon="plus"
+        />
+      </View>
+
+      <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+        Danh sách câu hỏi
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.questionPager}>
+        {manualQuestions.map((question, index) => {
+          const active = question.id === manualActiveQuestion?.id;
+          return (
+            <TouchableOpacity
+              key={question.id}
+              onPress={() => setActiveManualQuestionId(question.id)}
+              style={[
+                styles.questionPill,
+                {
+                  borderColor: active ? Colors.primary : colors.border,
+                  backgroundColor: active
+                    ? isDark
+                      ? '#1E3A8A40'
+                      : '#DBEAFE'
+                    : colors.surface,
+                },
+              ]}>
+              <Text
+                style={[
+                  styles.questionPillText,
+                  {color: active ? Colors.primary : colors.textSecondary},
+                ]}>
+                #{index + 1}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {manualActiveQuestion && (
+        <View
+          style={[
+            styles.manualQuestionCard,
+            {borderColor: colors.border, backgroundColor: colors.surface},
+          ]}>
+          <View style={styles.manualQuestionHeader}>
+            <View style={styles.manualQuestionTitleWrap}>
+              <Text style={[styles.manualQuestionTitle, {color: colors.heading}]}>
+                Câu {manualActiveQuestionIndex + 1}
+              </Text>
+              <Text style={[styles.manualQuestionMeta, {color: colors.textSecondary}]}>
+                {getManualQuestionTypeLabel(manualActiveQuestion.questionType)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => removeManualQuestion(manualActiveQuestion.id)}
+              style={[
+                styles.smallIconButton,
+                {borderColor: colors.border, backgroundColor: colors.background},
+              ]}>
+              <Icon name="trash-can-outline" size={18} color={Colors.error} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.label, {color: colors.textSecondary}]}>
+            Loại câu hỏi
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.typeChipRow}>
+            {MANUAL_QUESTION_TYPES.map(item => {
+              const active = manualActiveQuestion.questionType === item.key;
+              return (
+                <TouchableOpacity
+                  key={item.key}
+                  onPress={() => handleManualTypeChange(manualActiveQuestion, item.key)}
+                  style={[
+                    styles.typeChip,
+                    {
+                      borderColor: active ? Colors.primary : colors.border,
+                      backgroundColor: active
+                        ? isDark
+                          ? '#1E3A8A40'
+                          : '#DBEAFE'
+                        : colors.background,
+                    },
+                  ]}>
+                  <Icon
+                    name={item.icon}
+                    size={16}
+                    color={active ? Colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      {color: active ? Colors.primary : colors.textSecondary},
+                    ]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <Text style={[styles.label, {color: colors.textSecondary}]}>
+            Nội dung câu hỏi
+          </Text>
+          <TextInput
+            value={manualActiveQuestion.content}
+            onChangeText={value =>
+              updateManualQuestion(manualActiveQuestion.id, {content: value})
+            }
+            placeholder="Nhập nội dung câu hỏi"
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            style={[
+              styles.manualTextArea,
+              {
+                borderColor: colors.border,
+                color: colors.text,
+                backgroundColor: colors.background,
+              },
+            ]}
+          />
+
+          {!manualTimerMode && (
+            <>
+              <View style={styles.spaceMd} />
+              <FloatingInput
+                label="Thời lượng câu này (giây)"
+                value={manualActiveQuestion.duration}
+                onChangeText={value =>
+                  updateManualQuestion(manualActiveQuestion.id, {
+                    duration: normalizeIntegerInput(value),
+                  })
+                }
+                keyboardType="number-pad"
+              />
+            </>
+          )}
+
+          {renderManualAnswers(manualActiveQuestion)}
+
+          <Text style={[styles.label, {color: colors.textSecondary}]}>
+            Giải thích
+          </Text>
+          <TextInput
+            value={manualActiveQuestion.explanation}
+            onChangeText={value =>
+              updateManualQuestion(manualActiveQuestion.id, {explanation: value})
+            }
+            placeholder="Giải thích sau khi làm bài"
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            style={[
+              styles.manualTextArea,
+              {
+                borderColor: colors.border,
+                color: colors.text,
+                backgroundColor: colors.background,
+              },
+            ]}
+          />
+        </View>
+      )}
+
+      {!!manualError && <Text style={styles.errorText}>{manualError}</Text>}
+
+      <View style={styles.spaceXl} />
+      <Button
+        title={manualSubmitting ? 'Đang lưu...' : 'Lưu bản nháp'}
+        onPress={handleCreateManualQuiz}
+        loading={manualSubmitting}
+        icon="content-save-outline"
+      />
+    </>
+  );
+
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
       <View style={[styles.header, {borderBottomColor: colors.border, backgroundColor: colors.surface}]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, {color: colors.heading}]}>Tạo quiz AI</Text>
+        <Text style={[styles.headerTitle, {color: colors.heading}]}>Tạo quiz</Text>
         <View style={styles.backBtn} />
       </View>
 
@@ -852,6 +1859,65 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}>
+        <View style={styles.modeSegmentRow}>
+          <TouchableOpacity
+            onPress={() => handleModeChange('ai')}
+            style={[
+              styles.modeSegmentBtn,
+              {
+                borderColor: mode === 'ai' ? Colors.primary : colors.border,
+                backgroundColor:
+                  mode === 'ai'
+                    ? isDark
+                      ? '#1E3A8A40'
+                      : '#DBEAFE'
+                    : colors.surface,
+              },
+            ]}>
+            <Icon
+              name="magic-staff"
+              size={18}
+              color={mode === 'ai' ? Colors.primary : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.modeSegmentText,
+                {color: mode === 'ai' ? Colors.primary : colors.textSecondary},
+              ]}>
+              QuizMate AI
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => handleModeChange('manual')}
+            style={[
+              styles.modeSegmentBtn,
+              {
+                borderColor: mode === 'manual' ? Colors.primary : colors.border,
+                backgroundColor:
+                  mode === 'manual'
+                    ? isDark
+                      ? '#1E3A8A40'
+                      : '#DBEAFE'
+                    : colors.surface,
+              },
+            ]}>
+            <Icon
+              name="pencil-outline"
+              size={18}
+              color={mode === 'manual' ? Colors.primary : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.modeSegmentText,
+                {color: mode === 'manual' ? Colors.primary : colors.textSecondary},
+              ]}>
+              Thủ công
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {mode === 'ai' ? (
+          <>
         <FloatingInput label="Tiêu đề quiz" value={title} onChangeText={setTitle} />
 
         <View style={styles.spaceMd} />
@@ -869,39 +1935,6 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           onChangeText={setPrompt}
           multiline
         />
-
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Cấu hình chung</Text>
-
-        <Text style={[styles.label, {color: colors.textSecondary}]}>Ngôn ngữ đầu ra</Text>
-        <View style={styles.segmentRow}>
-          {OUTPUT_LANGUAGES.map(language => {
-            const active = outputLanguage === language;
-            return (
-              <TouchableOpacity
-                key={language}
-                onPress={() => setOutputLanguage(language)}
-                style={[
-                  styles.segmentBtn,
-                  {
-                    borderColor: active ? Colors.primary : colors.border,
-                    backgroundColor: active
-                      ? isDark
-                        ? '#1E3A8A40'
-                        : '#DBEAFE'
-                      : colors.surface,
-                  },
-                ]}>
-                <Text
-                  style={[
-                    styles.segmentText,
-                    {color: active ? Colors.primary : colors.textSecondary},
-                  ]}>
-                  {language}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
 
         <Text style={[styles.sectionTitle, {color: colors.heading}]}>Thời gian</Text>
         <View style={styles.segmentRow}>
@@ -1393,9 +2426,13 @@ export default function CreateAIQuizScreen({navigation, route}: any) {
           loading={generating}
           icon="magic-staff"
         />
+          </>
+        ) : (
+          renderManualQuizForm()
+        )}
       </ScrollView>
 
-      {generating && (
+      {(generating || manualSubmitting) && (
         <View style={styles.blockingOverlay}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -1418,6 +2455,26 @@ const styles = StyleSheet.create({
   backBtn: {width: 32, alignItems: 'center', justifyContent: 'center'},
   content: {flex: 1},
   contentContainer: {padding: Spacing.lg, paddingBottom: Spacing['3xl']},
+  modeSegmentRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  modeSegmentBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+  },
+  modeSegmentText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
   sectionTitle: {
     fontSize: 15,
     fontWeight: '600',
@@ -1479,6 +2536,151 @@ const styles = StyleSheet.create({
   configLabel: {
     fontSize: 13,
     flex: 1,
+  },
+  manualActionRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  manualActionButton: {
+    flex: 1,
+  },
+  manualTextArea: {
+    minHeight: 96,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: 14,
+    textAlignVertical: 'top',
+  },
+  questionPager: {
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  questionPill: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    minWidth: 48,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  questionPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  manualQuestionCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  manualQuestionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  manualQuestionTitleWrap: {
+    flex: 1,
+  },
+  manualQuestionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  manualQuestionMeta: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  smallIconButton: {
+    width: 36,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typeChipRow: {
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  typeChip: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  typeChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sectionTitleSmall: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  manualAnswerBlock: {
+    marginTop: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  manualAnswerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  answerList: {
+    gap: Spacing.sm,
+  },
+  answerRow: {
+    minHeight: 50,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  answerCheckBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  answerInput: {
+    flex: 1,
+    minHeight: 44,
+    fontSize: 14,
+    paddingVertical: Spacing.xs,
+  },
+  answerRemoveBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matchingPairRow: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  matchingPairInputs: {
+    flex: 1,
+    gap: Spacing.sm,
+  },
+  manualInput: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    fontSize: 14,
   },
   ratioInput: {
     minWidth: 56,

@@ -7,6 +7,7 @@ import PracticeQuizScreen from '../screens/quiz/PracticeQuizScreen';
 import ExamQuizScreen from '../screens/quiz/ExamQuizScreen';
 import QuizResultScreen from '../screens/quiz/QuizResultScreen';
 import VoicePracticeQuizScreen from '../screens/quiz/VoicePracticeQuizScreen';
+import QuizDetailScreen from '../screens/quiz/QuizDetailScreen';
 import WorkspaceProfileWizardScreen from '../screens/home/WorkspaceProfileWizardScreen';
 import SubscriptionScreen from '../screens/profile/SubscriptionScreen';
 import CreditPackagesScreen from '../screens/profile/CreditPackagesScreen';
@@ -27,6 +28,22 @@ export type QuizBackContext =
       phaseId?: number;
       quizIntent?: string;
     };
+
+export type QuizDetailRouteParams = {
+  quizId: number;
+  title?: string;
+  quiz?: any;
+  backContext?: QuizBackContext;
+  contextType?: 'WORKSPACE' | 'GROUP' | 'ROADMAP' | 'PHASE' | 'KNOWLEDGE';
+  contextId?: number;
+  workspaceId?: number;
+  groupId?: number;
+  roadmapId?: number;
+  phaseId?: number;
+  quizIntent?: string;
+  roadmapTitle?: string;
+  phaseTitle?: string;
+};
 
 export type QuizStackParamList = {
   GroupList: undefined;
@@ -54,7 +71,13 @@ export type QuizStackParamList = {
     title?: string;
     contextType?: 'WORKSPACE' | 'GROUP';
   };
-  PracticeQuiz: {quizId: number; title?: string; backContext?: QuizBackContext};
+  QuizDetail: QuizDetailRouteParams;
+  PracticeQuiz: {
+    quizId: number;
+    title?: string;
+    backContext?: QuizBackContext;
+    quizDetailParams?: QuizDetailRouteParams;
+  };
   VoicePracticeQuiz: {
     quizId: number;
     title?: string;
@@ -62,7 +85,12 @@ export type QuizStackParamList = {
     autoStart?: boolean;
     voiceConfig?: VoicePracticeConfig;
   };
-  ExamQuiz: {quizId: number; title?: string; backContext?: QuizBackContext};
+  ExamQuiz: {
+    quizId: number;
+    title?: string;
+    backContext?: QuizBackContext;
+    quizDetailParams?: QuizDetailRouteParams;
+  };
   QuizResult: {attemptId: number; backContext?: QuizBackContext};
 };
 
@@ -82,6 +110,7 @@ export default function QuizStack() {
         name="WorkspaceProfileWizard"
         component={WorkspaceProfileWizardScreen}
       />
+      <Stack.Screen name="QuizDetail" component={QuizDetailScreen} />
       <Stack.Screen name="PracticeQuiz" component={PracticeQuizScreen} />
       <Stack.Screen name="VoicePracticeQuiz" component={VoicePracticeQuizScreen} />
       <Stack.Screen name="ExamQuiz" component={ExamQuizScreen} />

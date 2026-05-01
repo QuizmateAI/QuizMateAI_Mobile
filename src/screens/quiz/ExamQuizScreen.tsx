@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useCallback, useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -24,7 +24,7 @@ import {
 import {MatchingPair} from '../../components/features/MatchingQuestion';
 
 export default function ExamQuizScreen({navigation, route}: any) {
-  const {quizId, title, backContext} = route.params;
+  const {quizId, title, backContext, quizDetailParams} = route.params;
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [quiz, setQuiz] = useState<any>(null);
@@ -46,6 +46,14 @@ export default function ExamQuizScreen({navigation, route}: any) {
   const currentIndexRef = useRef(0);
   const questionsRef = useRef<any[]>([]);
   const isPerQuestionModeRef = useRef(false);
+
+  const handleBack = useCallback(() => {
+    if (quizDetailParams?.quizId) {
+      navigation.navigate('QuizDetail', quizDetailParams);
+      return;
+    }
+    navigation.goBack();
+  }, [navigation, quizDetailParams]);
 
   const isTotalTimerMode = (value: any) => {
     if (
@@ -614,7 +622,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
             <Button
               title="Quay lại"
               variant="ghost"
-              onPress={() => navigation.goBack()}
+              onPress={handleBack}
             />
           </View>
         </View>
@@ -636,7 +644,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
           {backgroundColor: colors.surface, borderBottomColor: colors.border},
         ]}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           style={styles.backBtn}>
           <Icon name="close" size={24} color={colors.text} />
         </TouchableOpacity>

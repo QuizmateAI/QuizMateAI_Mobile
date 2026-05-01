@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -22,88 +22,251 @@ export default function QuizListScreen({navigation}: any) {
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [hasResolvedInitialFetch, setHasResolvedInitialFetch] = useState(false);
 
-  const fetchQuizzes = useCallback(async () => {
+  const difficultyLabels: Record<string, string> = useMemo(
+    () => ({
+      EASY: 'Dễ',
+      MEDIUM: 'Trung bình',
+      HARD: 'Khó',
+      CUSTOM: 'Tùy chỉnh',
+    }),
+    [],
+  );
+
+  const fetchQuizzes = useCallback(async ({silent = false} = {}) => {
     try {
+      if (!silent && !hasResolvedInitialFetch) {
+        setLoading(true);
+      }
       const res = await QuizAPI.getByUser();
       setQuizzes(res.data || []);
+      setFetchError(null);
     } catch {
-      setQuizzes([]);
-      showToast('Không thể tải danh sách quiz', 'error');
+      setFetchError('Không thể tải danh sách quiz');
+      if (!quizzes.length) {
+        showToast('Không thể tải danh sách quiz', 'error');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setHasResolvedInitialFetch(true);
     }
-  }, [showToast]);
+  }, [hasResolvedInitialFetch, quizzes.length, showToast]);
 
   useEffect(() => {
     fetchQuizzes();
   }, [fetchQuizzes]);
 
-  if (loading) {
-    return <LoadingSpinner />;
-  }
+  const statusMeta = useMemo(() => {
+    return {
+      ACTIVE: {
+        label: 'Đang mở',
+        bg: isDark ? 'rgba(16,185,129,0.2)' : Colors.successLight,
+        text: isDark ? Colors.success : Colors.success,
+      },
+      DRAFT: {
+        label: 'Nháp',
+        bg: isDark ? 'rgba(245,158,11,0.2)' : Colors.warningLight,
+        text: isDark ? Colors.warning : Colors.warning,
+      },
+      PROCESSING: {
+        label: 'Đang tạo',
+        bg: isDark ? 'rgba(59,130,246,0.2)' : Colors.primaryLight,
+        text: isDark ? Colors.info : Colors.primary,
+      },
+      ERROR: {
+        label: 'Lỗi',
+        bg: isDark ? 'rgba(239,68,68,0.2)' : Colors.errorLight,
+        text: isDark ? Colors.error : Colors.error,
+      },
+      COMPLETED: {
+        label: 'Hoàn thành',
+        bg: isDark ? 'rgba(59,130,246,0.2)' : Colors.primaryLight,
+        text: isDark ? Colors.info : Colors.primary,
+      },
+      INACTIVE: {
+        label: 'Tạm ngưng',
+        bg: isDark ? 'rgba(148,163,184,0.2)' : '#E2E8F0',
+        text: colors.textSecondary,
+      },
+    };
+  }, [isDark]);
 
-  return (
-    <SafeAreaView
-      style={[styles.container, {backgroundColor: colors.background}]}
-      edges={['top']}>
-      <View
-        style={[
-          styles.header,
-          {backgroundColor: colors.surface, borderBottomColor: colors.border},
-        ]}>
-        <Text style={[styles.headerTitle, {color: colors.heading}]}>
-          Quiz của tôi
-        </Text>
-      </View>
+  const getDurationLabel = useCallback((item: any) => {
+    const minutes = Number(
+      item?.timeLimitMinutes ||
+        item?.durationMinutes ||
+        item?.durationInMinute ||
+        0,
+    );
+    if (Number.isFinite(minutes) && minutes > 0) {
+      return `${Math.round(minutes)} phút`;
+    }
+    const seconds = Number(item?.timeLimitSeconds || item?.durationSeconds || 0);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return `${Math.max(1, Math.round(seconds / 60))} phút`;
+    }
+    return 'Không giới hạn';
+  }, []);
 
-      <FlatList
-        data={quizzes}
-        keyExtractor={item => String(item.id || item.quizId)}
-        renderItem={({item}) => (
-          <TouchableOpacity
-            onPress={() => {
-              const quizId = item.id || item.quizId;
-              if (!quizId) {
-                showToast('Thiếu Quiz ID', 'error');
-                return;
-              }
-              navigation.navigate('PracticeQuiz', {
-                quizId,
-                title: item.name || item.title,
-              });
-            }}
-            activeOpacity={0.7}
-            style={[
-              styles.quizCard,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                shadowColor: isDark ? colors.shadow : '#0F172A',
-              },
-            ]}>
-            <View style={styles.quizCardHeader}>
-              <View
-                style={[
-                  styles.quizIcon,
-                  {backgroundColor: isDark ? 'rgba(37,99,235,0.15)' : '#EFF6FF'},
-                ]}>
-                <Icon
-                  name="head-question-outline"
-                  size={20}
-                  color={Colors.primary}
-                />
-              </View>
-              <View style={styles.quizCardInfo}>
-                <Text
-                  style={[styles.quizName, {color: colors.heading}]}
-                  numberOfLines={2}>
-                  {item.name}
-                </Text>
-                <Text style={[styles.quizMeta, {color: colors.textSecondary}]}>
-                  {item.questionCount || 0} câu hỏi
-                </Text>
+                {(() => {
+                  const normalizedStatus = String(item.status || '').toUpperCase();
+                  const statusStyle = statusMeta[normalizedStatus];
+                  const difficulty =
+                    difficultyLabels[String(item.overallDifficulty || '').toUpperCase()];
+                  return (
+                    <>
+                      <View style={styles.quizTitleRow}>
+                        <Text
+                          style={[styles.quizName, {color: colors.heading}]}
+                          numberOfLines={2}
+                        >
+                          {item.name}
+                        </Text>
+                        <Icon
+                          name="chevron-right"
+                          size={20}
+                          color={colors.textTertiary}
+                        />
+                      </View>
+                      <View style={styles.quizInfoRow}>
+                        <View style={styles.infoTag}>
+                          <Text style={[styles.infoTagLabel, {color: colors.textTertiary}]}>CÂU HỎI</Text>
+                          <Text style={[styles.infoTagValue, {color: colors.heading}]}> {item.questionCount || 0}</Text>
+                        </View>
+                        {normalizedStatus ? (
+                          <View
+                            style={[
+                              styles.statusPill,
+                              {
+                                backgroundColor:
+                                  statusStyle?.bg ||
+                                  (isDark
+                                    ? 'rgba(148,163,184,0.2)'
+                                    : '#E2E8F0'),
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusText,
+                                {color: statusStyle?.text || colors.textSecondary},
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {statusStyle?.label || normalizedStatus}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <View style={styles.quizMetaLine}>
+                        {difficulty ? (
+                          <View style={styles.metaItem}>
+                            <Icon name="chart-bar" size={12} color={Colors.warning} />
+                            <Text style={[styles.metaText, {color: Colors.warning}]}>
+                              {difficulty}
+                            </Text>
+                          </View>
+                        ) : null}
+                        <View style={styles.metaItem}>
+                          <Icon
+                            name={item.communityShared ? 'lock-open-outline' : 'lock-outline'}
+                            size={12}
+                            color={colors.textSecondary}
+                          />
+                          <Text style={[styles.metaText, {color: colors.textSecondary}]}>
+                            {item.communityShared ? 'Công khai' : 'Riêng tư'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.quizMetaLine}>
+                        <View style={styles.metaItem}>
+                          <Icon name="clock-outline" size={12} color={colors.textSecondary} />
+                          <Text style={[styles.metaText, {color: colors.textSecondary}]}>
+                            {getDurationLabel(item)}
+                          </Text>
+                        </View>
+                        {item.updatedAt || item.createdAt ? (
+                          <View style={styles.metaItem}>
+                            <Icon name="calendar-month-outline" size={12} color={colors.textSecondary} />
+                            <Text style={[styles.metaText, {color: colors.textSecondary}]}>
+                              {formatShortDate(item.updatedAt || item.createdAt)}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </>
+                  );
+                })()}
+                              {difficulty}
+                            </Text>
+                          </View>
+                        ) : null}
+                        <View
+                          style={[
+                            styles.metaPill,
+                            {
+                              backgroundColor: isDark
+                                ? 'rgba(148,163,184,0.18)'
+                                : '#E2E8F0',
+                            },
+                          ]}
+                        >
+                          <Icon name="clock-outline" size={12} color={colors.textSecondary} />
+                          <Text
+                            style={[styles.metaPillText, {color: colors.textSecondary}]}
+                            numberOfLines={1}>
+                            {getDurationLabel(item)}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.metaPill,
+                            {
+                              backgroundColor: isDark
+                                ? 'rgba(16,185,129,0.18)'
+                                : '#D1FAE5',
+                            },
+                          ]}
+                        >
+                          <Icon
+                            name={item.communityShared ? 'earth' : 'lock-outline'}
+                            size={12}
+                            color={item.communityShared ? '#10B981' : colors.textSecondary}
+                          />
+                          <Text
+                            style={[
+                              styles.metaPillText,
+                              {
+                                color: item.communityShared
+                                  ? '#10B981'
+                                  : colors.textSecondary,
+                              },
+                            ]}
+                            numberOfLines={1}>
+                            {item.communityShared ? 'Công khai' : 'Riêng tư'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.quizMetaRow}>
+                        <Text
+                          style={[styles.quizMeta, {color: colors.textSecondary}]}
+                        >
+                          {item.questionCount || 0} câu hỏi
+                        </Text>
+                        {item.updatedAt || item.createdAt ? (
+                          <Text
+                            style={[styles.quizMeta, {color: colors.textSecondary}]}
+                          >
+                            {formatShortDate(item.updatedAt || item.createdAt)}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </>
+                  );
+                })()}
               </View>
             </View>
             <View style={styles.quizCardFooter}>
@@ -118,6 +281,7 @@ export default function QuizListScreen({navigation}: any) {
                     navigation.navigate('PracticeQuiz', {
                       quizId,
                       title: item.name || item.title,
+                      backContext: {type: 'quiz-list'},
                     });
                   }}
                   style={[
@@ -139,6 +303,7 @@ export default function QuizListScreen({navigation}: any) {
                     navigation.navigate('ExamQuiz', {
                       quizId,
                       title: item.name || item.title,
+                      backContext: {type: 'quiz-list'},
                     });
                   }}
                   style={[
@@ -156,6 +321,21 @@ export default function QuizListScreen({navigation}: any) {
         )}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          fetchError && quizzes.length > 0 ? (
+            <View
+              style={[
+                styles.inlineAlert,
+                {backgroundColor: isDark ? 'rgba(245,158,11,0.15)' : '#FFFBEB'},
+              ]}>
+            >
+              <Icon name="alert-circle-outline" size={16} color={Colors.warning} />
+              <Text style={[styles.inlineAlertText, {color: colors.textSecondary}]}>
+                Không thể làm mới danh sách quiz. Dữ liệu cũ vẫn được giữ.
+              </Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Icon
@@ -164,10 +344,12 @@ export default function QuizListScreen({navigation}: any) {
               color={colors.textTertiary}
             />
             <Text style={[styles.emptyTitle, {color: colors.textSecondary}]}>
-              Chưa có quiz nào
+              {fetchError ? 'Không thể tải danh sách quiz' : 'Chưa có quiz nào'}
             </Text>
             <Text style={[styles.emptySubtitle, {color: colors.textTertiary}]}>
-              Hãy tạo quiz từ các workspace của bạn
+              {fetchError
+                ? 'Vui lòng thử lại sau ít phút.'
+                : 'Hãy tạo quiz từ các workspace của bạn'}
             </Text>
           </View>
         }
@@ -176,7 +358,7 @@ export default function QuizListScreen({navigation}: any) {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              fetchQuizzes();
+              fetchQuizzes({silent: true});
             }}
             tintColor={Colors.primary}
           />
@@ -223,8 +405,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   quizCardInfo: {flex: 1},
-  quizName: {fontSize: 15, fontWeight: '600'},
-  quizMeta: {fontSize: 12, marginTop: 3},
+  quizTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  quizName: {flex: 1, fontSize: 15, fontWeight: '600'},
+  quizInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  infoTag: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
+  },
+  infoTagLabel: {fontSize: 10, fontWeight: '700', letterSpacing: 0.4},
+  infoTagValue: {fontSize: 12, fontWeight: '700'},
+  quizMetaLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaText: {fontSize: 12, fontWeight: '600'},
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  statusText: {fontSize: 11, fontWeight: '600'},
   quizCardFooter: {},
   quizActions: {
     flexDirection: 'row',
@@ -248,4 +466,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {fontSize: 16, fontWeight: '600', marginTop: 12},
   emptySubtitle: {fontSize: 13},
+  inlineAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.md,
+  },
+  inlineAlertText: {fontSize: 12, flex: 1},
 });

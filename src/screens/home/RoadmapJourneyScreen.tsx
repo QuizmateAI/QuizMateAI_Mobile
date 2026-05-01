@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import Svg, {Path} from 'react-native-svg';
 import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
 import {useAuth} from '../../context/AuthContext';
@@ -30,6 +29,100 @@ import QuizAPI from '../../api/QuizAPI';
 import RoadmapPhaseAPI from '../../api/RoadmapPhaseAPI';
 import WorkspaceProfileAPI from '../../api/WorkspaceProfileAPI';
 import useWebSocket from '../../hooks/useWebSocket';
+import {
+  hasReadyRoadmapQuiz,
+  isReadyRoadmapQuiz,
+  mergeRoadmapQuizzesIntoStructure,
+  normalizePhaseIndex,
+  toArray,
+} from '../../utils/roadmapSync';
+
+type ProgressMap = Record<number, number>;
+type StageSelectedType = 'roadmap' | 'phase' | 'knowledge';
+
+const STAGE_ROADMAP_CARD_WIDTH = 218;
+const STAGE_PHASE_CARD_WIDTH = 196;
+const STAGE_PHASE_CONNECTOR_WIDTH = 30;
+const STAGE_KNOWLEDGE_CARD_WIDTH = 176;
+const STAGE_KNOWLEDGE_GAP = 12;
+
+const clampPercent = (value: any) => {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(normalized)));
+};
+
+const normalizePositiveId = (value: any) => {
+  const normalized = Number(value);
+  return Number.isInteger(normalized) && normalized > 0 ? normalized : 0;
+};
+
+const resolveProgressPercent = (payload: any) =>
+  clampPercent(
+    payload?.progressPercent ??
+      payload?.percent ??
+      payload?.data?.progressPercent ??
+      payload?.data?.percent ??
+      payload?.processingObject?.progressPercent ??
+      payload?.processingObject?.percent ??
+      0,
+  );
+
+const updateProgressMap = (
+  setter: React.Dispatch<React.SetStateAction<ProgressMap>>,
+  phaseId: number,
+  percent: number,
+  options: {allowLower?: boolean} = {},
+) => {
+  const normalizedPhaseId = normalizePositiveId(phaseId);
+  if (!normalizedPhaseId) {
+    return;
+  }
+
+  const nextPercent = clampPercent(percent);
+  setter(current => {
+    const currentPercent = clampPercent(current[normalizedPhaseId] ?? 0);
+    const effectivePercent = options.allowLower
+      ? nextPercent
+      : Math.max(currentPercent, nextPercent);
+    if (current[normalizedPhaseId] === effectivePercent) {
+      return current;
+    }
+    return {
+      ...current,
+      [normalizedPhaseId]: effectivePercent,
+    };
+  });
+};
+
+const clearProgressMap = (
+  setter: React.Dispatch<React.SetStateAction<ProgressMap>>,
+  phaseId: number,
+) => {
+  const normalizedPhaseId = normalizePositiveId(phaseId);
+  if (!normalizedPhaseId) {
+    return;
+  }
+
+  setter(current => {
+    if (!(normalizedPhaseId in current)) {
+      return current;
+    }
+    const next = {...current};
+    delete next[normalizedPhaseId];
+    return next;
+  });
+};
+
+const getProgressForPhase = (map: ProgressMap, phaseId: number) =>
+  clampPercent(map?.[normalizePositiveId(phaseId)] ?? 0);
+
+const delay = (ms: number) =>
+  new Promise(resolve => {
+    globalThis.setTimeout(resolve, ms);
+  });
 
 export default function RoadmapJourneyScreen({navigation, route}: any) {
   const {
@@ -57,10 +150,16 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [generatingPreLearningPhaseIds, setGeneratingPreLearningPhaseIds] = useState<number[]>([]);
   const [generatingKnowledgePhaseIds, setGeneratingKnowledgePhaseIds] = useState<number[]>([]);
+  const [generatingKnowledgeQuizPhaseIds, setGeneratingKnowledgeQuizPhaseIds] = useState<number[]>([]);
+  const [generatingKnowledgeQuizKnowledgeKeys, setGeneratingKnowledgeQuizKnowledgeKeys] = useState<string[]>([]);
   const [generatingRoadmapPhases, setGeneratingRoadmapPhases] = useState(false);
+  const [roadmapPhaseGenerationProgress, setRoadmapPhaseGenerationProgress] = useState(0);
+  const [preLearningProgressByPhaseId, setPreLearningProgressByPhaseId] = useState<ProgressMap>({});
+  const [knowledgeProgressByPhaseId, setKnowledgeProgressByPhaseId] = useState<ProgressMap>({});
   const [profileAdaptationMode, setProfileAdaptationMode] = useState<string | null>(null);
   const [submittingPreLearningDecision, setSubmittingPreLearningDecision] = useState(false);
   const [handledPreLearningDecisionPhaseIds, setHandledPreLearningDecisionPhaseIds] = useState<number[]>([]);
+  const [skipPreLearningPhaseIds, setSkipPreLearningPhaseIds] = useState<number[]>([]);
   const [optimisticUnlockedPhaseIds, setOptimisticUnlockedPhaseIds] = useState<number[]>([]);
   const [unlockingPhaseIds, setUnlockingPhaseIds] = useState<number[]>([]);
   const [submittingRemedialDecision, setSubmittingRemedialDecision] = useState(false);
@@ -77,15 +176,16 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<number[]>([]);
   const [selectedKnowledgeId, setSelectedKnowledgeId] = useState<number | null>(null);
   const [knowledgeQuizMap, setKnowledgeQuizMap] = useState<Record<number, any[]>>({});
-  const [viewMode, setViewMode] = useState<'overview' | 'detail'>('detail');
+  const [viewMode] = useState<'overview' | 'detail'>('detail');
+  const [roadmapStageCollapsed, setRoadmapStageCollapsed] = useState(false);
+  const [stageSelectedType, setStageSelectedType] = useState<StageSelectedType>('phase');
+  const [expandedStagePhaseId, setExpandedStagePhaseId] = useState<number | null>(null);
   const [journeyPanelVisible, setJourneyPanelVisible] = useState(false);
   const [followCurrentPhase, setFollowCurrentPhase] = useState(true);
   const userManuallySelectedPhaseRef = useRef(false);
   const journeyPanelScrollRef = useRef<ScrollView | null>(null);
   const panelItemYRef = useRef<Record<number, number>>({});
   const panelEntranceAnim = useRef(new Animated.Value(0)).current;
-  const overviewScrollRef = useRef<ScrollView | null>(null);
-  const [overviewZoom, setOverviewZoom] = useState(1);
   const panelAnimationRef = useRef<{stop: () => void} | null>(null);
   const isMountedRef = useRef(true);
 
@@ -106,6 +206,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   }, []);
 
   const animateLayout = useCallback(() => {
+    if (Platform.OS === 'android') {
+      return;
+    }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
   }, []);
 
@@ -121,6 +224,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
       animateLayout();
       setSelectedPhaseId(phaseId);
+      setExpandedStagePhaseId(null);
 
       if (fromUser) {
         userManuallySelectedPhaseRef.current = true;
@@ -210,6 +314,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   }, [
     getPanelTargetPhaseId,
     journeyPanelVisible,
+    panelEntranceAnim,
     scrollJourneyPanelToPhase,
   ]);
 
@@ -255,65 +360,51 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       const activeRoadmapId = Number(selectedRoadmapId || quiz?.roadmapId || 0);
       const normalizedPhaseId = Number(phaseId || quiz?.phaseId || 0);
       const quizIntent = String(quiz?.quizIntent || '').toUpperCase() || undefined;
-
+      const selectedRoadmap = roadmaps.find(
+        item => Number(item?.roadmapId || item?.id || 0) === activeRoadmapId,
+      );
+      const selectedPhase = (structure?.phases || []).find(
+        (item: any) => Number(item?.phaseId || item?.id || 0) === normalizedPhaseId,
+      );
       const quizTitle = quiz?.title || quiz?.name;
-      Alert.alert('Chọn chế độ làm quiz', 'Bạn muốn làm quiz theo cách nào?', [
-        {
-          text: 'Luyện tập',
-          onPress: () =>
-            navigation.navigate('Quiz', {
-              screen: 'PracticeQuiz',
-              params: {
-                quizId,
-                title: quizTitle,
-                backContext: {
-                  type: 'roadmap',
-                  contextType,
-                  contextId: Number(contextId),
-                  title,
-                  roadmapId:
-                    Number.isInteger(activeRoadmapId) && activeRoadmapId > 0
-                      ? activeRoadmapId
-                      : undefined,
-                  phaseId:
-                    Number.isInteger(normalizedPhaseId) && normalizedPhaseId > 0
-                      ? normalizedPhaseId
-                      : undefined,
-                  quizIntent,
-                },
-              },
-            }),
+      const backContext = {
+        type: 'roadmap',
+        contextType,
+        contextId: Number(contextId),
+        title,
+        roadmapId:
+          Number.isInteger(activeRoadmapId) && activeRoadmapId > 0
+            ? activeRoadmapId
+            : undefined,
+        phaseId:
+          Number.isInteger(normalizedPhaseId) && normalizedPhaseId > 0
+            ? normalizedPhaseId
+            : undefined,
+        quizIntent,
+      };
+
+      navigation.navigate('Quiz', {
+        screen: 'QuizDetail',
+        params: {
+          quizId,
+          quiz: {
+            ...quiz,
+            roadmapId: backContext.roadmapId,
+            phaseId: backContext.phaseId,
+          },
+          title: quizTitle,
+          backContext,
+          contextType,
+          contextId: Number(contextId),
+          roadmapId: backContext.roadmapId,
+          phaseId: backContext.phaseId,
+          quizIntent,
+          roadmapTitle: selectedRoadmap?.title || selectedRoadmap?.name || title,
+          phaseTitle: selectedPhase?.title || selectedPhase?.name,
         },
-        {
-          text: 'Thi thử',
-          onPress: () =>
-            navigation.navigate('Quiz', {
-              screen: 'ExamQuiz',
-              params: {
-                quizId,
-                title: quizTitle,
-                backContext: {
-                  type: 'roadmap',
-                  contextType,
-                  contextId: Number(contextId),
-                  title,
-                  roadmapId:
-                    Number.isInteger(activeRoadmapId) && activeRoadmapId > 0
-                      ? activeRoadmapId
-                      : undefined,
-                  phaseId:
-                    Number.isInteger(normalizedPhaseId) && normalizedPhaseId > 0
-                      ? normalizedPhaseId
-                      : undefined,
-                  quizIntent,
-                },
-              },
-            }),
-        },
-        {text: 'Hủy', style: 'cancel'},
-      ]);
+      });
     },
-    [contextId, contextType, navigation, selectedRoadmapId, showToast, title],
+    [contextId, contextType, navigation, roadmaps, selectedRoadmapId, showToast, structure?.phases, title],
   );
 
   const selectedRoadmap = useMemo(
@@ -380,6 +471,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     try {
       const res = await RoadmapAPI.getStructure(roadmapId);
       const structureData = res.data || null;
+      let nextStructure = structureData;
 
       try {
         const quizRes = await QuizAPI.getByContext('ROADMAP', roadmapId);
@@ -398,31 +490,16 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
           return liveQuiz ? {...quiz, ...liveQuiz} : quiz;
         };
 
-        const mergedStructure = {
-          ...structureData,
-          phases: Array.isArray(structureData?.phases)
-            ? structureData.phases.map((phase: any) => ({
-                ...phase,
-                preLearningQuizzes: Array.isArray(phase?.preLearningQuizzes)
-                  ? phase.preLearningQuizzes.map(mergeQuizState)
-                  : [],
-                postLearningQuizzes: Array.isArray(phase?.postLearningQuizzes)
-                  ? phase.postLearningQuizzes.map(mergeQuizState)
-                  : [],
-                knowledges: Array.isArray(phase?.knowledges)
-                  ? phase.knowledges.map((knowledge: any) => ({
-                      ...knowledge,
-                      quizzes: Array.isArray(knowledge?.quizzes)
-                        ? knowledge.quizzes.map(mergeQuizState)
-                        : [],
-                    }))
-                  : [],
-              }))
-            : structureData?.phases,
-        };
+        const mergedStructure = mergeRoadmapQuizzesIntoStructure(
+          structureData,
+          roadmapQuizzes,
+          mergeQuizState,
+        );
 
+        nextStructure = mergedStructure;
         setStructure(mergedStructure);
       } catch {
+        nextStructure = structureData;
         setStructure(structureData);
       }
 
@@ -439,62 +516,200 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       } catch {
         setCurrentKnowledgePayload(null);
       }
+
+      return nextStructure;
     } catch {
       setStructure(null);
       setCurrentPhaseProgress(null);
       setCurrentKnowledgePayload(null);
+      return null;
+    }
+  }, []);
+
+  const fetchStructureUntilPhaseReady = useCallback(
+    async (
+      roadmapId: number,
+      phaseId: number,
+      kind: 'preLearning' | 'knowledge' | 'knowledgeQuiz',
+      knowledgeId?: number,
+    ) => {
+      const normalizedRoadmapId = normalizePositiveId(roadmapId);
+      const normalizedPhaseId = normalizePositiveId(phaseId);
+      const normalizedKnowledgeId = normalizePositiveId(knowledgeId);
+      if (!normalizedRoadmapId) {
+        return null;
+      }
+
+      let latestStructure: any = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        latestStructure = await fetchStructure(normalizedRoadmapId);
+        const phase = toArray(latestStructure?.phases).find(
+          (item: any) => normalizePositiveId(item?.phaseId ?? item?.id) === normalizedPhaseId,
+        );
+
+        const isReady =
+          kind === 'preLearning'
+            ? hasReadyRoadmapQuiz(phase?.preLearningQuizzes)
+            : kind === 'knowledge'
+            ? toArray(phase?.knowledges).length > 0
+            : toArray(phase?.knowledges).some((knowledge: any) => {
+                const currentKnowledgeId = normalizePositiveId(knowledge?.knowledgeId ?? knowledge?.id);
+                return (
+                  (!normalizedKnowledgeId || currentKnowledgeId === normalizedKnowledgeId) &&
+                  toArray(knowledge?.quizzes).some(isReadyRoadmapQuiz)
+                );
+              });
+
+        if (!normalizedPhaseId || isReady || attempt === 2) {
+          return latestStructure;
+        }
+
+        await delay(850);
+      }
+
+      return latestStructure;
+    },
+    [fetchStructure],
+  );
+
+  const refreshKnowledgeQuizList = useCallback(async (knowledgeId: number) => {
+    const normalizedKnowledgeId = normalizePositiveId(knowledgeId);
+    if (!normalizedKnowledgeId) {
+      return;
+    }
+
+    try {
+      const res = await QuizAPI.getByContext('KNOWLEDGE', normalizedKnowledgeId);
+      const list = Array.isArray(res?.data) ? res.data : [];
+      setKnowledgeQuizMap(prev => ({
+        ...prev,
+        [normalizedKnowledgeId]: list,
+      }));
+    } catch {
+      setKnowledgeQuizMap(prev => ({
+        ...prev,
+        [normalizedKnowledgeId]: [],
+      }));
     }
   }, []);
 
   const handleRoadmapProgress = useCallback(async (payload: any) => {
+    const processingObject =
+      payload?.processingObject && typeof payload.processingObject === 'object'
+        ? payload.processingObject
+        : payload?.data?.processingObject && typeof payload.data.processingObject === 'object'
+        ? payload.data.processingObject
+        : {};
     const status = String(
       payload?.status ||
-      payload?.final_status ||
-      payload?.data?.status ||
-      payload?.data?.final_status ||
-      '',
+        payload?.final_status ||
+        payload?.data?.status ||
+        payload?.data?.final_status ||
+        '',
     ).toUpperCase();
     const taskType = String(
-      payload?.processingObject?.taskType ||
-      payload?.processingObject?.task_type ||
-      payload?.taskType ||
-      payload?.task_type ||
-      payload?.data?.taskType ||
-      payload?.data?.task_type ||
-      '',
+      processingObject?.taskType ||
+        processingObject?.task_type ||
+        payload?.taskType ||
+        payload?.task_type ||
+        payload?.data?.taskType ||
+        payload?.data?.task_type ||
+        '',
     ).toUpperCase();
-    const progressRoadmapId = Number(
+    const progressWorkspaceId = normalizePositiveId(
+      payload?.workspaceId ||
+        payload?.workspace_id ||
+        payload?.data?.workspaceId ||
+        payload?.data?.workspace_id ||
+        processingObject?.workspaceId ||
+        processingObject?.workspace_id,
+    );
+    const progressGroupId = normalizePositiveId(
+      payload?.groupId ||
+        payload?.group_id ||
+        payload?.data?.groupId ||
+        payload?.data?.group_id ||
+        processingObject?.groupId ||
+        processingObject?.group_id,
+    );
+    const progressRoadmapId = normalizePositiveId(
       payload?.roadmapId ||
-      payload?.data?.roadmapId ||
-      payload?.processingObject?.roadmapId ||
-      payload?.processingObject?.roadmap_id ||
-      activeRoadmapId ||
-      0,
+        payload?.roadmap_id ||
+        payload?.data?.roadmapId ||
+        payload?.data?.roadmap_id ||
+        processingObject?.roadmapId ||
+        processingObject?.roadmap_id,
     );
-    const progressPhaseId = Number(
+    const progressPhaseId = normalizePositiveId(
       payload?.phaseId ||
-      payload?.data?.phaseId ||
-      payload?.processingObject?.phaseId ||
-      payload?.processingObject?.phase_id ||
-      0,
+        payload?.phase_id ||
+        payload?.data?.phaseId ||
+        payload?.data?.phase_id ||
+        processingObject?.phaseId ||
+        processingObject?.phase_id,
     );
+    const progressKnowledgeId = normalizePositiveId(
+      payload?.knowledgeId ||
+        payload?.knowledge_id ||
+        payload?.data?.knowledgeId ||
+        payload?.data?.knowledge_id ||
+        processingObject?.knowledgeId ||
+        processingObject?.knowledge_id,
+    );
+    const progressPercent = resolveProgressPercent(payload);
 
-    if (Number.isInteger(activeRoadmapId) && activeRoadmapId > 0 && Number.isInteger(progressRoadmapId) && progressRoadmapId > 0 && progressRoadmapId !== activeRoadmapId) {
+    if (wsWorkspaceId && progressWorkspaceId && progressWorkspaceId !== wsWorkspaceId) {
+      return;
+    }
+    if (wsGroupId && progressGroupId && progressGroupId !== wsGroupId) {
+      return;
+    }
+    if (activeRoadmapId > 0 && progressRoadmapId && progressRoadmapId !== activeRoadmapId) {
       return;
     }
 
-    const isRoadmapTask = taskType.includes('ROADMAP') || status.startsWith('ROADMAP_');
+    const knownPhaseIds = new Set(
+      (Array.isArray(structure?.phases) ? structure.phases : [])
+        .map((phase: any) => normalizePositiveId(phase?.phaseId ?? phase?.id))
+        .filter(Boolean),
+    );
+    if (progressPhaseId && knownPhaseIds.size > 0 && !knownPhaseIds.has(progressPhaseId)) {
+      return;
+    }
+
+    const isKnowledgeQuizTask =
+      taskType.includes('KNOWLEDGE_QUIZ') || status.includes('KNOWLEDGE_QUIZ');
+    const isPreLearningTask = taskType.includes('PRE_LEARNING') || status.includes('PRE_LEARNING');
+    const isPhaseContentTask =
+      !isKnowledgeQuizTask &&
+      (
+        taskType.includes('PHASE_CONTENT') ||
+        status.includes('PHASE_CONTENT') ||
+        taskType.includes('POST_LEARNING') ||
+        status.includes('POST_LEARNING') ||
+        (taskType.includes('KNOWLEDGE') && !taskType.includes('QUIZ')) ||
+        (status.includes('KNOWLEDGE') && !status.includes('QUIZ') && !status.includes('PRE_LEARNING'))
+      );
+    const isRoadmapPhasesTask =
+      status.includes('ROADMAP_PHASES_') ||
+      taskType.includes('ROADMAP_PHASES') ||
+      status.includes('ROADMAP_STRUCTURE');
+    const isRoadmapTask =
+      taskType.includes('ROADMAP') ||
+      status.startsWith('ROADMAP_') ||
+      Boolean(progressRoadmapId || progressPhaseId) ||
+      isPreLearningTask ||
+      isPhaseContentTask ||
+      isKnowledgeQuizTask;
     if (!isRoadmapTask) {
       return;
     }
 
-    const isPreLearningTask = taskType.includes('PRE_LEARNING') || status.includes('PRE_LEARNING');
-    const isPhaseContentTask =
-      taskType.includes('PHASE_CONTENT') ||
-      status.includes('PHASE_CONTENT') ||
-      (taskType.includes('KNOWLEDGE') && !taskType.includes('QUIZ'));
-    const isRoadmapPhasesTask = status.includes('ROADMAP_PHASES_') || taskType.includes('ROADMAP_PHASES');
-    const isProcessing = status.includes('STARTED') || status.includes('PROCESSING');
+    const isProcessing =
+      status.includes('STARTED') ||
+      status.includes('PROCESSING') ||
+      status === 'START' ||
+      (progressPercent > 0 && progressPercent < 100);
     const isTerminal =
       status.includes('COMPLETED') ||
       status.includes('SUCCESS') ||
@@ -502,52 +717,184 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       status.includes('FINISHED') ||
       status.includes('ERROR') ||
       status.includes('FAILED') ||
+      status.includes('CANCEL') ||
+      progressPercent >= 100;
+    const isFailed =
+      status.includes('ERROR') ||
+      status.includes('FAILED') ||
       status.includes('CANCEL');
+    const activePreLearningIds = generatingPreLearningPhaseIds.filter(
+      phaseId => !skipPreLearningPhaseIds.includes(Number(phaseId)),
+    );
+    const hasLocalRoadmapPhaseTask = generatingRoadmapPhases || runningAction === 'phases';
+    const hasExplicitRoadmapOrPhase = Boolean(progressRoadmapId || progressPhaseId);
+
+    if (!hasExplicitRoadmapOrPhase) {
+      if (isRoadmapPhasesTask && !hasLocalRoadmapPhaseTask) {
+        return;
+      }
+      if (isPreLearningTask && activePreLearningIds.length !== 1) {
+        return;
+      }
+      if (isPhaseContentTask && generatingKnowledgePhaseIds.length !== 1) {
+        return;
+      }
+      if (isKnowledgeQuizTask && generatingKnowledgeQuizPhaseIds.length !== 1) {
+        return;
+      }
+    }
 
     const inferredPhaseId =
-      Number.isInteger(progressPhaseId) && progressPhaseId > 0
-        ? progressPhaseId
-        : (isPreLearningTask && generatingPreLearningPhaseIds.length === 1
-          ? Number(generatingPreLearningPhaseIds[0])
-          : (isPhaseContentTask && generatingKnowledgePhaseIds.length === 1
-            ? Number(generatingKnowledgePhaseIds[0])
-            : 0));
+      progressPhaseId ||
+      (isPreLearningTask && activePreLearningIds.length === 1
+        ? Number(activePreLearningIds[0])
+        : isKnowledgeQuizTask && generatingKnowledgeQuizPhaseIds.length === 1
+        ? Number(generatingKnowledgeQuizPhaseIds[0])
+        : isPhaseContentTask && generatingKnowledgePhaseIds.length === 1
+        ? Number(generatingKnowledgePhaseIds[0])
+        : 0);
+    const targetRoadmapId = progressRoadmapId || activeRoadmapId;
+    const processingPercent = progressPercent > 0 ? progressPercent : 3;
 
-    if (isPreLearningTask && Number.isInteger(inferredPhaseId) && inferredPhaseId > 0) {
-      if (isProcessing) {
-        setGeneratingPreLearningPhaseIds(current => (current.includes(inferredPhaseId) ? current : [...current, inferredPhaseId]));
+    if (isRoadmapPhasesTask) {
+      if (isProcessing && !isTerminal) {
+        setGeneratingRoadmapPhases(true);
+        setRoadmapPhaseGenerationProgress(current => Math.max(clampPercent(current), processingPercent));
+        return;
       }
 
       if (isTerminal) {
+        if (!isFailed) {
+          setRoadmapPhaseGenerationProgress(100);
+          if (targetRoadmapId) {
+            await fetchStructure(targetRoadmapId);
+          }
+        }
+        setGeneratingRoadmapPhases(false);
+        setRoadmapPhaseGenerationProgress(0);
+        return;
+      }
+    }
+
+    if (isPreLearningTask && inferredPhaseId > 0) {
+      if (isProcessing && !isTerminal) {
+        setGeneratingPreLearningPhaseIds(current =>
+          current.includes(inferredPhaseId) ? current : [...current, inferredPhaseId],
+        );
+        updateProgressMap(setPreLearningProgressByPhaseId, inferredPhaseId, processingPercent, {
+          allowLower: true,
+        });
+        return;
+      }
+
+      if (isTerminal) {
+        if (!isFailed) {
+          updateProgressMap(setPreLearningProgressByPhaseId, inferredPhaseId, 100);
+          if (targetRoadmapId) {
+            await fetchStructureUntilPhaseReady(targetRoadmapId, inferredPhaseId, 'preLearning');
+          }
+        }
         setGeneratingPreLearningPhaseIds(current => current.filter(id => id !== inferredPhaseId));
-        if (!status.includes('ERROR') && !status.includes('FAILED') && !status.includes('CANCEL')) {
-          await fetchStructure(progressRoadmapId || activeRoadmapId);
-        }
+        clearProgressMap(setPreLearningProgressByPhaseId, inferredPhaseId);
+        return;
       }
-      return;
     }
 
-    if (isPhaseContentTask && Number.isInteger(inferredPhaseId) && inferredPhaseId > 0) {
-      if (isProcessing) {
-        setGeneratingKnowledgePhaseIds(current => (current.includes(inferredPhaseId) ? current : [...current, inferredPhaseId]));
+    if (isPhaseContentTask && inferredPhaseId > 0) {
+      if (isProcessing && !isTerminal) {
+        setGeneratingKnowledgePhaseIds(current =>
+          current.includes(inferredPhaseId) ? current : [...current, inferredPhaseId],
+        );
+        updateProgressMap(setKnowledgeProgressByPhaseId, inferredPhaseId, processingPercent, {
+          allowLower: true,
+        });
+        return;
       }
 
       if (isTerminal) {
-        setGeneratingKnowledgePhaseIds(current => current.filter(id => id !== inferredPhaseId));
-        if (!status.includes('ERROR') && !status.includes('FAILED') && !status.includes('CANCEL')) {
-          await fetchStructure(progressRoadmapId || activeRoadmapId);
+        if (!isFailed) {
+          updateProgressMap(setKnowledgeProgressByPhaseId, inferredPhaseId, 100);
+          if (targetRoadmapId) {
+            await fetchStructureUntilPhaseReady(targetRoadmapId, inferredPhaseId, 'knowledge');
+          }
         }
+        setGeneratingKnowledgePhaseIds(current => current.filter(id => id !== inferredPhaseId));
+        setSkipPreLearningPhaseIds(current => current.filter(id => id !== inferredPhaseId));
+        clearProgressMap(setKnowledgeProgressByPhaseId, inferredPhaseId);
+        return;
       }
-      return;
     }
 
-    if (isRoadmapPhasesTask && isTerminal) {
-      setGeneratingRoadmapPhases(false);
-      if (!status.includes('ERROR') && !status.includes('FAILED') && !status.includes('CANCEL')) {
-        await fetchStructure(progressRoadmapId || activeRoadmapId);
+    if (isKnowledgeQuizTask && inferredPhaseId > 0) {
+      const knowledgeKey = progressKnowledgeId ? `${inferredPhaseId}:${progressKnowledgeId}` : null;
+
+      if (isProcessing && !isTerminal) {
+        setGeneratingKnowledgeQuizPhaseIds(current =>
+          current.includes(inferredPhaseId) ? current : [...current, inferredPhaseId],
+        );
+        if (knowledgeKey) {
+          setGeneratingKnowledgeQuizKnowledgeKeys(current =>
+            current.includes(knowledgeKey) ? current : [...current, knowledgeKey],
+          );
+        }
+        updateProgressMap(setKnowledgeProgressByPhaseId, inferredPhaseId, processingPercent, {
+          allowLower: true,
+        });
+        return;
+      }
+
+      if (isTerminal) {
+        if (!isFailed) {
+          updateProgressMap(setKnowledgeProgressByPhaseId, inferredPhaseId, 100);
+          if (targetRoadmapId) {
+            await fetchStructureUntilPhaseReady(
+              targetRoadmapId,
+              inferredPhaseId,
+              'knowledgeQuiz',
+              progressKnowledgeId,
+            );
+          }
+          if (progressKnowledgeId) {
+            await refreshKnowledgeQuizList(progressKnowledgeId);
+          }
+        }
+        setGeneratingKnowledgeQuizPhaseIds(current => current.filter(id => id !== inferredPhaseId));
+        setGeneratingKnowledgeQuizKnowledgeKeys(current =>
+          knowledgeKey
+            ? current.filter(key => key !== knowledgeKey)
+            : current.filter(key => !key.startsWith(`${inferredPhaseId}:`)),
+        );
+        clearProgressMap(setKnowledgeProgressByPhaseId, inferredPhaseId);
+        return;
       }
     }
-  }, [activeRoadmapId, fetchStructure, generatingKnowledgePhaseIds, generatingPreLearningPhaseIds]);
+
+    if (isTerminal && isFailed && progressPhaseId > 0) {
+      setGeneratingPreLearningPhaseIds(current => current.filter(id => id !== progressPhaseId));
+      setGeneratingKnowledgePhaseIds(current => current.filter(id => id !== progressPhaseId));
+      setGeneratingKnowledgeQuizPhaseIds(current => current.filter(id => id !== progressPhaseId));
+      setGeneratingKnowledgeQuizKnowledgeKeys(current =>
+        current.filter(key => !key.startsWith(`${progressPhaseId}:`)),
+      );
+      setSkipPreLearningPhaseIds(current => current.filter(id => id !== progressPhaseId));
+      clearProgressMap(setPreLearningProgressByPhaseId, progressPhaseId);
+      clearProgressMap(setKnowledgeProgressByPhaseId, progressPhaseId);
+    }
+  }, [
+    activeRoadmapId,
+    fetchStructure,
+    fetchStructureUntilPhaseReady,
+    generatingKnowledgePhaseIds,
+    generatingKnowledgeQuizPhaseIds,
+    generatingPreLearningPhaseIds,
+    generatingRoadmapPhases,
+    refreshKnowledgeQuizList,
+    runningAction,
+    skipPreLearningPhaseIds,
+    structure?.phases,
+    wsGroupId,
+    wsWorkspaceId,
+  ]);
 
   const {isConnected: roadmapWsConnected} = useWebSocket({
     workspaceId: wsWorkspaceId,
@@ -598,6 +945,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     const key = `pre-${normalizedPhaseId}`;
     setRunningAction(key);
     setGeneratingPreLearningPhaseIds(current => (current.includes(normalizedPhaseId) ? current : [...current, normalizedPhaseId]));
+    updateProgressMap(setPreLearningProgressByPhaseId, normalizedPhaseId, 3, {allowLower: true});
     try {
       await AIAPI.generateRoadmapPreLearning({
         roadmapId: normalizedRoadmapId, 
@@ -607,13 +955,15 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       });
       showToast('Đã bắt đầu tạo quiz trước học', 'success');
       if (!roadmapWsConnected) {
-        await fetchStructure(normalizedRoadmapId);
+        updateProgressMap(setPreLearningProgressByPhaseId, normalizedPhaseId, 100);
+        await fetchStructureUntilPhaseReady(normalizedRoadmapId, normalizedPhaseId, 'preLearning');
         setGeneratingPreLearningPhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+        clearProgressMap(setPreLearningProgressByPhaseId, normalizedPhaseId);
       }
     } catch (error: any) {
       setGeneratingPreLearningPhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+      clearProgressMap(setPreLearningProgressByPhaseId, normalizedPhaseId);
       const status = error?.response?.status;
-      const message = error?.response?.data?.message || '';
       if (status === 409) {
         showToast('Phase đã có quiz trước học rồi, không thể tạo lại', 'error');
       } else if (status === 400) {
@@ -677,6 +1027,12 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     const key = `content-${normalizedPhaseId}`;
     setRunningAction(key);
     setGeneratingKnowledgePhaseIds(current => (current.includes(normalizedPhaseId) ? current : [...current, normalizedPhaseId]));
+    updateProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId, 3, {allowLower: true});
+    if (profileLearningMode === 'STUDY_NEW' && skipPreLearning === true) {
+      setSkipPreLearningPhaseIds(current => (current.includes(normalizedPhaseId) ? current : [...current, normalizedPhaseId]));
+      setGeneratingPreLearningPhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+      clearProgressMap(setPreLearningProgressByPhaseId, normalizedPhaseId);
+    }
     try {
       // skipPreLearning chỉ hợp lệ với STUDY_NEW mode
       const payload: any = {
@@ -693,11 +1049,17 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       await AIAPI.generateRoadmapPhaseContent(payload);
       showToast('Đã bắt đầu tạo nội dung giai đoạn', 'success');
       if (!roadmapWsConnected) {
-        await fetchStructure(normalizedRoadmapId);
+        updateProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId, 100);
+        await fetchStructureUntilPhaseReady(normalizedRoadmapId, normalizedPhaseId, 'knowledge');
         setGeneratingKnowledgePhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+        clearProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId);
       }
     } catch (error: any) {
       setGeneratingKnowledgePhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+      clearProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId);
+      if (skipPreLearning === true) {
+        setSkipPreLearningPhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+      }
       const status = error?.response?.status;
       if (status === 400) {
         showToast('Phase chưa có quiz trước học hoặc dữ liệu không hợp lệ. Hãy tạo quiz trước học trước', 'error');
@@ -711,29 +1073,18 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     }
   };
 
-  const handleUnlockSelectedPhase = useCallback(async () => {
-    const phaseId = Number(activePhase?.phaseId || 0);
-    if (!isSelectedPhaseUnlockable || !phaseId || !Number(activeRoadmapId || 0)) {
-      return;
-    }
-
-    setOptimisticUnlockedPhaseIds(current => (current.includes(phaseId) ? current : [...current, phaseId]));
-    setUnlockingPhaseIds(current => (current.includes(phaseId) ? current : [...current, phaseId]));
-    try {
-      await handleGeneratePreLearning(Number(activeRoadmapId || 0), phaseId);
-      await fetchStructure(Number(activeRoadmapId || 0));
-    } catch (error) {
-      setOptimisticUnlockedPhaseIds(current => current.filter(id => id !== phaseId));
-      console.error('Failed to unlock phase:', error);
-      showToast('Không thể mở khóa phase', 'error');
-    } finally {
-      setUnlockingPhaseIds(current => current.filter(id => id !== phaseId));
-    }
-  }, [activePhase?.phaseId, activeRoadmapId, fetchStructure, isSelectedPhaseUnlockable, showToast, handleGeneratePreLearning]);
-
   const handleGenerateKnowledgeQuiz = async (roadmapId: number, knowledgeId: number) => {
     const normalizedRoadmapId = Number(roadmapId || 0);
     const normalizedKnowledgeId = Number(knowledgeId || 0);
+    const normalizedPhaseId =
+      normalizePositiveId(selectedPhaseId) ||
+      normalizePositiveId(
+        (Array.isArray(structure?.phases) ? structure.phases : []).find((phase: any) =>
+          toArray(phase?.knowledges).some(
+            (knowledge: any) => normalizePositiveId(knowledge?.knowledgeId ?? knowledge?.id) === normalizedKnowledgeId,
+          ),
+        )?.phaseId,
+      );
     const userId = user?.id;
     
     if (!userId) {
@@ -747,7 +1098,19 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     }
 
     const key = `knowledge-${normalizedKnowledgeId}`;
+    const knowledgeQuizKey = normalizedPhaseId ? `${normalizedPhaseId}:${normalizedKnowledgeId}` : null;
     setRunningAction(key);
+    if (normalizedPhaseId) {
+      setGeneratingKnowledgeQuizPhaseIds(current =>
+        current.includes(normalizedPhaseId) ? current : [...current, normalizedPhaseId],
+      );
+      if (knowledgeQuizKey) {
+        setGeneratingKnowledgeQuizKnowledgeKeys(current =>
+          current.includes(knowledgeQuizKey) ? current : [...current, knowledgeQuizKey],
+        );
+      }
+      updateProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId, 3, {allowLower: true});
+    }
     try {
       await AIAPI.generateRoadmapKnowledgeQuiz({
         roadmapId: normalizedRoadmapId, 
@@ -755,7 +1118,37 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         userId,
       });
       showToast('Đã bắt đầu tạo quiz kiến thức', 'success');
+      if (!roadmapWsConnected) {
+        if (normalizedPhaseId) {
+          updateProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId, 100);
+        }
+        await Promise.all([
+          normalizedPhaseId
+            ? fetchStructureUntilPhaseReady(
+                normalizedRoadmapId,
+                normalizedPhaseId,
+                'knowledgeQuiz',
+                normalizedKnowledgeId,
+              )
+            : fetchStructure(normalizedRoadmapId),
+          refreshKnowledgeQuizList(normalizedKnowledgeId),
+        ]);
+        if (normalizedPhaseId) {
+          setGeneratingKnowledgeQuizPhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+          setGeneratingKnowledgeQuizKnowledgeKeys(current =>
+            current.filter(item => item !== knowledgeQuizKey),
+          );
+          clearProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId);
+        }
+      }
     } catch (error: any) {
+      if (normalizedPhaseId) {
+        setGeneratingKnowledgeQuizPhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+        setGeneratingKnowledgeQuizKnowledgeKeys(current =>
+          current.filter(item => item !== knowledgeQuizKey),
+        );
+        clearProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId);
+      }
       const status = error?.response?.status;
       if (status === 400) {
         showToast('Dữ liệu không hợp lệ', 'error');
@@ -783,6 +1176,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
     setRunningAction('phases');
     setGeneratingRoadmapPhases(true);
+    setRoadmapPhaseGenerationProgress(3);
     try {
       await AIAPI.generateRoadmapPhases({
         roadmapId: normalizedRoadmapId,
@@ -791,11 +1185,14 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       });
       showToast('Đã bắt đầu tạo các giai đoạn lộ trình', 'success');
       if (!roadmapWsConnected) {
+        setRoadmapPhaseGenerationProgress(100);
         await fetchStructure(normalizedRoadmapId);
         setGeneratingRoadmapPhases(false);
+        setRoadmapPhaseGenerationProgress(0);
       }
     } catch (error: any) {
       setGeneratingRoadmapPhases(false);
+      setRoadmapPhaseGenerationProgress(0);
       const status = error?.response?.status;
       if (status === 400) {
         showToast('Dữ liệu không hợp lệ. Kiểm tra lại tài liệu đã chọn', 'error');
@@ -873,6 +1270,10 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         return;
       }
 
+      setGeneratingKnowledgePhaseIds(current =>
+        current.includes(normalizedPhaseId) ? current : [...current, normalizedPhaseId],
+      );
+      updateProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId, 3, {allowLower: true});
       await AIAPI.generateRoadmapPhaseContent({
         roadmapId: normalizedRoadmapId,
         phaseId: normalizedPhaseId,
@@ -884,7 +1285,13 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         Array.from(new Set([...prev, normalizedPhaseId])),
       );
       await fetchStructure(normalizedRoadmapId);
+      if (!roadmapWsConnected) {
+        setGeneratingKnowledgePhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+        clearProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId);
+      }
     } catch (error: any) {
+      setGeneratingKnowledgePhaseIds(current => current.filter(id => id !== normalizedPhaseId));
+      clearProgressMap(setKnowledgeProgressByPhaseId, normalizedPhaseId);
       showToast(
         error?.response?.data?.message || error?.message || 'Không thể cập nhật quyết định pre-learning',
         'error',
@@ -907,6 +1314,39 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     const list = Array.isArray(structure?.phases) ? structure.phases : [];
     return [...list].sort((a: any, b: any) => Number(a?.phaseIndex ?? 0) - Number(b?.phaseIndex ?? 0));
   }, [structure?.phases]);
+
+  useEffect(() => {
+    if (!Array.isArray(phases) || phases.length === 0) {
+      return;
+    }
+
+    const phaseIdsWithPreLearning = phases
+      .filter((phase: any) => hasReadyRoadmapQuiz(phase?.preLearningQuizzes))
+      .map((phase: any) => normalizePositiveId(phase?.phaseId))
+      .filter(Boolean);
+    const phaseIdsWithKnowledge = phases
+      .filter((phase: any) => toArray(phase?.knowledges).length > 0)
+      .map((phase: any) => normalizePositiveId(phase?.phaseId))
+      .filter(Boolean);
+
+    if (phaseIdsWithPreLearning.length > 0) {
+      setGeneratingPreLearningPhaseIds(current =>
+        current.filter(id => !phaseIdsWithPreLearning.includes(id)),
+      );
+      phaseIdsWithPreLearning.forEach(phaseId =>
+        clearProgressMap(setPreLearningProgressByPhaseId, phaseId),
+      );
+    }
+
+    if (phaseIdsWithKnowledge.length > 0) {
+      setGeneratingKnowledgePhaseIds(current =>
+        current.filter(id => !phaseIdsWithKnowledge.includes(id)),
+      );
+      phaseIdsWithKnowledge.forEach(phaseId =>
+        clearProgressMap(setKnowledgeProgressByPhaseId, phaseId),
+      );
+    }
+  }, [phases]);
 
   useEffect(() => {
     if (!Array.isArray(phases) || phases.length === 0) return;
@@ -1226,6 +1666,20 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     return preLearningDone && knowledgeDone && postLearningDone;
   }, [isCompletedKnowledge, isCompletedQuiz]);
 
+  const isPhaseFinishedStatus = useCallback((phaseStatus: any) => {
+    const normalizedStatus = String(phaseStatus || '').toUpperCase();
+    return normalizedStatus === 'COMPLETED' || normalizedStatus === 'SKIPPED';
+  }, []);
+
+  const isCurrentPayloadFinished = useMemo(
+    () => isPhaseFinishedStatus(currentPhaseProgress?.status),
+    [currentPhaseProgress?.status, isPhaseFinishedStatus],
+  );
+  const currentPayloadPhaseId = Number(currentPhaseProgress?.phaseId);
+  const currentPayloadPhaseIndex = normalizePhaseIndex(currentPhaseProgress?.phaseIndex);
+  const currentPayloadStatus = String(currentPhaseProgress?.status || '').toUpperCase();
+  const isCurrentPayloadActiveStatus = ['IN_PROGRESS', 'ACTIVE', 'PROCESSING'].includes(currentPayloadStatus);
+
   const maxUnlockedPhaseIndex = useMemo(() => {
     if (!Array.isArray(phases) || phases.length === 0) {
       return 0;
@@ -1254,9 +1708,45 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       }
       contiguousFinishedCount += 1;
     }
+    const unlockedByStatusIndex = contiguousFinishedCount > 0
+      ? Math.min(phases.length - 1, contiguousFinishedCount - 1)
+      : -1;
 
-    return Math.max(0, currentIndex, Math.min(phases.length - 1, contiguousFinishedCount), unlockedByOptimisticIndex);
-  }, [currentPhaseProgress?.phaseId, isPhaseEffectivelyDone, optimisticUnlockedPhaseIds, phases]);
+    if (isStudyNewRoadmap) {
+      const unlockedByManualProgressIndex = phases.reduce((maxIndex: number, phase: any, index: number) => {
+        const hasPreLearning = hasReadyRoadmapQuiz(phase?.preLearningQuizzes);
+        const hasKnowledge = Array.isArray(phase?.knowledges) && phase.knowledges.length > 0;
+        const hasPostLearning = Array.isArray(phase?.postLearningQuizzes) && phase.postLearningQuizzes.length > 0;
+        const isFinished = isPhaseFinishedStatus(phase?.status);
+
+        return hasPreLearning || hasKnowledge || hasPostLearning || isFinished
+          ? Math.max(maxIndex, index)
+          : maxIndex;
+      }, 0);
+
+      return Math.max(0, unlockedByManualProgressIndex, unlockedByOptimisticIndex);
+    }
+
+    const unlockedByFinishedPayloadIndex = isCurrentPayloadFinished
+      ? (currentPayloadPhaseIndex >= 0 ? currentPayloadPhaseIndex : currentIndex)
+      : -1;
+
+    return Math.max(
+      0,
+      unlockedByStatusIndex,
+      unlockedByOptimisticIndex,
+      unlockedByFinishedPayloadIndex,
+    );
+  }, [
+    currentPayloadPhaseIndex,
+    currentPhaseProgress?.phaseId,
+    isCurrentPayloadFinished,
+    isPhaseEffectivelyDone,
+    isPhaseFinishedStatus,
+    isStudyNewRoadmap,
+    optimisticUnlockedPhaseIds,
+    phases,
+  ]);
 
   const hasRoadmapPhases = useMemo(() => {
     const fromStructure = Array.isArray(structure?.phases) && structure.phases.length > 0;
@@ -1265,24 +1755,11 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     return fromStructure || fromSortedPhases || fromCurrentProgress;
   }, [currentPhaseProgress?.phaseId, phases, structure?.phases]);
 
-  const isPhaseFinishedStatus = useCallback((phaseStatus: any) => {
-    const normalizedStatus = String(phaseStatus || '').toUpperCase();
-    return normalizedStatus === 'COMPLETED' || normalizedStatus === 'SKIPPED';
-  }, []);
-
   const isKnowledgeFinishedStatus = useCallback((knowledgeStatus: any) => {
     const normalizedStatus = String(knowledgeStatus || '').toUpperCase();
     return normalizedStatus === 'DONE' || normalizedStatus === 'COMPLETED' || normalizedStatus === 'SKIPPED';
   }, []);
 
-  const isCurrentPayloadFinished = useMemo(
-    () => isPhaseFinishedStatus(currentPhaseProgress?.status),
-    [currentPhaseProgress?.status, isPhaseFinishedStatus],
-  );
-  const currentPayloadPhaseId = Number(currentPhaseProgress?.phaseId);
-  const currentPayloadPhaseIndex = Number(currentPhaseProgress?.phaseIndex);
-  const currentPayloadStatus = String(currentPhaseProgress?.status || '').toUpperCase();
-  const isCurrentPayloadActiveStatus = ['IN_PROGRESS', 'ACTIVE', 'PROCESSING'].includes(currentPayloadStatus);
   const currentKnowledgePhaseId = Number(currentKnowledgePayload?.phaseId);
   const currentKnowledgeId = Number(currentKnowledgePayload?.knowledgeId);
   const currentKnowledgeStatus = String(currentKnowledgePayload?.status || '').toUpperCase();
@@ -1386,14 +1863,10 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     [isDark],
   );
 
-  const activePhaseVisualMeta = useMemo(() => {
-    return getPhaseVisualMeta(getPhaseVisualState(activePhase, Math.max(0, activePhaseIndex), false));
-  }, [activePhase, activePhaseIndex, getPhaseVisualMeta, getPhaseVisualState]);
-
   const resolveKnowledgeLockState = useCallback(
     (phase: any, phaseIndex: number, knowledgeIndex: number) => {
       const phaseKnowledges = Array.isArray(phase?.knowledges) ? phase.knowledges : [];
-      const hasExistingPreLearning = Array.isArray(phase?.preLearningQuizzes) && phase.preLearningQuizzes.length > 0;
+      const hasExistingPreLearning = hasReadyRoadmapQuiz(phase?.preLearningQuizzes);
       const isPhaseLockedForKnowledge =
         phaseIndex > maxUnlockedPhaseIndex &&
         !hasExistingPreLearning &&
@@ -1435,6 +1908,36 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     return Array.isArray(activePhase?.knowledges) ? activePhase.knowledges : [];
   }, [activePhase?.knowledges]);
 
+  const activePhasePreLearningQuizzes = useMemo(() => {
+    return toArray(activePhase?.preLearningQuizzes).filter(isReadyRoadmapQuiz);
+  }, [activePhase?.preLearningQuizzes]);
+
+  const activePhasePostLearningQuizzes = useMemo(() => {
+    return toArray(activePhase?.postLearningQuizzes).filter(isReadyRoadmapQuiz);
+  }, [activePhase?.postLearningQuizzes]);
+
+  const activePhaseId = Number(activePhase?.phaseId || 0);
+  const hasActivePhase = Number.isInteger(activePhaseId) && activePhaseId > 0;
+  const activePhaseHasKnowledge = activePhaseKnowledges.length > 0;
+  const activePhaseIsGeneratingPreLearning = generatingPreLearningPhaseIds.includes(activePhaseId);
+  const activePhaseIsGeneratingKnowledge = generatingKnowledgePhaseIds.includes(activePhaseId);
+  const activePhaseIsGeneratingKnowledgeQuiz = generatingKnowledgeQuizPhaseIds.includes(activePhaseId);
+  const activePhaseSkippedPreLearning = skipPreLearningPhaseIds.includes(activePhaseId);
+  const activePhasePreLearningPercent = getProgressForPhase(preLearningProgressByPhaseId, activePhaseId);
+  const activePhaseKnowledgePercent = getProgressForPhase(knowledgeProgressByPhaseId, activePhaseId);
+  const activePhaseStatus = String(activePhase?.status || '').toUpperCase();
+  const activePhaseIsProcessing = activePhaseStatus === 'PROCESSING';
+  const activePhaseShouldShowKnowledgePlaceholder =
+    hasActivePhase &&
+    !activePhaseHasKnowledge &&
+    (activePhaseIsGeneratingKnowledge || activePhaseSkippedPreLearning);
+  const activePhaseShouldShowPreLearningPlaceholder =
+    hasActivePhase &&
+    !activePhaseHasKnowledge &&
+    activePhasePreLearningQuizzes.length === 0 &&
+    !activePhaseShouldShowKnowledgePlaceholder &&
+    (activePhaseIsGeneratingPreLearning || activePhaseIsProcessing);
+
   const selectedKnowledge = useMemo(() => {
     const normalizedKnowledgeId = Number(selectedKnowledgeId || 0);
     if (!Number.isInteger(normalizedKnowledgeId) || normalizedKnowledgeId <= 0) {
@@ -1455,15 +1958,24 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     }
     return knowledgeQuizMap[normalizedKnowledgeId] || [];
   }, [knowledgeQuizMap, selectedKnowledge?.quizzes, selectedKnowledgeId]);
+  const selectedKnowledgeQuizGenerationKey =
+    hasActivePhase && Number(selectedKnowledgeId || 0) > 0
+      ? `${activePhaseId}:${Number(selectedKnowledgeId || 0)}`
+      : null;
+  const selectedKnowledgeIsGeneratingQuiz =
+    activePhaseIsGeneratingKnowledgeQuiz &&
+    (
+      !selectedKnowledgeQuizGenerationKey ||
+      generatingKnowledgeQuizKnowledgeKeys.length === 0 ||
+      generatingKnowledgeQuizKnowledgeKeys.includes(selectedKnowledgeQuizGenerationKey)
+    );
 
   const selectedPhaseIndex = useMemo(
     () => phases.findIndex((phase: any) => Number(phase?.phaseId) === Number(selectedPhaseId)),
     [phases, selectedPhaseId],
   );
 
-  const selectedPhaseHasExistingPreLearning = Array.isArray(activePhase?.preLearningQuizzes)
-    ? activePhase.preLearningQuizzes.length > 0
-    : false;
+  const selectedPhaseHasExistingPreLearning = hasReadyRoadmapQuiz(activePhase?.preLearningQuizzes);
   const isSelectedPhaseCurrentByPayload =
     Number.isInteger(currentPayloadPhaseId) &&
     currentPayloadPhaseId > 0 &&
@@ -1487,6 +1999,26 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     selectedPreviousPhaseCompleted &&
     !isSelectedPhaseUnlocking;
 
+  const handleUnlockSelectedPhase = async () => {
+    const phaseId = Number(activePhase?.phaseId || 0);
+    if (!isSelectedPhaseUnlockable || !phaseId || !Number(activeRoadmapId || 0)) {
+      return;
+    }
+
+    setOptimisticUnlockedPhaseIds(current => (current.includes(phaseId) ? current : [...current, phaseId]));
+    setUnlockingPhaseIds(current => (current.includes(phaseId) ? current : [...current, phaseId]));
+    try {
+      await handleGeneratePreLearning(Number(activeRoadmapId || 0), phaseId);
+      await fetchStructure(Number(activeRoadmapId || 0));
+    } catch (error) {
+      setOptimisticUnlockedPhaseIds(current => current.filter(id => id !== phaseId));
+      console.error('Failed to unlock phase:', error);
+      showToast('Không thể mở khóa phase', 'error');
+    } finally {
+      setUnlockingPhaseIds(current => current.filter(id => id !== phaseId));
+    }
+  };
+
   const selectedKnowledgeIndex = selectedKnowledge
     ? activePhaseKnowledges.findIndex((knowledge: any) => Number(knowledge?.knowledgeId || knowledge?.id || 0) === Number(selectedKnowledgeId || 0))
     : -1;
@@ -1503,6 +2035,62 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       selectedKnowledgeLockState?.isPhaseLockedForKnowledge ||
       selectedKnowledgeLockState?.isKnowledgeLockedBySequence
     );
+  const activePhaseCurrentKnowledgeIndex =
+    Number.isInteger(currentKnowledgeId) && currentKnowledgeId > 0
+      ? activePhaseKnowledges.findIndex((knowledge: any) => Number(knowledge?.knowledgeId || knowledge?.id || 0) === currentKnowledgeId)
+      : -1;
+  const isActivePhaseBeforeCurrentKnowledge =
+    currentKnowledgePhaseIndex >= 0 && activePhaseIndex < currentKnowledgePhaseIndex;
+  const activePhaseCompletedKnowledgeCount = activePhaseKnowledges.reduce(
+    (count: number, _knowledge: any, knowledgeIndex: number) => {
+      const isKnowledgeCompleted =
+        isPhaseFinishedStatus(activePhase?.status) ||
+        isActivePhaseBeforeCurrentKnowledge ||
+        (
+          activePhaseIndex === currentKnowledgePhaseIndex &&
+          activePhaseCurrentKnowledgeIndex >= 0 &&
+          (
+            knowledgeIndex < activePhaseCurrentKnowledgeIndex ||
+            (knowledgeIndex === activePhaseCurrentKnowledgeIndex && isCurrentKnowledgeDoneStatus)
+          )
+        );
+      return isKnowledgeCompleted ? count + 1 : count;
+    },
+    0,
+  );
+  const activePhaseShouldLockPostLearning =
+    activePhasePostLearningQuizzes.length > 0 &&
+    !isPhaseFinishedStatus(activePhase?.status) &&
+    activePhaseKnowledges.length > 0 &&
+    activePhaseCompletedKnowledgeCount < activePhaseKnowledges.length;
+  const activePhaseDecisionHandled = handledPreLearningDecisionPhaseIds.includes(activePhaseId);
+  const activePhaseHasPreLearningDecisionState =
+    hasActivePhase &&
+    Number(currentPhaseProgress?.phaseId) === activePhaseId &&
+    (currentPhaseProgress?.skipable === true || currentPhaseProgress?.skipable === false) &&
+    !isPhaseFinishedStatus(currentPhaseProgress?.status);
+  const canShowActiveSkipDecisionAfterPreLearning =
+    activePhasePreLearningQuizzes.length > 0 &&
+    !activePhaseHasKnowledge &&
+    !isSelectedPhaseLocked &&
+    activePhaseHasPreLearningDecisionState &&
+    currentPhaseProgress?.skipable === true &&
+    !activePhaseDecisionHandled &&
+    !activePhaseIsGeneratingKnowledge;
+  const canShowActiveGenerateKnowledgeFallback =
+    activePhasePreLearningQuizzes.length > 0 &&
+    !activePhaseHasKnowledge &&
+    !isSelectedPhaseLocked &&
+    activePhaseHasPreLearningDecisionState &&
+    currentPhaseProgress?.skipable === false &&
+    !activePhaseDecisionHandled &&
+    !activePhaseIsGeneratingKnowledge;
+  const canShowActiveRemedialDecision =
+    activePhasePostLearningQuizzes.length > 0 &&
+    isFlexibleRoadmap &&
+    !isSelectedPhaseLocked &&
+    Number(currentPhaseProgress?.phaseId) === activePhaseId &&
+    currentPhaseProgress?.needsRemedialDecision === true;
 
   useEffect(() => {
     if (!Array.isArray(activePhaseKnowledges) || activePhaseKnowledges.length === 0) {
@@ -1559,59 +2147,1401 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     };
   }, [selectedKnowledge?.quizzes, selectedKnowledgeId]);
 
-  const showLegacyDetailList = false;
-
-  const overviewWave = useMemo(() => {
-    const count = Math.max(1, phases.length);
-    const phaseGap = 210 * overviewZoom;
-    const pad = 130 * overviewZoom;
-    const width = Math.max(920, pad * 2 + (count - 1) * phaseGap + 120);
-    const height = 420;
-    const centerY = 230;
-    const amplitude = 58 * overviewZoom;
-
-    const points = Array.from({length: count}, (_, index) => ({
-      x: pad + index * phaseGap,
-      y: centerY + (index % 2 === 0 ? -amplitude : amplitude),
-    }));
-
-    const path = points.reduce((acc, point, index) => {
-      if (index === 0) {
-        return `M ${point.x} ${point.y}`;
-      }
-      const prev = points[index - 1];
-      const midX = (prev.x + point.x) / 2;
-      return `${acc} C ${midX} ${prev.y}, ${midX} ${point.y}, ${point.x} ${point.y}`;
-    }, '');
-
-    return {
-      width,
-      height,
-      centerY,
-      points,
-      path,
-    };
-  }, [overviewZoom, phases.length]);
-
-  const zoomOverviewIn = useCallback(() => {
-    setOverviewZoom(prev => Math.min(1.45, Number((prev + 0.1).toFixed(2))));
-  }, []);
-
-  const zoomOverviewOut = useCallback(() => {
-    setOverviewZoom(prev => Math.max(0.8, Number((prev - 0.1).toFixed(2))));
-  }, []);
-
-  const resetOverviewViewport = useCallback(() => {
-    setOverviewZoom(1);
-    overviewScrollRef.current?.scrollTo({x: 0, animated: true});
-  }, []);
-
-  const scrollOverviewBy = useCallback((offset: number) => {
-    if (!overviewScrollRef.current) {
+  useEffect(() => {
+    if (stageSelectedType === 'knowledge' && !selectedKnowledge) {
+      setStageSelectedType(activePhase ? 'phase' : 'roadmap');
       return;
     }
-    overviewScrollRef.current.scrollTo({x: Math.max(0, offset), animated: true});
-  }, []);
+
+    if (stageSelectedType === 'phase' && !activePhase) {
+      setStageSelectedType('roadmap');
+    }
+  }, [activePhase, selectedKnowledge, stageSelectedType]);
+
+  useEffect(() => {
+    setStageSelectedType(phases.length > 0 ? 'phase' : 'roadmap');
+    setRoadmapStageCollapsed(false);
+    setExpandedStagePhaseId(null);
+  }, [activeRoadmapId, phases.length]);
+
+  const effectiveStageSelectedType: StageSelectedType =
+    stageSelectedType === 'knowledge' && selectedKnowledge
+      ? 'knowledge'
+      : stageSelectedType === 'phase' && activePhase
+      ? 'phase'
+      : 'roadmap';
+
+  const roadmapStageTitle =
+    selectedRoadmap?.title || selectedRoadmap?.name || `Roadmap #${activeRoadmapId}`;
+  const roadmapStageDescription =
+    selectedRoadmap?.description ||
+    structure?.description ||
+    structure?.roadmap?.description ||
+    'Chọn một phase hoặc knowledge để xem chi tiết học tập.';
+  const roadmapStageContextLabel = contextType === 'GROUP' ? 'Nhóm' : 'Workspace';
+
+  const roadmapStageStats = useMemo(() => {
+    const knowledgeCount = phases.reduce(
+      (count: number, phase: any) => count + toArray(phase?.knowledges).length,
+      0,
+    );
+    const quizCount = phases.reduce((count: number, phase: any) => {
+      const phaseQuizCount =
+        toArray(phase?.preLearningQuizzes).filter(isReadyRoadmapQuiz).length +
+        toArray(phase?.postLearningQuizzes).filter(isReadyRoadmapQuiz).length;
+      const knowledgeQuizCount = toArray(phase?.knowledges).reduce(
+        (innerCount: number, knowledge: any) =>
+          innerCount + toArray(knowledge?.quizzes).filter(isReadyRoadmapQuiz).length,
+        0,
+      );
+      return count + phaseQuizCount + knowledgeQuizCount;
+    }, 0);
+
+    return [
+      {
+        key: 'phase',
+        icon: 'layers-outline',
+        label: 'Phase',
+        value: Number(selectedRoadmap?.stats?.phaseCount ?? phases.length) || phases.length,
+        color: '#10b981',
+      },
+      {
+        key: 'knowledge',
+        icon: 'source-branch',
+        label: 'Knowledge',
+        value: Number(selectedRoadmap?.stats?.knowledgeCount ?? knowledgeCount) || knowledgeCount,
+        color: '#0ea5e9',
+      },
+      {
+        key: 'quiz',
+        icon: 'book-check-outline',
+        label: 'Quiz',
+        value: Number(selectedRoadmap?.stats?.quizCount ?? quizCount) || quizCount,
+        color: '#f59e0b',
+      },
+    ];
+  }, [phases, selectedRoadmap?.stats]);
+
+  const stageMapMinWidth =
+    STAGE_ROADMAP_CARD_WIDTH +
+    phases.length * (STAGE_PHASE_CARD_WIDTH + STAGE_PHASE_CONNECTOR_WIDTH) +
+    Spacing.lg * 2;
+  const knowledgeBranchOffset =
+    activePhaseIndex >= 0
+      ? STAGE_ROADMAP_CARD_WIDTH +
+        activePhaseIndex * (STAGE_PHASE_CARD_WIDTH + STAGE_PHASE_CONNECTOR_WIDTH) +
+        STAGE_PHASE_CONNECTOR_WIDTH +
+        18
+      : STAGE_ROADMAP_CARD_WIDTH;
+  const knowledgeBranchLineWidth = Math.max(
+    STAGE_KNOWLEDGE_CARD_WIDTH,
+    activePhaseKnowledges.length * STAGE_KNOWLEDGE_CARD_WIDTH +
+      Math.max(0, activePhaseKnowledges.length - 1) * STAGE_KNOWLEDGE_GAP,
+  );
+  const shouldShowStageKnowledgeBranch =
+    !roadmapStageCollapsed &&
+    activePhaseId > 0 &&
+    Number(expandedStagePhaseId || 0) === activePhaseId &&
+    activePhaseKnowledges.length > 0;
+  const stageMapContentWidth = Math.max(
+    stageMapMinWidth,
+    shouldShowStageKnowledgeBranch
+      ? knowledgeBranchOffset + knowledgeBranchLineWidth + Spacing.lg * 2
+      : 0,
+    STAGE_ROADMAP_CARD_WIDTH + Spacing.lg * 2,
+  );
+
+  const selectStageRoadmap = useCallback(() => {
+    animateLayout();
+    setExpandedStagePhaseId(null);
+    setSelectedKnowledgeId(null);
+    setStageSelectedType('roadmap');
+  }, [animateLayout]);
+
+  const selectStagePhase = useCallback(
+    (phaseId: number) => {
+      const normalizedPhaseId = normalizePositiveId(phaseId);
+      if (!normalizedPhaseId) {
+        return;
+      }
+      handleSelectPhase(normalizedPhaseId, {fromUser: true});
+      const phase = phases.find(
+        (item: any) => normalizePositiveId(item?.phaseId || item?.id) === normalizedPhaseId,
+      );
+      const hasKnowledge = toArray(phase?.knowledges).length > 0;
+      setExpandedStagePhaseId(hasKnowledge ? normalizedPhaseId : null);
+      setStageSelectedType('phase');
+    },
+    [handleSelectPhase, phases],
+  );
+
+  const selectStageKnowledge = useCallback(
+    (
+      phaseId: number,
+      knowledgeId: number,
+      options: {expandTopBranch?: boolean} = {},
+    ) => {
+      const normalizedPhaseId = normalizePositiveId(phaseId);
+      const normalizedKnowledgeId = normalizePositiveId(knowledgeId);
+      if (!normalizedPhaseId || !normalizedKnowledgeId) {
+        return;
+      }
+      if (Number(selectedPhaseId) !== normalizedPhaseId) {
+        handleSelectPhase(normalizedPhaseId, {fromUser: true});
+      }
+      if (options.expandTopBranch) {
+        setExpandedStagePhaseId(normalizedPhaseId);
+      }
+      setSelectedKnowledgeId(normalizedKnowledgeId);
+      setStageSelectedType('knowledge');
+    },
+    [handleSelectPhase, selectedPhaseId],
+  );
+
+  const renderStageLoadingCard = (titleText: string, bodyText: string, percent: number) => (
+    <View
+      style={[
+        styles.stageLoadingCard,
+        {
+          borderColor: colors.border,
+          backgroundColor: isDark ? 'rgba(15,23,42,0.72)' : '#f8fafc',
+        },
+      ]}>
+      <View style={styles.stageLoadingHeader}>
+        <ActivityIndicator size="small" color={Colors.primary} />
+        <Text style={[styles.stageLoadingTitle, {color: colors.heading}]}>{titleText}</Text>
+      </View>
+      <Text style={[styles.stageLoadingText, {color: colors.textSecondary}]}>{bodyText}</Text>
+      {renderGenerationProgress(percent)}
+    </View>
+  );
+
+  const renderStageQuizCard = (
+    quiz: any,
+    keyPrefix: string,
+    phaseId: number,
+    disabled = false,
+  ) => {
+    const quizId = Number(quiz?.quizId || quiz?.id || 0);
+    const questionCount =
+      Number(quiz?.questionCount ?? quiz?.totalQuestion ?? quiz?.totalQuestions ?? 0) || 0;
+    const durationInMinutes = getQuizDurationInMinutes(quiz);
+    const difficultyLabel = String(quiz?.overallDifficulty || quiz?.difficulty || '').toUpperCase();
+    const statusLabel = String(quiz?.status || 'DRAFT').toUpperCase();
+    const outcomeMeta = getQuizOutcomeMeta(quiz);
+    const outcomeColor =
+      outcomeMeta.tone === 'success'
+        ? isDark
+          ? '#86efac'
+          : '#166534'
+        : outcomeMeta.tone === 'danger'
+        ? isDark
+          ? '#fca5a5'
+          : '#b91c1c'
+        : colors.textSecondary;
+
+    return (
+      <View
+        key={`${keyPrefix}-${quizId || quiz?.title || 'quiz'}`}
+        style={[
+          styles.stageQuizCard,
+          {
+            borderColor: colors.border,
+            backgroundColor: isDark ? Colors.dark.surfaceVariant : '#f8fafc',
+            opacity: disabled ? 0.58 : 1,
+          },
+        ]}>
+        <View style={styles.stageQuizTopRow}>
+          <View style={styles.stageQuizBody}>
+            <Text style={[styles.stageQuizTitle, {color: colors.heading}]} numberOfLines={2}>
+              {quiz?.title || `Quiz #${quizId || ''}`}
+            </Text>
+            <Text style={[styles.stageQuizSubtitle, {color: colors.textSecondary}]} numberOfLines={2}>
+              {quiz?.description || 'Quiz trong phase này'}
+            </Text>
+          </View>
+          <Button
+            title="Làm quiz"
+            onPress={() => openQuizModeSelector(quiz, phaseId)}
+            disabled={disabled}
+            size="sm"
+            fullWidth={false}
+            variant="outline"
+            style={styles.stageQuizButton}
+          />
+        </View>
+        <View style={styles.stageQuizMetaWrap}>
+          <View
+            style={[
+              styles.stageMetaChip,
+              {
+                borderColor:
+                  outcomeMeta.tone === 'success'
+                    ? '#86efac'
+                    : outcomeMeta.tone === 'danger'
+                    ? '#fecaca'
+                    : colors.border,
+                backgroundColor:
+                  outcomeMeta.tone === 'success'
+                    ? isDark
+                      ? 'rgba(20,83,45,0.35)'
+                      : '#f0fdf4'
+                    : outcomeMeta.tone === 'danger'
+                    ? isDark
+                      ? 'rgba(127,29,29,0.35)'
+                      : '#fef2f2'
+                    : isDark
+                    ? '#0f172a'
+                    : '#ffffff',
+              },
+            ]}>
+            <Icon name="checkbox-marked-circle-outline" size={12} color={outcomeColor} />
+            <Text style={[styles.stageMetaText, {color: outcomeColor}]}>{outcomeMeta.label}</Text>
+          </View>
+          <View style={[styles.stageMetaChip, {borderColor: colors.border}]}>
+            <Icon name="help-circle-outline" size={12} color={Colors.primary} />
+            <Text style={[styles.stageMetaText, {color: colors.textSecondary}]}>
+              {questionCount > 0 ? `${questionCount} câu` : 'Chưa có số câu'}
+            </Text>
+          </View>
+          <View style={[styles.stageMetaChip, {borderColor: colors.border}]}>
+            <Icon name="timer-outline" size={12} color={Colors.primary} />
+            <Text style={[styles.stageMetaText, {color: colors.textSecondary}]}>
+              {durationInMinutes > 0 ? `${durationInMinutes} phút` : 'Chưa có thời lượng'}
+            </Text>
+          </View>
+          <View style={[styles.stageMetaChip, {borderColor: colors.border}]}>
+            <Icon name="bookmark-check-outline" size={12} color={Colors.primary} />
+            <Text style={[styles.stageMetaText, {color: colors.textSecondary}]}>
+              {difficultyLabel || statusLabel}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderStageLockCard = (titleText: string, bodyText: string) => (
+    <View
+      style={[
+        styles.stageLockCard,
+        {
+          borderColor: colors.border,
+          backgroundColor: isDark ? 'rgba(15,23,42,0.96)' : '#ffffff',
+        },
+      ]}>
+      <View style={[styles.stageLockIcon, {backgroundColor: isDark ? '#334155' : '#f1f5f9'}]}>
+        <Icon name="lock-outline" size={22} color={colors.textSecondary} />
+      </View>
+      <Text style={[styles.stageLockTitle, {color: colors.heading}]}>{titleText}</Text>
+      <Text style={[styles.stageLockText, {color: colors.textSecondary}]}>{bodyText}</Text>
+      {titleText.includes('Phase') ? (
+        <Button
+          title={isSelectedPhaseUnlocking ? 'Đang mở khóa...' : 'Mở khóa Phase'}
+          onPress={() => handleUnlockSelectedPhase()}
+          disabled={!isSelectedPhaseUnlockable}
+          loading={isSelectedPhaseUnlocking}
+          size="sm"
+          fullWidth
+          icon="lock-open-variant-outline"
+        />
+      ) : null}
+    </View>
+  );
+
+  const renderStageRoadmapDetail = () => (
+    <View style={styles.stageDetailStack}>
+      <View style={styles.stageDetailIntro}>
+        <Text style={[styles.stageDetailEyebrow, {color: '#10b981'}]}>Lộ trình trung tâm</Text>
+        <Text style={[styles.stageDetailTitle, {color: colors.heading}]}>{roadmapStageTitle}</Text>
+        <Text style={[styles.stageDetailText, {color: colors.textSecondary}]}>
+          {roadmapStageDescription}
+        </Text>
+      </View>
+
+      <View style={styles.stageStatsGrid}>
+        {roadmapStageStats.map(item => (
+          <View
+            key={item.key}
+            style={[
+              styles.stageStatCard,
+              {
+                borderColor: colors.border,
+                backgroundColor: isDark ? Colors.dark.surfaceVariant : '#f8fafc',
+              },
+            ]}>
+            <Icon name={item.icon} size={18} color={item.color} />
+            <Text style={[styles.stageStatValue, {color: colors.heading}]}>{item.value}</Text>
+            <Text style={[styles.stageStatLabel, {color: colors.textSecondary}]}>{item.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      {!hasRoadmapPhases && contextType === 'WORKSPACE' && materials.length > 0 ? (
+        <View style={styles.stageSectionBlock}>
+          <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>
+            Tài liệu dùng để tạo giai đoạn
+          </Text>
+          <View style={styles.materialWrap}>
+            {materials.map((material: any) => {
+              const materialId = material.materialId || material.id;
+              const selected = selectedMaterialIds.includes(materialId);
+              const disabled = isBlockedMaterial(material);
+              return (
+                <TouchableOpacity
+                  key={materialId}
+                  onPress={() => toggleMaterial(materialId, disabled)}
+                  disabled={disabled}
+                  style={[
+                    styles.materialChip,
+                    {
+                      borderColor: disabled ? colors.border : selected ? Colors.primary : colors.border,
+                      backgroundColor: selected
+                        ? isDark
+                          ? '#1E3A8A30'
+                          : '#EFF6FF'
+                        : disabled
+                        ? isDark
+                          ? '#33415555'
+                          : '#F1F5F9'
+                        : colors.surface,
+                      opacity: disabled ? 0.72 : 1,
+                    },
+                  ]}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: disabled
+                        ? Colors.error
+                        : selected
+                        ? Colors.primary
+                        : colors.textSecondary,
+                      fontSize: 12,
+                    }}>
+                    {material.title || material.fileName || material.name}
+                    {disabled ? ' (Bị cảnh báo/từ chối)' : ''}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {!hasRoadmapPhases ? (
+        <View
+          style={[
+            styles.stageSectionCard,
+            {borderColor: colors.border, backgroundColor: colors.surface},
+          ]}>
+          <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>Chưa có phase</Text>
+          <Text style={[styles.stageDetailText, {color: colors.textSecondary}]}>
+            Tạo giai đoạn để bắt đầu roadmap từ tài liệu đã chọn.
+          </Text>
+          <Button
+            title="Tạo giai đoạn"
+            onPress={() => handleGenerateRoadmapPhases(activeRoadmapId)}
+            loading={runningAction === 'phases' || generatingRoadmapPhases}
+            icon="timeline-plus-outline"
+            size="sm"
+            fullWidth={false}
+            style={styles.stagePrimaryAction}
+          />
+          {generatingRoadmapPhases
+            ? renderStageLoadingCard(
+                'Đang tạo giai đoạn',
+                'AI đang dựng các phase cho roadmap này.',
+                roadmapPhaseGenerationProgress,
+              )
+            : null}
+        </View>
+      ) : (
+        <Button
+          title="Làm mới roadmap"
+          onPress={handleRefreshRoadmap}
+          loading={runningAction === 'refresh-roadmap'}
+          icon="refresh"
+          size="sm"
+          variant="outline"
+          fullWidth={false}
+          style={styles.stagePrimaryAction}
+        />
+      )}
+    </View>
+  );
+
+  const renderStagePhaseReview = () => {
+    const isReviewForActivePhase = Number(phaseReviewState.phaseId) === Number(activePhase?.phaseId);
+    if (phaseReviewState.loading && isReviewForActivePhase) {
+      return (
+        <View
+          style={[
+            styles.stageReviewCard,
+            {borderColor: colors.border, backgroundColor: colors.surface},
+          ]}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={[styles.stageReviewText, {color: colors.textSecondary}]}>
+            Đang đồng bộ đánh giá AI cho phase hiện tại...
+          </Text>
+        </View>
+      );
+    }
+
+    if (!phaseReviewState?.data?.summary || !isReviewForActivePhase) {
+      return null;
+    }
+
+    return (
+      <View
+        style={[
+          styles.stageReviewCard,
+          {
+            borderColor: isDark ? '#14532d' : '#86efac',
+            backgroundColor: isDark ? 'rgba(20,83,45,0.3)' : '#f0fdf4',
+          },
+        ]}>
+        <Text style={[styles.stageReviewTitle, {color: isDark ? '#bbf7d0' : '#166534'}]}>
+          Đánh giá AI cho phase hiện tại
+        </Text>
+        {typeof phaseReviewConfidencePercent === 'number' ? (
+          <Text style={[styles.stageReviewMeta, {color: isDark ? '#dcfce7' : '#166534'}]}>
+            Độ tin cậy: {phaseReviewConfidencePercent}%
+          </Text>
+        ) : null}
+        <Text style={[styles.stageReviewText, {color: isDark ? '#dcfce7' : '#166534'}]}>
+          {phaseReviewState.data.summary}
+        </Text>
+        {phaseReviewAssessedAtLabel ? (
+          <Text style={[styles.stageReviewMeta, {color: isDark ? '#bbf7d0' : '#166534'}]}>
+            Đánh giá lúc: {phaseReviewAssessedAtLabel}
+          </Text>
+        ) : null}
+      </View>
+    );
+  };
+
+  const renderStageKnowledgeRows = () => {
+    if (activePhaseKnowledges.length === 0 && activePhaseShouldShowKnowledgePlaceholder) {
+      return null;
+    }
+
+    if (activePhaseKnowledges.length === 0) {
+      return (
+        <Text style={[styles.stageEmptyText, {color: colors.textSecondary}]}>
+          Chưa có knowledge trong phase này.
+        </Text>
+      );
+    }
+
+    return activePhaseKnowledges.map((knowledge: any, index: number) => {
+      const knowledgeId = normalizePositiveId(knowledge?.knowledgeId || knowledge?.id);
+      const knowledgeStatus = String(knowledge?.status || '').toUpperCase();
+      const lockState = resolveKnowledgeLockState(activePhase, selectedPhaseIndex, index);
+      const isKnowledgeLocked =
+        knowledgeStatus === 'LOCKED' ||
+        lockState.isPhaseLockedForKnowledge ||
+        lockState.isKnowledgeLockedBySequence;
+      const isKnowledgeCompleted =
+        isCompletedKnowledge(knowledge) ||
+        isPhaseFinishedStatus(activePhase?.status) ||
+        isActivePhaseBeforeCurrentKnowledge ||
+        (
+          activePhaseIndex === currentKnowledgePhaseIndex &&
+          activePhaseCurrentKnowledgeIndex >= 0 &&
+          (
+            index < activePhaseCurrentKnowledgeIndex ||
+            (index === activePhaseCurrentKnowledgeIndex && isCurrentKnowledgeDoneStatus)
+          )
+        );
+      const isKnowledgeCurrent =
+        activePhaseIndex === currentKnowledgePhaseIndex &&
+        activePhaseCurrentKnowledgeIndex === index &&
+        !isCurrentKnowledgeDoneStatus;
+      const isSelected = Number(selectedKnowledgeId || 0) === knowledgeId;
+      const quizCount =
+        toArray(knowledge?.quizzes).filter(isReadyRoadmapQuiz).length ||
+        toArray(knowledgeQuizMap[knowledgeId]).filter(isReadyRoadmapQuiz).length;
+
+      return (
+        <TouchableOpacity
+          key={`stage-knowledge-row-${knowledgeId || index}`}
+          onPress={() => selectStageKnowledge(activePhaseId, knowledgeId)}
+          style={[
+            styles.stageKnowledgeRowCard,
+            {
+              borderColor: isSelected ? '#38bdf8' : colors.border,
+              backgroundColor: isSelected
+                ? isDark
+                  ? 'rgba(14,165,233,0.18)'
+                  : '#ecfeff'
+                : isKnowledgeLocked
+                ? isDark
+                  ? '#334155'
+                  : '#f1f5f9'
+                : isDark
+                ? Colors.dark.surfaceVariant
+                : '#f8fafc',
+            },
+          ]}>
+          <View
+            style={[
+              styles.stageKnowledgeStatusIcon,
+              {
+                borderColor: isKnowledgeCompleted
+                  ? '#86efac'
+                  : isKnowledgeCurrent
+                  ? '#7dd3fc'
+                  : colors.border,
+                backgroundColor: isKnowledgeCompleted
+                  ? isDark
+                    ? 'rgba(22,101,52,0.28)'
+                    : '#dcfce7'
+                  : isKnowledgeCurrent
+                  ? isDark
+                    ? 'rgba(3,105,161,0.28)'
+                    : '#e0f2fe'
+                  : colors.surface,
+              },
+            ]}>
+            <Icon
+              name={
+                isKnowledgeCompleted
+                  ? 'check'
+                  : isKnowledgeLocked
+                  ? 'lock-outline'
+                  : isKnowledgeCurrent
+                  ? 'progress-clock'
+                  : 'circle-outline'
+              }
+              size={13}
+              color={
+                isKnowledgeCompleted
+                  ? '#10b981'
+                  : isKnowledgeCurrent
+                  ? '#0ea5e9'
+                  : isKnowledgeLocked
+                  ? colors.textTertiary
+                  : colors.textSecondary
+              }
+            />
+          </View>
+          <View style={styles.stageKnowledgeRowBody}>
+            <Text numberOfLines={2} style={[styles.stageKnowledgeRowTitle, {color: colors.heading}]}>
+              {knowledge?.title || `Knowledge ${index + 1}`}
+            </Text>
+            <Text numberOfLines={2} style={[styles.stageKnowledgeRowText, {color: colors.textSecondary}]}>
+              {knowledge?.description || `${quizCount} quiz`}
+            </Text>
+            <Text
+              style={[
+                styles.stageKnowledgeStateText,
+                {
+                  color: isKnowledgeCompleted
+                    ? '#10b981'
+                    : isKnowledgeCurrent
+                    ? '#0ea5e9'
+                    : isKnowledgeLocked
+                    ? colors.textTertiary
+                    : Colors.primary,
+                },
+              ]}>
+              {isKnowledgeCompleted
+                ? 'Hoàn thành'
+                : isKnowledgeCurrent
+                ? 'Đang học'
+                : isKnowledgeLocked
+                ? 'Đã khóa'
+                : 'Sẵn sàng'}
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={18} color={colors.textTertiary} />
+        </TouchableOpacity>
+      );
+    });
+  };
+
+  const renderStagePhaseDetail = () => {
+    if (!activePhase) {
+      return renderStageRoadmapDetail();
+    }
+
+    const phaseDurationLabel = formatPhaseDurationLabel(activePhase);
+    const phaseVisualState = getPhaseVisualState(activePhase, selectedPhaseIndex, isSelectedPhaseLocked);
+    const phaseVisualMeta = getPhaseVisualMeta(phaseVisualState);
+    const shouldShowStudyNewPrompt =
+      isStudyNewRoadmap &&
+      activePhasePreLearningQuizzes.length === 0 &&
+      !activePhaseHasKnowledge &&
+      !activePhaseShouldShowPreLearningPlaceholder &&
+      !activePhaseShouldShowKnowledgePlaceholder;
+    const shouldShowReviewPrompt =
+      !isStudyNewRoadmap &&
+      activePhasePreLearningQuizzes.length === 0 &&
+      !activePhaseHasKnowledge &&
+      !activePhaseShouldShowPreLearningPlaceholder &&
+      !activePhaseShouldShowKnowledgePlaceholder;
+
+    return (
+      <View style={styles.stageDetailStack}>
+        {isSelectedPhaseLocked
+          ? renderStageLockCard(
+              'Phase này đang bị khóa',
+              'Mở khóa phase để xem pre-learning, knowledge và quiz bên trong.',
+            )
+          : null}
+
+        <View
+          pointerEvents={isSelectedPhaseLocked ? 'none' : 'auto'}
+          style={[styles.stageDetailStack, isSelectedPhaseLocked ? styles.stageDimmedContent : null]}>
+          <View style={styles.stageDetailIntro}>
+            <View style={styles.stageDetailTitleRow}>
+              <View style={[styles.stageStatusBadge, {borderColor: phaseVisualMeta.badgeBorder, backgroundColor: phaseVisualMeta.badgeBackground}]}>
+                <Icon name={phaseVisualMeta.icon} size={13} color={phaseVisualMeta.badgeText} />
+                <Text style={[styles.stageStatusBadgeText, {color: phaseVisualMeta.badgeText}]}>
+                  {phaseVisualMeta.label}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.stageDetailEyebrow, {color: '#0ea5e9'}]}>
+              Chi tiết phase
+            </Text>
+            <Text style={[styles.stageDetailTitle, {color: colors.heading}]}>
+              {activePhase?.title || 'Chi tiết giai đoạn'}
+            </Text>
+            <View style={styles.stageInlineChips}>
+              {phaseDurationLabel ? (
+                <View style={[styles.stageMetaChip, {borderColor: colors.border}]}>
+                  <Icon name="timer-outline" size={12} color={colors.textSecondary} />
+                  <Text style={[styles.stageMetaText, {color: colors.textSecondary}]}>
+                    {phaseDurationLabel}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={[styles.stageMetaChip, {borderColor: colors.border}]}>
+                <Icon name="source-branch" size={12} color={colors.textSecondary} />
+                <Text style={[styles.stageMetaText, {color: colors.textSecondary}]}>
+                  {activePhaseKnowledges.length} knowledge
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.stageDetailText, {color: colors.textSecondary}]}>
+              {activePhase?.description || 'Chọn một knowledge hoặc quiz để tiếp tục.'}
+            </Text>
+          </View>
+
+          {renderStagePhaseReview()}
+
+          {activePhaseShouldShowPreLearningPlaceholder
+            ? renderStageLoadingCard(
+                'Đang tạo quiz trước học',
+                'AI đang chuẩn bị pre-learning cho phase này.',
+                activePhasePreLearningPercent,
+              )
+            : null}
+
+          {activePhasePreLearningQuizzes.length > 0 ? (
+            <View
+              style={[
+                styles.stageSectionCard,
+                {borderColor: colors.border, backgroundColor: colors.surface},
+              ]}>
+              <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>Pre-learning</Text>
+              <View style={styles.stageSectionList}>
+                {activePhasePreLearningQuizzes.map((quiz: any, index: number) =>
+                  renderStageQuizCard(quiz, `stage-prelearning-${index}`, activePhaseId),
+                )}
+              </View>
+            </View>
+          ) : null}
+
+          {canShowActiveSkipDecisionAfterPreLearning || canShowActiveGenerateKnowledgeFallback ? (
+            <View
+              style={[
+                styles.stageDecisionCard,
+                {
+                  borderColor: isDark ? '#1e3a8a' : '#bfdbfe',
+                  backgroundColor: isDark ? 'rgba(30,58,138,0.25)' : '#eff6ff',
+                },
+              ]}>
+              <Text style={[styles.stageDecisionTitle, {color: isDark ? '#bfdbfe' : '#1e3a8a'}]}>
+                Quyết định sau Pre-learning
+              </Text>
+              {canShowActiveSkipDecisionAfterPreLearning ? (
+                <>
+                  <Text style={[styles.stageDecisionText, {color: isDark ? '#dbeafe' : '#1e3a8a'}]}>
+                    Bạn đủ điều kiện bỏ qua phase này hoặc tiếp tục học sâu hơn.
+                  </Text>
+                  <View style={styles.stageActionStack}>
+                    <Button
+                      title="Bỏ qua phase"
+                      onPress={() => handlePreLearningDecision(activePhaseId, true)}
+                      loading={submittingPreLearningDecision}
+                      variant="outline"
+                      size="sm"
+                      fullWidth
+                      icon="skip-next"
+                    />
+                    <Button
+                      title="Tiếp tục học phase này"
+                      onPress={() => handlePreLearningDecision(activePhaseId, false)}
+                      loading={submittingPreLearningDecision}
+                      size="sm"
+                      fullWidth
+                      icon="book-open-variant"
+                    />
+                  </View>
+                </>
+              ) : null}
+              {canShowActiveGenerateKnowledgeFallback ? (
+                <Button
+                  title="Tạo nội dung cho phase"
+                  onPress={() => handlePreLearningDecision(activePhaseId, false)}
+                  loading={submittingPreLearningDecision}
+                  size="sm"
+                  fullWidth
+                  icon="lightning-bolt-outline"
+                />
+              ) : null}
+            </View>
+          ) : null}
+
+          {shouldShowStudyNewPrompt ? (
+            <View
+              style={[
+                styles.stageDecisionCard,
+                {
+                  borderColor: isDark ? '#1e3a8a' : '#bfdbfe',
+                  backgroundColor: isDark ? 'rgba(30,58,138,0.22)' : '#eff6ff',
+                },
+              ]}>
+              <Text style={[styles.stageDecisionTitle, {color: isDark ? '#dbeafe' : '#1e3a8a'}]}>
+                Bạn đã có nền tảng ở phase này chưa?
+              </Text>
+              <Text style={[styles.stageDecisionText, {color: isDark ? '#c7d2fe' : '#1e3a8a'}]}>
+                Nếu chưa, hệ thống sẽ tạo nội dung phase. Nếu có rồi, hệ thống sẽ tạo pre-learning.
+              </Text>
+              <View style={styles.stageActionStack}>
+                <Button
+                  title="Tôi đã có nền tảng"
+                  onPress={() => handleGeneratePreLearning(Number(activeRoadmapId || 0), activePhaseId)}
+                  loading={runningAction === `pre-${activePhaseId}` || activePhaseIsGeneratingPreLearning}
+                  variant="outline"
+                  size="sm"
+                  fullWidth
+                  icon="book-open-page-variant-outline"
+                />
+                <Button
+                  title="Tôi là người mới"
+                  onPress={() => handleGeneratePhaseContent(Number(activeRoadmapId || 0), activePhaseId, true)}
+                  loading={runningAction === `content-${activePhaseId}` || activePhaseIsGeneratingKnowledge}
+                  size="sm"
+                  fullWidth
+                  icon="sparkles"
+                />
+              </View>
+            </View>
+          ) : null}
+
+          {shouldShowReviewPrompt ? (
+            <View
+              style={[
+                styles.stageSectionCard,
+                {borderColor: colors.border, backgroundColor: colors.surface},
+              ]}>
+              <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>Bắt đầu phase này</Text>
+              <Text style={[styles.stageDetailText, {color: colors.textSecondary}]}>
+                Tạo quiz trước học hoặc tạo trực tiếp nội dung giai đoạn.
+              </Text>
+              <View style={styles.stageActionRow}>
+                <Button
+                  title="Tạo quiz trước học"
+                  onPress={() => handleGeneratePreLearning(Number(activeRoadmapId || 0), activePhaseId)}
+                  loading={runningAction === `pre-${activePhaseId}` || activePhaseIsGeneratingPreLearning}
+                  size="sm"
+                  variant="outline"
+                  fullWidth={false}
+                  icon="book-open-page-variant-outline"
+                />
+                <Button
+                  title="Tạo nội dung"
+                  onPress={() => handleGeneratePhaseContent(Number(activeRoadmapId || 0), activePhaseId)}
+                  loading={runningAction === `content-${activePhaseId}` || activePhaseIsGeneratingKnowledge}
+                  size="sm"
+                  fullWidth={false}
+                  icon="sparkles"
+                />
+              </View>
+            </View>
+          ) : null}
+
+          <View
+            style={[
+              styles.stageSectionCard,
+              {borderColor: colors.border, backgroundColor: colors.surface},
+            ]}>
+            <View style={styles.stageSectionHeader}>
+              <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>Knowledge</Text>
+              <Text style={[styles.stageSectionHint, {color: colors.textSecondary}]}>
+                {activePhaseCompletedKnowledgeCount}/{activePhaseKnowledges.length}
+              </Text>
+            </View>
+            {activePhaseShouldShowKnowledgePlaceholder
+              ? renderStageLoadingCard(
+                  'Đang tạo nội dung phase',
+                  'AI đang tạo knowledge và quiz luyện tập cho phase này.',
+                  activePhaseKnowledgePercent,
+                )
+              : null}
+            <View style={styles.stageSectionList}>{renderStageKnowledgeRows()}</View>
+          </View>
+
+          {activePhasePostLearningQuizzes.length > 0 ? (
+            <View
+              style={[
+                styles.stageSectionCard,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface,
+                  opacity: activePhaseShouldLockPostLearning ? 0.58 : 1,
+                },
+              ]}>
+              <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>Post-learning</Text>
+              {activePhaseShouldLockPostLearning ? (
+                <Text style={[styles.stageEmptyText, {color: colors.textSecondary}]}>
+                  Hoàn thành knowledge trong phase để mở quiz sau học ({activePhaseCompletedKnowledgeCount}/{activePhaseKnowledges.length}).
+                </Text>
+              ) : null}
+              <View style={styles.stageSectionList}>
+                {activePhasePostLearningQuizzes.map((quiz: any, index: number) =>
+                  renderStageQuizCard(
+                    quiz,
+                    `stage-postlearning-${index}`,
+                    activePhaseId,
+                    activePhaseShouldLockPostLearning,
+                  ),
+                )}
+              </View>
+            </View>
+          ) : null}
+
+          {canShowActiveRemedialDecision ? (
+            <View
+              style={[
+                styles.stageDecisionCard,
+                {
+                  borderColor: isDark ? '#1e3a8a' : '#bfdbfe',
+                  backgroundColor: isDark ? 'rgba(30,58,138,0.25)' : '#eff6ff',
+                },
+              ]}>
+              <Text style={[styles.stageDecisionTitle, {color: isDark ? '#bfdbfe' : '#1e3a8a'}]}>
+                Quyết định sau Post-learning
+              </Text>
+              <Text style={[styles.stageDecisionText, {color: isDark ? '#dbeafe' : '#1e3a8a'}]}>
+                Kết quả post-learning chưa đạt. Chọn cách thêm phase remedial cho lộ trình.
+              </Text>
+              <View style={styles.stageActionStack}>
+                <Button
+                  title="Tạo remedial và giữ deadline"
+                  onPress={() => handleRemedialDecision(activePhaseId, 'COMPRESS_TO_KEEP_DEADLINE')}
+                  loading={submittingRemedialDecision}
+                  size="sm"
+                  fullWidth
+                  icon="check-circle-outline"
+                />
+                <Button
+                  title="Tạo remedial và gia hạn deadline"
+                  onPress={() => handleRemedialDecision(activePhaseId, 'EXTEND_DEADLINE')}
+                  loading={submittingRemedialDecision}
+                  size="sm"
+                  variant="outline"
+                  fullWidth
+                  icon="calendar-clock-outline"
+                />
+              </View>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
+
+  const renderStageKnowledgeDetail = () => {
+    if (!selectedKnowledge || !activePhase) {
+      return renderStagePhaseDetail();
+    }
+
+    const flashcards = toArray(selectedKnowledge?.flashcards || selectedKnowledge?.flashcardSets);
+    const canCreateKnowledgeQuiz =
+      Number(activeRoadmapId || 0) > 0 && Number(selectedKnowledgeId || 0) > 0;
+
+    return (
+      <View style={styles.stageDetailStack}>
+        {isSelectedKnowledgeLocked
+          ? renderStageLockCard(
+              'Knowledge này đang bị khóa',
+              'Hãy hoàn thành knowledge trước đó để mở phần này.',
+            )
+          : null}
+
+        <View
+          pointerEvents={isSelectedKnowledgeLocked ? 'none' : 'auto'}
+          style={[styles.stageDetailStack, isSelectedKnowledgeLocked ? styles.stageDimmedContent : null]}>
+          <View style={styles.stageDetailIntro}>
+            <Text style={[styles.stageDetailEyebrow, {color: '#10b981'}]}>
+              Chi tiết knowledge
+            </Text>
+            <Text style={[styles.stageDetailTitle, {color: colors.heading}]}>
+              {selectedKnowledge?.title || 'Knowledge'}
+            </Text>
+            <Text style={[styles.stageDetailSubText, {color: colors.textSecondary}]}>
+              {activePhase?.title || 'Phase hiện tại'}
+            </Text>
+            <Text style={[styles.stageDetailText, {color: colors.textSecondary}]}>
+              {selectedKnowledge?.description || 'Xem quiz và học liệu của knowledge này.'}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.stageSectionCard,
+              {borderColor: colors.border, backgroundColor: colors.surface},
+            ]}>
+            <View style={styles.stageSectionHeader}>
+              <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>Quiz</Text>
+              {selectedKnowledgeQuizzes.length === 0 ? (
+                <Button
+                  title="Tạo quiz"
+                  size="sm"
+                  fullWidth={false}
+                  onPress={() => {
+                    if (canCreateKnowledgeQuiz) {
+                      handleGenerateKnowledgeQuiz(
+                        Number(activeRoadmapId || 0),
+                        Number(selectedKnowledgeId || 0),
+                      );
+                    }
+                  }}
+                  loading={
+                    runningAction === `knowledge-${Number(selectedKnowledgeId || 0)}` ||
+                    selectedKnowledgeIsGeneratingQuiz
+                  }
+                  disabled={!canCreateKnowledgeQuiz}
+                  icon="school-outline"
+                />
+              ) : null}
+            </View>
+            {selectedKnowledgeIsGeneratingQuiz
+              ? renderStageLoadingCard(
+                  'Đang tạo quiz kiến thức',
+                  'AI đang tạo quiz cho knowledge này.',
+                  activePhaseKnowledgePercent,
+                )
+              : null}
+            {selectedKnowledgeQuizzes.length > 0 ? (
+              <View style={styles.stageSectionList}>
+                {selectedKnowledgeQuizzes.map((quiz: any, index: number) =>
+                  renderStageQuizCard(quiz, `stage-knowledge-quiz-${index}`, activePhaseId),
+                )}
+              </View>
+            ) : selectedKnowledgeIsGeneratingQuiz ? null : (
+              <Text style={[styles.stageEmptyText, {color: colors.textSecondary}]}>
+                Chưa có quiz cho knowledge này.
+              </Text>
+            )}
+          </View>
+
+          {flashcards.length > 0 ? (
+            <View
+              style={[
+                styles.stageSectionCard,
+                {
+                  borderColor: isDark ? '#92400e' : '#fde68a',
+                  backgroundColor: isDark ? 'rgba(120,53,15,0.24)' : '#fffbeb',
+                },
+              ]}>
+              <Text style={[styles.stageSectionTitle, {color: isDark ? '#fcd34d' : '#92400e'}]}>
+                Flashcard
+              </Text>
+              <View style={styles.stageSectionList}>
+                {flashcards.map((flashcard: any, index: number) => (
+                  <View key={`stage-flashcard-${flashcard?.flashcardSetId || flashcard?.id || index}`} style={styles.stageFlashcardRow}>
+                    <Icon name="cards-outline" size={16} color={isDark ? '#fcd34d' : '#92400e'} />
+                    <View style={{flex: 1}}>
+                      <Text style={[styles.stageKnowledgeRowTitle, {color: colors.heading}]} numberOfLines={2}>
+                        {flashcard?.title || flashcard?.flashcardSetName || `Flashcard ${index + 1}`}
+                      </Text>
+                      <Text style={[styles.stageKnowledgeRowText, {color: colors.textSecondary}]}>
+                        {Number(flashcard?.cardCount ?? flashcard?.itemCount ?? 0) || 0} thẻ
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
+
+  const renderStageDetailContent = () => {
+    if (effectiveStageSelectedType === 'knowledge') {
+      return renderStageKnowledgeDetail();
+    }
+    if (effectiveStageSelectedType === 'phase') {
+      return renderStagePhaseDetail();
+    }
+    return renderStageRoadmapDetail();
+  };
+
+  const renderRoadmapStage = () => (
+    <View
+      style={[
+        styles.stageShell,
+        {
+          borderColor: colors.border,
+          backgroundColor: isDark ? 'rgba(15,23,42,0.9)' : '#ffffff',
+        },
+      ]}>
+      <View style={[styles.stageTopBar, {borderBottomColor: colors.border}]}>
+        <TouchableOpacity onPress={selectStageRoadmap} style={styles.stageTopTitleWrap}>
+          <View style={[styles.stageStatusDot, {backgroundColor: '#10b981'}]} />
+          <View style={styles.stageTopTitleBody}>
+            <Text style={[styles.stageTopTitle, {color: colors.heading}]}>Lộ trình theo giai đoạn</Text>
+            <Text style={[styles.stageTopSubtitle, {color: colors.textSecondary}]} numberOfLines={1}>
+              {roadmapStageTitle}
+            </Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {
+            animateLayout();
+            if (!roadmapStageCollapsed) {
+              setExpandedStagePhaseId(null);
+            }
+            setRoadmapStageCollapsed(current => !current);
+          }}
+          style={[styles.stageIconButton, {borderColor: colors.border}]}>
+          <Icon
+            name={roadmapStageCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={18}
+            color={colors.textSecondary}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {!roadmapStageCollapsed ? (
+        <View
+          style={[
+            styles.stageMapViewport,
+            shouldShowStageKnowledgeBranch
+              ? styles.stageMapViewportExpanded
+              : styles.stageMapViewportCompact,
+            {backgroundColor: isDark ? '#020617' : '#f8fafc'},
+          ]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.stageMapContent,
+              {minWidth: stageMapContentWidth, width: stageMapContentWidth},
+            ]}>
+            <View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFillObject,
+                styles.stageMapBackdrop,
+                {borderColor: isDark ? 'rgba(148,163,184,0.08)' : 'rgba(148,163,184,0.16)'},
+              ]}
+            />
+
+            <View style={styles.stageNodeRow}>
+              <TouchableOpacity
+                onPress={selectStageRoadmap}
+                style={[
+                  styles.stageRoadmapNode,
+                  {
+                    width: STAGE_ROADMAP_CARD_WIDTH,
+                    borderColor:
+                      effectiveStageSelectedType === 'roadmap' ? '#10b981' : colors.border,
+                    backgroundColor:
+                      effectiveStageSelectedType === 'roadmap'
+                        ? isDark
+                          ? 'rgba(20,83,45,0.3)'
+                          : '#ecfdf5'
+                        : isDark
+                        ? 'rgba(15,23,42,0.96)'
+                        : '#ffffff',
+                  },
+                ]}>
+                <Text style={[styles.stageNodeEyebrow, {color: '#10b981'}]}>
+                  Lộ trình trung tâm
+                </Text>
+                <Text numberOfLines={3} style={[styles.stageNodeTitle, {color: colors.heading}]}>
+                  {roadmapStageTitle}
+                </Text>
+                <Text style={[styles.stageNodeMeta, {color: colors.textSecondary}]}>
+                  {phases.length} phase • {roadmapStageContextLabel}
+                </Text>
+              </TouchableOpacity>
+
+              {phases.map((phase: any, index: number) => {
+                const phaseId = normalizePositiveId(phase?.phaseId || phase?.id);
+                const hasPreLearningQuiz = hasReadyRoadmapQuiz(phase?.preLearningQuizzes);
+                const isLockedPhase =
+                  index > maxUnlockedPhaseIndex &&
+                  !hasPreLearningQuiz &&
+                  !isCurrentPhaseByPayload(phaseId);
+                const isGeneratingPreLearningForPhase = generatingPreLearningPhaseIds.includes(phaseId);
+                const isGeneratingKnowledgeForPhase =
+                  generatingKnowledgePhaseIds.includes(phaseId) ||
+                  generatingKnowledgeQuizPhaseIds.includes(phaseId);
+                const isProcessingPhase =
+                  !isPhaseEffectivelyDone(phase) &&
+                  !isLockedPhase &&
+                  (
+                    String(phase?.status || '').toUpperCase() === 'PROCESSING' ||
+                    isGeneratingPreLearningForPhase ||
+                    isGeneratingKnowledgeForPhase
+                  );
+                const progressPercent = isGeneratingPreLearningForPhase
+                  ? getProgressForPhase(preLearningProgressByPhaseId, phaseId)
+                  : isGeneratingKnowledgeForPhase
+                  ? getProgressForPhase(knowledgeProgressByPhaseId, phaseId)
+                  : 0;
+                const isSelected =
+                  effectiveStageSelectedType !== 'roadmap' && Number(selectedPhaseId) === phaseId;
+                const isCompletedPhase = isPhaseEffectivelyDone(phase);
+
+                return (
+                  <View key={`stage-phase-node-${phaseId || index}`} style={styles.stagePhaseCluster}>
+                    <View
+                      style={[
+                        styles.stageHorizontalConnector,
+                        {backgroundColor: isDark ? '#334155' : '#bfdbfe'},
+                      ]}
+                    />
+                    <TouchableOpacity
+                      onPress={() => selectStagePhase(phaseId)}
+                      style={[
+                        styles.stagePhaseNode,
+                        {
+                          width: STAGE_PHASE_CARD_WIDTH,
+                          borderColor: isSelected ? '#0ea5e9' : colors.border,
+                          backgroundColor: isSelected
+                            ? isDark
+                              ? 'rgba(14,165,233,0.2)'
+                              : '#e0f2fe'
+                            : isLockedPhase
+                            ? isDark
+                              ? 'rgba(51,65,85,0.72)'
+                              : '#f1f5f9'
+                            : isDark
+                            ? 'rgba(15,23,42,0.96)'
+                            : '#ffffff',
+                          opacity: isLockedPhase && !isSelected ? 0.82 : 1,
+                        },
+                      ]}>
+                      <View style={styles.stageNodeHeader}>
+                        <Text style={[styles.stageNodeEyebrow, {color: '#0ea5e9'}]}>
+                          Phase {index + 1}
+                        </Text>
+                        {isCompletedPhase ? (
+                          <Icon name="check-circle-outline" size={16} color="#10b981" />
+                        ) : isProcessingPhase ? (
+                          <ActivityIndicator size="small" color="#f59e0b" />
+                        ) : isLockedPhase ? (
+                          <Icon name="lock-outline" size={16} color={colors.textTertiary} />
+                        ) : null}
+                      </View>
+                      <Text numberOfLines={3} style={[styles.stageNodeTitle, {color: colors.heading}]}>
+                        {phase?.title || `Giai đoạn ${index + 1}`}
+                      </Text>
+                      {(isGeneratingPreLearningForPhase || isGeneratingKnowledgeForPhase) ? (
+                        <View style={styles.stageNodeProgressWrap}>
+                          <View
+                            style={[
+                              styles.stageNodeProgressTrack,
+                              {backgroundColor: isDark ? '#334155' : '#dbeafe'},
+                            ]}>
+                            <View
+                              style={[
+                                styles.stageNodeProgressFill,
+                                {width: `${progressPercent}%`},
+                              ]}
+                            />
+                          </View>
+                          <Text style={[styles.stageNodeProgressText, {color: Colors.primary}]}>
+                            {progressPercent}%
+                          </Text>
+                        </View>
+                      ) : null}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+
+            {shouldShowStageKnowledgeBranch ? (
+              <View style={[styles.stageKnowledgeBranch, {paddingLeft: knowledgeBranchOffset}]}>
+                <View
+                  style={[
+                    styles.stageBranchStem,
+                    {
+                      left: knowledgeBranchOffset + 18,
+                      backgroundColor: isDark ? '#334155' : '#bfdbfe',
+                    },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.stageBranchLine,
+                    {
+                      width: knowledgeBranchLineWidth,
+                      backgroundColor: isDark ? '#334155' : '#bfdbfe',
+                    },
+                  ]}
+                />
+                <View style={styles.stageKnowledgeNodeRow}>
+                  {activePhaseKnowledges.map((knowledge: any, index: number) => {
+                    const knowledgeId = normalizePositiveId(knowledge?.knowledgeId || knowledge?.id);
+                    const active = effectiveStageSelectedType === 'knowledge' && Number(selectedKnowledgeId) === knowledgeId;
+                    const knowledgeStatus = String(knowledge?.status || '').toUpperCase();
+                    const knowledgeLockState = resolveKnowledgeLockState(activePhase, selectedPhaseIndex, index);
+                    const isLocked =
+                      knowledgeStatus === 'LOCKED' ||
+                      knowledgeLockState.isPhaseLockedForKnowledge ||
+                      knowledgeLockState.isKnowledgeLockedBySequence;
+                    const knowledgeQuizRequestKey = `${activePhaseId}:${knowledgeId}`;
+                    const isProcessing =
+                      !isCompletedKnowledge(knowledge) &&
+                      !isLocked &&
+                      (
+                        knowledgeStatus === 'PROCESSING' ||
+                        knowledgeStatus === 'GENERATING' ||
+                        generatingKnowledgeQuizKnowledgeKeys.includes(knowledgeQuizRequestKey)
+                      );
+                    const isCompleted =
+                      isCompletedKnowledge(knowledge) ||
+                      isPhaseFinishedStatus(activePhase?.status) ||
+                      (
+                        activePhaseIndex === currentKnowledgePhaseIndex &&
+                        activePhaseCurrentKnowledgeIndex >= 0 &&
+                        (
+                          index < activePhaseCurrentKnowledgeIndex ||
+                          (index === activePhaseCurrentKnowledgeIndex && isCurrentKnowledgeDoneStatus)
+                        )
+                      );
+
+                    return (
+                      <TouchableOpacity
+                        key={`stage-knowledge-node-${knowledgeId || index}`}
+                        onPress={() =>
+                          selectStageKnowledge(activePhaseId, knowledgeId, {
+                            expandTopBranch: true,
+                          })
+                        }
+                        style={[
+                          styles.stageKnowledgeNode,
+                          {
+                            width: STAGE_KNOWLEDGE_CARD_WIDTH,
+                            borderColor: active ? '#10b981' : colors.border,
+                            backgroundColor: active
+                              ? isDark
+                                ? 'rgba(20,83,45,0.26)'
+                                : '#ecfdf5'
+                              : isLocked
+                              ? isDark
+                                ? 'rgba(51,65,85,0.72)'
+                                : '#f1f5f9'
+                              : isDark
+                              ? 'rgba(15,23,42,0.96)'
+                              : '#ffffff',
+                            opacity: isLocked && !active ? 0.82 : 1,
+                          },
+                        ]}>
+                        <View
+                          style={[
+                            styles.stageKnowledgeStem,
+                            {backgroundColor: isDark ? '#334155' : '#bfdbfe'},
+                          ]}
+                        />
+                        <View style={styles.stageNodeHeader}>
+                          <Text style={[styles.stageNodeEyebrow, {color: '#10b981'}]}>
+                            Knowledge {index + 1}
+                          </Text>
+                          {isCompleted ? (
+                            <Icon name="check-circle-outline" size={15} color="#10b981" />
+                          ) : isProcessing ? (
+                            <ActivityIndicator size="small" color="#f59e0b" />
+                          ) : isLocked ? (
+                            <Icon name="lock-outline" size={15} color={colors.textTertiary} />
+                          ) : null}
+                        </View>
+                        <Text numberOfLines={3} style={[styles.stageKnowledgeNodeTitle, {color: colors.heading}]}>
+                          {knowledge?.title || `Knowledge ${index + 1}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+          </ScrollView>
+        </View>
+      ) : null}
+
+      <View
+        style={[
+          styles.stageDetailPanel,
+          {borderColor: colors.border, backgroundColor: colors.surface},
+        ]}>
+        <View style={[styles.stageDetailPanelHeader, {borderBottomColor: colors.border}]}>
+          <View style={styles.stageDetailPanelTitleWrap}>
+            <Text style={[styles.stagePanelTitle, {color: colors.heading}]}>Chi tiết lộ trình</Text>
+            <Text style={[styles.stagePanelHint, {color: colors.textSecondary}]}>
+              {effectiveStageSelectedType === 'knowledge'
+                ? 'Knowledge, quiz và flashcard liên quan.'
+                : effectiveStageSelectedType === 'phase'
+                ? 'Pre-learning, knowledge, post-learning và quyết định học.'
+                : 'Thông tin tổng quan của roadmap trung tâm.'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setJourneyPanelVisible(true)}
+            style={[styles.stageIconButton, {borderColor: colors.border}]}>
+            <Icon name="format-list-bulleted" size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.stageDetailPanelBody}>{renderStageDetailContent()}</View>
+      </View>
+    </View>
+  );
+
+  const showLegacyDetailList = false;
+
+  const renderGenerationProgress = (percent: number) => {
+    const displayPercent = clampPercent(percent);
+    return (
+      <View style={styles.generationProgressWrap}>
+        <View
+          style={[
+            styles.generationProgressTrack,
+            {backgroundColor: isDark ? '#334155' : '#e2e8f0'},
+          ]}>
+          <View
+            style={[
+              styles.generationProgressFill,
+              {width: `${displayPercent}%`},
+            ]}
+          />
+        </View>
+        <Text style={[styles.generationPercentText, {color: colors.textSecondary}]}>
+          {displayPercent}%
+        </Text>
+      </View>
+    );
+  };
 
   if (loading) {
     return <LoadingSpinner />;
@@ -1674,8 +3604,11 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
         {!!activeRoadmapId && (
           <View style={styles.phaseWrap}>
+            {renderRoadmapStage()}
+
             <View
               style={[
+                styles.phaseWrapHidden,
                 styles.roadmapHeroCard,
                 {
                   borderColor: colors.border,
@@ -1691,7 +3624,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
               </Text>
             </View>
 
-            {viewMode === 'detail' ? (
+            {showLegacyDetailList && viewMode === 'detail' ? (
               <View style={[styles.detailBoardWrap, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
                 <Text style={[styles.detailBoardTitle, {color: colors.heading}]}>Lộ trình theo giai đoạn</Text>
 
@@ -1707,9 +3640,20 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                   />
                   {phases.map((phase: any, index: number) => {
                     const phaseId = Number(phase?.phaseId || 0);
-                    const hasPreLearningQuiz =
-                      Array.isArray(phase?.preLearningQuizzes) && phase.preLearningQuizzes.length > 0;
-                    const isLockedPhase = index > maxUnlockedPhaseIndex && !hasPreLearningQuiz;
+                    const hasPreLearningQuiz = hasReadyRoadmapQuiz(phase?.preLearningQuizzes);
+                    const isGeneratingPreLearningForPhase = generatingPreLearningPhaseIds.includes(phaseId);
+                    const isGeneratingKnowledgeForPhase =
+                      generatingKnowledgePhaseIds.includes(phaseId) ||
+                      generatingKnowledgeQuizPhaseIds.includes(phaseId);
+                    const phaseProgressPercent = isGeneratingPreLearningForPhase
+                      ? getProgressForPhase(preLearningProgressByPhaseId, phaseId)
+                      : isGeneratingKnowledgeForPhase
+                      ? getProgressForPhase(knowledgeProgressByPhaseId, phaseId)
+                      : 0;
+                    const isLockedPhase =
+                      index > maxUnlockedPhaseIndex &&
+                      !hasPreLearningQuiz &&
+                      !isCurrentPhaseByPayload(phaseId);
                     const isSelectedPhase = Number(selectedPhaseId) === phaseId;
                     return (
                       <TouchableOpacity
@@ -1752,6 +3696,25 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                           </Text>
                           {isLockedPhase ? (
                             <Icon name="lock-outline" size={14} color={colors.textTertiary} />
+                          ) : null}
+                          {(isGeneratingPreLearningForPhase || isGeneratingKnowledgeForPhase) ? (
+                            <View style={styles.detailPhaseProgressWrap}>
+                              <View
+                                style={[
+                                  styles.detailPhaseProgressTrack,
+                                  {backgroundColor: isDark ? '#334155' : '#dbeafe'},
+                                ]}>
+                                <View
+                                  style={[
+                                    styles.detailPhaseProgressFill,
+                                    {width: `${phaseProgressPercent}%`},
+                                  ]}
+                                />
+                              </View>
+                              <Text style={[styles.detailPhaseProgressText, {color: Colors.primary}]}>
+                                {phaseProgressPercent}%
+                              </Text>
+                            </View>
                           ) : null}
                         </View>
                       </TouchableOpacity>
@@ -1836,6 +3799,18 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                         <Text style={[styles.detailEmptyText, {color: colors.textSecondary}]}>Hãy hoàn thành knowledge trước đó để mở khóa phần này.</Text>
                       </View>
                     ) : null}
+                    {selectedKnowledgeIsGeneratingQuiz ? (
+                      <View style={[styles.generationCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+                        <View style={styles.generationHeaderRow}>
+                          <ActivityIndicator size="small" color={Colors.primary} />
+                          <Text style={[styles.generationTitle, {color: colors.heading}]}>Đang tạo quiz kiến thức</Text>
+                        </View>
+                        <Text style={[styles.generationText, {color: colors.textSecondary}]}>
+                          AI đang tạo quiz cho knowledge này.
+                        </Text>
+                        {renderGenerationProgress(activePhaseKnowledgePercent)}
+                      </View>
+                    ) : null}
                     {selectedKnowledgeQuizzes.length > 0 ? (
                       selectedKnowledgeQuizzes.map((quiz: any, index: number) => {
                         const quizId = Number(quiz?.quizId || quiz?.id || 0);
@@ -1862,7 +3837,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                           </View>
                         );
                       })
-                    ) : (
+                    ) : selectedKnowledgeIsGeneratingQuiz ? null : (
                       <View style={styles.detailEmptyWrap}>
                         <Text style={[styles.detailEmptyText, {color: colors.textSecondary}]}>Chưa có quiz cho knowledge này.</Text>
                         <Button
@@ -1881,7 +3856,10 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                               handleGenerateKnowledgeQuiz(normalizedRoadmapId, normalizedKnowledgeId);
                             }
                           }}
-                          loading={runningAction === `knowledge-${Number(selectedKnowledgeId || 0)}`}
+                          loading={
+                            runningAction === `knowledge-${Number(selectedKnowledgeId || 0)}` ||
+                            selectedKnowledgeIsGeneratingQuiz
+                          }
                         />
                       </View>
                     )}
@@ -1899,7 +3877,113 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                   </View>
                 ) : null}
 
-                {!isSelectedPhaseLocked && activePhase && (!Array.isArray(activePhase?.knowledges) || activePhase.knowledges.length === 0) ? (
+                {!isSelectedPhaseLocked && activePhaseShouldShowPreLearningPlaceholder ? (
+                  <View style={[styles.generationCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+                    <View style={styles.generationHeaderRow}>
+                      <ActivityIndicator size="small" color={Colors.primary} />
+                      <Text style={[styles.generationTitle, {color: colors.heading}]}>Đang tạo quiz trước học</Text>
+                    </View>
+                    <Text style={[styles.generationText, {color: colors.textSecondary}]}>
+                      AI đang chuẩn bị pre-learning cho phase này.
+                    </Text>
+                    {renderGenerationProgress(activePhasePreLearningPercent)}
+                  </View>
+                ) : null}
+
+                {!isSelectedPhaseLocked && activePhaseShouldShowKnowledgePlaceholder ? (
+                  <View style={[styles.generationCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+                    <View style={styles.generationHeaderRow}>
+                      <ActivityIndicator size="small" color={Colors.primary} />
+                      <Text style={[styles.generationTitle, {color: colors.heading}]}>Đang tạo nội dung phase</Text>
+                    </View>
+                    <Text style={[styles.generationText, {color: colors.textSecondary}]}>
+                      AI đang tạo knowledge và quiz luyện tập cho phase này.
+                    </Text>
+                    {renderGenerationProgress(activePhaseKnowledgePercent)}
+                  </View>
+                ) : null}
+
+                {!isSelectedPhaseLocked && activePhasePreLearningQuizzes.length > 0 ? (
+                  <View style={[styles.detailQuizSection, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+                    <Text style={[styles.detailQuizTitle, {color: colors.heading}]}>Quiz trước học</Text>
+                    {activePhasePreLearningQuizzes.map((quiz: any, index: number) => {
+                      const quizId = Number(quiz?.quizId || quiz?.id || 0);
+                      return (
+                        <View
+                          key={`detail-prelearning-quiz-${quizId || index}`}
+                          style={[styles.detailQuizCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+                          <View style={{flex: 1}}>
+                            <Text style={[styles.detailQuizName, {color: colors.heading}]}>
+                              {quiz?.title || `Quiz #${quizId || index + 1}`}
+                            </Text>
+                            <Text style={[styles.detailQuizMeta, {color: colors.textSecondary}]}>
+                              {String(quiz?.status || 'DRAFT').toUpperCase()}
+                            </Text>
+                          </View>
+                          <Button
+                            title="Làm quiz"
+                            onPress={() => openQuizModeSelector(quiz, Number(activePhase?.phaseId || 0))}
+                            size="sm"
+                            fullWidth={false}
+                            variant="outline"
+                            style={styles.detailQuizActionBtn}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
+                {canShowActiveSkipDecisionAfterPreLearning || canShowActiveGenerateKnowledgeFallback ? (
+                  <View
+                    style={[
+                      styles.preLearningDecisionCard,
+                      {
+                        borderColor: isDark ? '#1e3a8a' : '#bfdbfe',
+                        backgroundColor: isDark ? 'rgba(30,58,138,0.25)' : '#eff6ff',
+                      },
+                    ]}>
+                    <Text style={[styles.preLearningDecisionTitle, {color: isDark ? '#bfdbfe' : '#1e3a8a'}]}>
+                      Lựa chọn sau Pre-learning
+                    </Text>
+                    {canShowActiveSkipDecisionAfterPreLearning ? (
+                      <>
+                        <Text style={[styles.preLearningDecisionText, {color: isDark ? '#dbeafe' : '#1e3a8a'}]}>
+                          Bạn đủ điều kiện bỏ qua phase này hoặc tiếp tục học sâu hơn.
+                        </Text>
+                        <Button
+                          title="Bỏ qua phase"
+                          onPress={() => handlePreLearningDecision(activePhaseId, true)}
+                          loading={submittingPreLearningDecision}
+                          variant="outline"
+                          size="sm"
+                          fullWidth
+                          icon="skip-next"
+                        />
+                        <Button
+                          title="Tiếp tục học phase này"
+                          onPress={() => handlePreLearningDecision(activePhaseId, false)}
+                          loading={submittingPreLearningDecision}
+                          size="sm"
+                          fullWidth
+                          icon="book-open-variant"
+                        />
+                      </>
+                    ) : null}
+                    {canShowActiveGenerateKnowledgeFallback ? (
+                      <Button
+                        title="Tạo nội dung cho phase"
+                        onPress={() => handlePreLearningDecision(activePhaseId, false)}
+                        loading={submittingPreLearningDecision}
+                        size="sm"
+                        fullWidth
+                        icon="lightning-bolt-outline"
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
+
+                {!isSelectedPhaseLocked && activePhase && isStudyNewRoadmap && activePhasePreLearningQuizzes.length === 0 && !activePhaseHasKnowledge && !activePhaseShouldShowPreLearningPlaceholder && !activePhaseShouldShowKnowledgePlaceholder ? (
                   <View style={[styles.quickActionCard, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
                     <Text style={[styles.quickActionTitle, {color: colors.heading}]}>Bạn đã có nền tảng ở phase này chưa?</Text>
                     <Text style={[styles.quickActionSubtitle, {color: colors.textSecondary}]}>Nếu chưa, hệ thống sẽ tạo nội dung phase. Nếu có rồi, hệ thống sẽ tạo pre-learning.</Text>
@@ -1965,6 +4049,120 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                   </View>
                 ) : null}
 
+                {!isSelectedPhaseLocked && activePhase && !isStudyNewRoadmap && activePhasePreLearningQuizzes.length === 0 && !activePhaseHasKnowledge && !activePhaseShouldShowPreLearningPlaceholder && !activePhaseShouldShowKnowledgePlaceholder ? (
+                  <View style={[styles.quickActionCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+                    <Text style={[styles.quickActionTitle, {color: colors.heading}]}>Bắt đầu phase này</Text>
+                    <Text style={[styles.quickActionSubtitle, {color: colors.textSecondary}]}>
+                      Tạo quiz trước học hoặc tạo trực tiếp nội dung giai đoạn.
+                    </Text>
+                    <View style={styles.quickActionRow}>
+                      <Button
+                        title="Tạo quiz trước học"
+                        onPress={() => handleGeneratePreLearning(Number(activeRoadmapId || 0), Number(activePhase?.phaseId || 0))}
+                        loading={
+                          runningAction === `pre-${Number(activePhase?.phaseId || 0)}` ||
+                          generatingPreLearningPhaseIds.includes(Number(activePhase?.phaseId || 0))
+                        }
+                        size="sm"
+                        variant="outline"
+                        fullWidth={false}
+                        icon="book-open-page-variant-outline"
+                      />
+                      <Button
+                        title="Tạo nội dung"
+                        onPress={() => handleGeneratePhaseContent(Number(activeRoadmapId || 0), Number(activePhase?.phaseId || 0))}
+                        loading={
+                          runningAction === `content-${Number(activePhase?.phaseId || 0)}` ||
+                          generatingKnowledgePhaseIds.includes(Number(activePhase?.phaseId || 0))
+                        }
+                        size="sm"
+                        fullWidth={false}
+                        icon="sparkles"
+                      />
+                    </View>
+                  </View>
+                ) : null}
+
+                {!isSelectedPhaseLocked && activePhasePostLearningQuizzes.length > 0 ? (
+                  <View
+                    style={[
+                      styles.detailQuizSection,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                        opacity: activePhaseShouldLockPostLearning ? 0.55 : 1,
+                      },
+                    ]}>
+                    <Text style={[styles.detailQuizTitle, {color: colors.heading}]}>Quiz sau học</Text>
+                    {activePhaseShouldLockPostLearning ? (
+                      <Text style={[styles.detailEmptyText, {color: colors.textSecondary}]}>
+                        Hoàn thành knowledge trong phase để mở quiz sau học ({activePhaseCompletedKnowledgeCount}/{activePhaseKnowledges.length}).
+                      </Text>
+                    ) : null}
+                    {activePhasePostLearningQuizzes.map((quiz: any, index: number) => {
+                      const quizId = Number(quiz?.quizId || quiz?.id || 0);
+                      return (
+                        <View
+                          key={`detail-postlearning-quiz-${quizId || index}`}
+                          style={[styles.detailQuizCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+                          <View style={{flex: 1}}>
+                            <Text style={[styles.detailQuizName, {color: colors.heading}]}>
+                              {quiz?.title || `Quiz #${quizId || index + 1}`}
+                            </Text>
+                            <Text style={[styles.detailQuizMeta, {color: colors.textSecondary}]}>
+                              {String(quiz?.status || 'DRAFT').toUpperCase()}
+                            </Text>
+                          </View>
+                          <Button
+                            title="Làm quiz"
+                            onPress={() => openQuizModeSelector(quiz, Number(activePhase?.phaseId || 0))}
+                            disabled={activePhaseShouldLockPostLearning}
+                            size="sm"
+                            fullWidth={false}
+                            variant="outline"
+                            style={styles.detailQuizActionBtn}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
+                {canShowActiveRemedialDecision ? (
+                  <View
+                    style={[
+                      styles.remedialCard,
+                      {
+                        borderColor: isDark ? '#1e3a8a' : '#bfdbfe',
+                        backgroundColor: isDark ? 'rgba(30,58,138,0.25)' : '#eff6ff',
+                      },
+                    ]}>
+                    <Text style={[styles.remedialTitle, {color: isDark ? '#bfdbfe' : '#1e3a8a'}]}>
+                      Quyết định sau Post-learning
+                    </Text>
+                    <Text style={[styles.remedialText, {color: isDark ? '#dbeafe' : '#1e3a8a'}]}>
+                      Kết quả post-learning chưa đạt. Chọn cách thêm phase remedial cho lộ trình.
+                    </Text>
+                    <Button
+                      title="Tạo remedial và giữ deadline"
+                      onPress={() => handleRemedialDecision(activePhaseId, 'COMPRESS_TO_KEEP_DEADLINE')}
+                      loading={submittingRemedialDecision}
+                      size="sm"
+                      fullWidth
+                      icon="check-circle-outline"
+                    />
+                    <Button
+                      title="Tạo remedial và gia hạn deadline"
+                      onPress={() => handleRemedialDecision(activePhaseId, 'EXTEND_DEADLINE')}
+                      loading={submittingRemedialDecision}
+                      size="sm"
+                      variant="outline"
+                      fullWidth
+                      icon="calendar-clock-outline"
+                    />
+                  </View>
+                ) : null}
+
                 {!isSelectedPhaseLocked && (!Array.isArray(phases) || phases.length === 0) ? (
                   <View style={[styles.quickActionCard, {borderColor: colors.border, backgroundColor: colors.surface}]}> 
                     <Text style={[styles.quickActionTitle, {color: colors.heading}]}>Chưa có phase</Text>
@@ -1978,6 +4176,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                       fullWidth={false}
                       style={styles.generatePhasesBtn}
                     />
+                    {generatingRoadmapPhases ? renderGenerationProgress(roadmapPhaseGenerationProgress) : null}
                   </View>
                 ) : null}
               </View>
@@ -2135,9 +4334,11 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                 const knowledges = phase.knowledges || [];
                 const preKey = `pre-${phaseId}`;
                 const contentKey = `content-${phaseId}`;
-                const hasPreLearningQuiz =
-                  Array.isArray(phase?.preLearningQuizzes) && phase.preLearningQuizzes.length > 0;
-                const isLockedPhase = index > maxUnlockedPhaseIndex && !hasPreLearningQuiz;
+                const hasPreLearningQuiz = hasReadyRoadmapQuiz(phase?.preLearningQuizzes);
+                const isLockedPhase =
+                  index > maxUnlockedPhaseIndex &&
+                  !hasPreLearningQuiz &&
+                  !isCurrentPhaseByPayload(phaseId);
                 const previousPhaseCompleted = index > 0
                   ? (() => {
                       const previousPhase = phases[index - 1] || null;
@@ -2169,12 +4370,21 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                   !isUnlockingPhase;
                 const hasPostLearning =
                   Array.isArray(phase?.postLearningQuizzes) && phase.postLearningQuizzes.length > 0;
-                const hasPreLearning =
-                  Array.isArray(phase?.preLearningQuizzes) && phase.preLearningQuizzes.length > 0;
+                const hasPreLearning = hasReadyRoadmapQuiz(phase?.preLearningQuizzes);
                 const isCurrentPhase = Number(currentPhaseProgress?.phaseId) === phaseId;
                 const hasKnowledge = knowledges.length > 0;
+                const isSkipPreLearningPhase = skipPreLearningPhaseIds.includes(phaseId);
+                const isGeneratingPreLearningForPhase = generatingPreLearningPhaseIds.includes(phaseId);
+                const isGeneratingKnowledgeForPhase = generatingKnowledgePhaseIds.includes(phaseId);
                 const showStudyNewPromptCard =
-                  isStudyNewRoadmap && isCurrentPhase && !isLockedPhase && !hasPreLearning && !hasKnowledge;
+                  isStudyNewRoadmap &&
+                  isCurrentPhase &&
+                  !isLockedPhase &&
+                  !hasPreLearning &&
+                  !hasKnowledge &&
+                  !isSkipPreLearningPhase &&
+                  !isGeneratingPreLearningForPhase &&
+                  !isGeneratingKnowledgeForPhase;
                 const isPreLearningDecisionHandled = handledPreLearningDecisionPhaseIds.includes(
                   phaseId,
                 );
@@ -2191,6 +4401,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                   !isLockedPhase &&
                   isCurrentPhase &&
                   !canShowSkipDecisionAfterPreLearning &&
+                  currentPhaseProgress?.skipable === false &&
                   !isPreLearningDecisionHandled;
                 const canShowRemedialDecision =
                   hasPostLearning &&
@@ -2208,7 +4419,9 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                     normalizedPhaseStatus === 'PROCESSING' ||
                     isUnlockingPhase ||
                     runningAction === preKey ||
-                    runningAction === contentKey
+                    runningAction === contentKey ||
+                    isGeneratingPreLearningForPhase ||
+                    isGeneratingKnowledgeForPhase
                   );
                 const isInProgressPhase =
                   !isPhaseFinishedStatus(phase?.status) &&
@@ -2972,9 +5185,11 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
               showsVerticalScrollIndicator={false}>
               {phases.map((phase: any, index: number) => {
                 const phaseId = Number(phase?.phaseId || 0);
-                const hasPreLearningQuiz =
-                  Array.isArray(phase?.preLearningQuizzes) && phase.preLearningQuizzes.length > 0;
-                const isLockedPhase = index > maxUnlockedPhaseIndex && !hasPreLearningQuiz;
+                const hasPreLearningQuiz = hasReadyRoadmapQuiz(phase?.preLearningQuizzes);
+                const isLockedPhase =
+                  index > maxUnlockedPhaseIndex &&
+                  !hasPreLearningQuiz &&
+                  !isCurrentPhaseByPayload(phaseId);
                 const phaseVisualState = getPhaseVisualState(phase, index, isLockedPhase);
                 const phaseVisualMeta = getPhaseVisualMeta(phaseVisualState);
                 const selected = Number(selectedPhaseId) === phaseId;
@@ -3097,6 +5312,517 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   phaseWrap: {marginTop: Spacing.lg, gap: Spacing.sm},
+  stageShell: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+  stageTopBar: {
+    minHeight: 62,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  stageTopTitleWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  stageStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  stageTopTitleBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  stageTopTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  stageTopSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+  },
+  stageIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stageMapViewport: {
+    paddingVertical: Spacing.sm,
+  },
+  stageMapViewportCompact: {
+    minHeight: 154,
+  },
+  stageMapViewportExpanded: {
+    minHeight: 300,
+  },
+  stageMapContent: {
+    position: 'relative',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
+  },
+  stageMapBackdrop: {
+    borderWidth: StyleSheet.hairlineWidth,
+    opacity: 0.7,
+  },
+  stageNodeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minHeight: 116,
+  },
+  stageRoadmapNode: {
+    minHeight: 104,
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    gap: 6,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  stagePhaseCluster: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  stageHorizontalConnector: {
+    width: STAGE_PHASE_CONNECTOR_WIDTH,
+    height: 2,
+    marginTop: 34,
+  },
+  stagePhaseNode: {
+    minHeight: 104,
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
+    gap: 6,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  stageNodeHeader: {
+    minHeight: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.xs,
+  },
+  stageNodeEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  stageNodeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  stageNodeMeta: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  stageNodeProgressWrap: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  stageNodeProgressTrack: {
+    flex: 1,
+    height: 5,
+    borderRadius: BorderRadius.full,
+    overflow: 'hidden',
+  },
+  stageNodeProgressFill: {
+    height: '100%',
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary,
+  },
+  stageNodeProgressText: {
+    minWidth: 30,
+    textAlign: 'right',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  stageKnowledgeBranch: {
+    position: 'relative',
+    minHeight: 122,
+    paddingTop: 20,
+  },
+  stageBranchStem: {
+    position: 'absolute',
+    top: 0,
+    left: 18,
+    width: 2,
+    height: 22,
+    borderRadius: 1,
+  },
+  stageBranchLine: {
+    height: 2,
+    borderRadius: 1,
+    marginBottom: 14,
+  },
+  stageKnowledgeNodeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: STAGE_KNOWLEDGE_GAP,
+  },
+  stageKnowledgeNode: {
+    position: 'relative',
+    minHeight: 88,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: 6,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  stageKnowledgeStem: {
+    position: 'absolute',
+    top: -14,
+    left: 20,
+    width: 2,
+    height: 14,
+    borderRadius: 1,
+  },
+  stageKnowledgeNodeTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  stageDetailPanel: {
+    margin: Spacing.sm,
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+  stageDetailPanelHeader: {
+    minHeight: 64,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  stageDetailPanelTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  stagePanelTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  stagePanelHint: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  stageDetailPanelBody: {
+    padding: Spacing.md,
+  },
+  stageDetailStack: {
+    gap: Spacing.md,
+  },
+  stageDetailIntro: {
+    gap: Spacing.xs,
+  },
+  stageDetailEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  stageDetailTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 24,
+  },
+  stageDetailTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  stageDetailSubText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  stageDetailText: {
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  stageInlineChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  stageStatusBadge: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  stageStatusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stageStatsGrid: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  stageStatCard: {
+    flex: 1,
+    minHeight: 82,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  stageStatValue: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  stageStatLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  stageSectionBlock: {
+    gap: Spacing.sm,
+  },
+  stageSectionCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  stageSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  stageSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  stageSectionHint: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stageSectionList: {
+    gap: Spacing.sm,
+  },
+  stagePrimaryAction: {
+    alignSelf: 'flex-start',
+    minWidth: 150,
+  },
+  stageLoadingCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  stageLoadingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  stageLoadingTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  stageLoadingText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  stageLockCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    alignItems: 'center',
+    gap: Spacing.sm,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 10},
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  stageLockIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stageLockTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  stageLockText: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  stageDimmedContent: {
+    opacity: 0.34,
+  },
+  stageReviewCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.xs,
+  },
+  stageReviewTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  stageReviewText: {
+    fontSize: 12,
+    lineHeight: 19,
+  },
+  stageReviewMeta: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  stageDecisionCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  stageDecisionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  stageDecisionText: {
+    fontSize: 12,
+    lineHeight: 19,
+  },
+  stageActionStack: {
+    gap: Spacing.sm,
+  },
+  stageActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  stageKnowledgeRowCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  stageKnowledgeStatusIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stageKnowledgeRowBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  stageKnowledgeRowTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  stageKnowledgeRowText: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  stageKnowledgeStateText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stageQuizCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  stageQuizTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  stageQuizBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  stageQuizTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  stageQuizSubtitle: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  stageQuizButton: {
+    minWidth: 82,
+  },
+  stageQuizMetaWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  stageMetaChip: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  stageMetaText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  stageEmptyText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  stageFlashcardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
   roadmapHeroCard: {
     borderWidth: 1,
     borderRadius: BorderRadius.lg,
@@ -3467,6 +6193,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 19,
   },
+  detailPhaseProgressWrap: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  detailPhaseProgressTrack: {
+    flex: 1,
+    height: 5,
+    borderRadius: BorderRadius.full,
+    overflow: 'hidden',
+  },
+  detailPhaseProgressFill: {
+    height: '100%',
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary,
+  },
+  detailPhaseProgressText: {
+    minWidth: 32,
+    textAlign: 'right',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   detailKnowledgeCard: {
     width: 190,
     borderWidth: 1,
@@ -3538,6 +6288,76 @@ const styles = StyleSheet.create({
   },
   detailEmptyText: {
     fontSize: 12,
+  },
+  generationCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.xs,
+    alignItems: 'flex-start',
+  },
+  generationHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  generationTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  generationText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  generationProgressWrap: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  generationProgressTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: BorderRadius.full,
+    overflow: 'hidden',
+  },
+  generationProgressFill: {
+    height: '100%',
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary,
+  },
+  generationPercentText: {
+    minWidth: 42,
+    textAlign: 'right',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  quickActionCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  quickActionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  quickActionSubtitle: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  quickActionSection: {
+    gap: Spacing.xs,
+  },
+  quickActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  quickActionSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   phaseWrapHidden: {display: 'none'},
   reviewCard: {
