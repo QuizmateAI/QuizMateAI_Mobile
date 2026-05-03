@@ -6,22 +6,36 @@ import SettingsScreen from '../screens/profile/SettingsScreen';
 import SubscriptionScreen from '../screens/profile/SubscriptionScreen';
 import CreditPackagesScreen from '../screens/profile/CreditPackagesScreen';
 import PaymentScreen from '../screens/profile/PaymentScreen';
+import PaymentWebViewScreen from '../screens/profile/PaymentWebViewScreen';
 import PaymentResultScreen from '../screens/profile/PaymentResultScreen';
 
 export type ProfileStackParamList = {
   ProfileMain: undefined;
   PersonalWallet: undefined;
   Settings: undefined;
-  Subscription: {planType?: 'individual' | 'group'; groupId?: number} | undefined;
+  Subscription:
+    | {
+        planType?: 'individual' | 'group';
+        workspaceId?: number;
+        workspaceName?: string;
+      }
+    | undefined;
   CreditPackages: {workspaceId?: number; workspaceName?: string} | undefined;
   Payment: {
     planId: number;
     planName?: string;
     planType?: string;
-    groupId?: number;
+    workspaceId?: number;
+    workspaceName?: string;
+  };
+  PaymentWebView: {
+    paymentUrl: string;
+    provider?: 'momo' | 'vnpay' | 'stripe' | string;
+    purchaseType?: 'plan' | 'credit';
+    title?: string;
   };
   PaymentResult: {
-    status: string;
+    status: 'success' | 'failed' | 'processing' | string;
     orderId?: string;
     amount?: number;
     orderInfo?: string;
@@ -29,6 +43,8 @@ export type ProfileStackParamList = {
     payType?: string;
     responseTime?: string;
     purchaseType?: 'plan' | 'credit';
+    message?: string;
+    provider?: string;
   };
 };
 
@@ -43,6 +59,7 @@ export default function ProfileStack() {
       <Stack.Screen name="Subscription" component={SubscriptionScreen} />
       <Stack.Screen name="CreditPackages" component={CreditPackagesScreen} />
       <Stack.Screen name="Payment" component={PaymentScreen} />
+      <Stack.Screen name="PaymentWebView" component={PaymentWebViewScreen} />
       <Stack.Screen name="PaymentResult" component={PaymentResultScreen} />
     </Stack.Navigator>
   );

@@ -12,6 +12,7 @@ import WorkspaceProfileWizardScreen from '../screens/home/WorkspaceProfileWizard
 import SubscriptionScreen from '../screens/profile/SubscriptionScreen';
 import CreditPackagesScreen from '../screens/profile/CreditPackagesScreen';
 import PaymentScreen from '../screens/profile/PaymentScreen';
+import PaymentWebViewScreen from '../screens/profile/PaymentWebViewScreen';
 import PaymentResultScreen from '../screens/profile/PaymentResultScreen';
 import {type VoicePracticeConfig} from '../utils/voicePractice';
 
@@ -53,11 +54,29 @@ export type QuizStackParamList = {
     title?: string;
     initialTab?: 'dashboard' | 'members' | 'ranking' | 'logs' | 'settings';
   };
-  Subscription: {planType?: 'individual' | 'group'; groupId?: number} | undefined;
+  Subscription:
+    | {
+        planType?: 'individual' | 'group';
+        workspaceId?: number;
+        workspaceName?: string;
+      }
+    | undefined;
   CreditPackages: {workspaceId?: number; workspaceName?: string} | undefined;
-  Payment: {planId: number; planName?: string; planType?: string; groupId?: number};
+  Payment: {
+    planId: number;
+    planName?: string;
+    planType?: string;
+    workspaceId?: number;
+    workspaceName?: string;
+  };
+  PaymentWebView: {
+    paymentUrl: string;
+    provider?: 'momo' | 'vnpay' | 'stripe' | string;
+    purchaseType?: 'plan' | 'credit';
+    title?: string;
+  };
   PaymentResult: {
-    status: string;
+    status: 'success' | 'failed' | 'processing' | string;
     orderId?: string;
     amount?: number;
     orderInfo?: string;
@@ -65,6 +84,8 @@ export type QuizStackParamList = {
     payType?: string;
     responseTime?: string;
     purchaseType?: 'plan' | 'credit';
+    message?: string;
+    provider?: string;
   };
   WorkspaceProfileWizard: {
     workspaceId: number;
@@ -105,6 +126,7 @@ export default function QuizStack() {
       <Stack.Screen name="Subscription" component={SubscriptionScreen} />
       <Stack.Screen name="CreditPackages" component={CreditPackagesScreen} />
       <Stack.Screen name="Payment" component={PaymentScreen} />
+      <Stack.Screen name="PaymentWebView" component={PaymentWebViewScreen} />
       <Stack.Screen name="PaymentResult" component={PaymentResultScreen} />
       <Stack.Screen
         name="WorkspaceProfileWizard"

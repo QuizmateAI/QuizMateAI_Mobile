@@ -1,4 +1,5 @@
 import api from './api';
+import {normalizeCurrentPlan} from '../utils/accountSummary';
 
 const DEFAULT_WORKSPACE_NAME = 'Không gian học tập chưa có tiêu đề';
 const PLACEHOLDER_WORKSPACE_NAME_PATTERN =
@@ -77,6 +78,11 @@ const WorkspaceAPI = {
     api.get(`/api/workspace/${id}`).then(res => ({
       ...res,
       data: mapWorkspace(res.data?.data),
+    })),
+  getCurrentPlan: (workspaceId: number) =>
+    api.get(`/api/workspace/${workspaceId}/current-plan`).then(res => ({
+      ...res,
+      data: normalizeCurrentPlan(res.data?.data),
     })),
   create: (data: {name: string; description?: string}) =>
     api.post('/api/workspace/create/individual', {
