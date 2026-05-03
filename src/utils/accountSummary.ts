@@ -113,7 +113,9 @@ export function formatCreditDateTime(value?: string | null) {
 }
 
 export function getCurrentPlanName(currentPlan: any) {
-  return String(currentPlan?.plan?.name || currentPlan?.plan?.displayName || 'Free');
+  return String(
+    currentPlan?.plan?.name || currentPlan?.plan?.displayName || 'Free',
+  );
 }
 
 export function getCurrentPlanSubtitle(currentPlan: any) {
@@ -492,7 +494,11 @@ function getAiActionIcon(actionKey?: string): string {
   return iconMap[String(actionKey || '').toUpperCase()] || 'creation';
 }
 
-export function getCreditTransactionIcon(type?: string, source?: string, note?: string) {
+export function getCreditTransactionIcon(
+  type?: string,
+  source?: string,
+  note?: string,
+) {
   const normalizedType = String(type || '').toUpperCase();
   const normalizedSource = String(source || '').toUpperCase();
 

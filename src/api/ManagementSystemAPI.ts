@@ -5,6 +5,28 @@ import {
   normalizeCurrentPlan,
 } from '../utils/accountSummary';
 
+const FALLBACK_CUSTOM_CREDIT_CONFIG = {
+  unitPriceVnd: 200,
+  minUnits: 100,
+};
+
+const normalizeCustomCreditConfig = (data: any) => {
+  const config = data?.data ?? data ?? {};
+  const unitPriceVnd = Number(config?.unitPriceVnd);
+  const minUnits = Number(config?.minUnits);
+
+  return {
+    unitPriceVnd:
+      Number.isFinite(unitPriceVnd) && unitPriceVnd > 0
+        ? unitPriceVnd
+        : FALLBACK_CUSTOM_CREDIT_CONFIG.unitPriceVnd,
+    minUnits:
+      Number.isFinite(minUnits) && minUnits > 0
+        ? minUnits
+        : FALLBACK_CUSTOM_CREDIT_CONFIG.minUnits,
+  };
+};
+
 const ManagementSystemAPI = {
   getMyPermissions: () => api.get('/management/me/permissions'),
 
@@ -130,8 +152,17 @@ const ManagementSystemAPI = {
   getPurchaseableCreditPackages: () =>
     api.get('/api/credit-package/purchaseable'),
 
+  getCustomCreditConfig: () =>
+    api.get('/api/credit-package/custom-config').then(res => ({
+      ...res,
+      data: normalizeCustomCreditConfig(res.data?.data),
+    })),
+
   getUserPayments: (page = 0, size = 10) =>
-    api.get(`/payment/user?page=${page}&size=${size}`),
+    api.get(`/api/payment/user?page=${page}&size=${size}`),
+
+  getPaymentByOrderId: (orderId: string) =>
+    api.get(`/api/payment/order/${encodeURIComponent(orderId)}`),
 
   getMyWallet: () =>
     api.get('/api/credit-wallet/me').then(res => ({

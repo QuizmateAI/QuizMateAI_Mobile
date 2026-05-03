@@ -981,7 +981,8 @@ export default function GroupManagementScreen({navigation, route}: any) {
                       onPress={() =>
                         navigation.navigate('Subscription', {
                           planType: 'group',
-                          groupId: normalizedGroupId,
+                          workspaceId: normalizedGroupId,
+                          workspaceName: group?.groupName || title,
                         })
                       }
                       style={{flex: 1}}

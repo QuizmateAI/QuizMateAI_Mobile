@@ -3,7 +3,7 @@ import api from './api';
 const normalizePlanType = (type: any) => {
   const rawType = typeof type === 'string' ? type.toUpperCase() : '';
 
-  if (rawType === 'WORKSPACE') {
+  if (rawType === 'WORKSPACE' || rawType === 'GROUP_WORKSPACE') {
     return 'GROUP';
   }
 
@@ -14,48 +14,37 @@ const normalizePlanType = (type: any) => {
   return rawType || type;
 };
 
-const ENTITLEMENT_FEATURE_LABELS: Array<[key: string, label: string]> = [
+const ENTITLEMENT_FORMAT_LABELS: Array<[key: string, label: string]> = [
   ['canProcessPdf', 'Xử lý PDF'],
   ['canProcessWord', 'Xử lý Word'],
-  ['canProcessSlide', 'Xử lý slide'],
+  ['canProcessSlide', 'Xử lý Slide'],
   ['canProcessExcel', 'Xử lý Excel'],
-  ['canProcessImage', 'Xử lý hình ảnh'],
-  ['canProcessAudio', 'Xử lý audio'],
-  ['canProcessVideo', 'Xử lý video'],
-  ['hasAdvanceQuizConfig', 'Tùy chỉnh quiz nâng cao'],
-  ['hasAiCompanionMode', 'Làm quiz bằng giọng nói'],
-  ['hasWorkspaceAnalytics', 'Thống kê workspace'],
+  ['canProcessText', 'Xử lý văn bản'],
+  ['canProcessImage', 'Xử lý Hình ảnh'],
+  ['canProcessVideo', 'Xử lý Video'],
+  ['canProcessAudio', 'Xử lý Âm thanh'],
 ];
 
-const normalizePlanDuration = (duration: any) => {
-  if (duration == null || duration === '') {
-    return 'tháng';
+const formatInteger = (value: number) => {
+  try {
+    return new Intl.NumberFormat('vi-VN').format(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const normalizePlanDuration = (durationInDay: any) => {
+  const days = Number(durationInDay);
+
+  if (!Number.isFinite(days) || days <= 0) {
+    return 'không giới hạn';
   }
 
-  if (typeof duration === 'number') {
-    return `${duration} tháng`;
+  if (days >= 999999) {
+    return 'trọn đời';
   }
 
-  const rawDuration = String(duration).trim();
-  const normalizedDuration = rawDuration.toLowerCase();
-
-  if (normalizedDuration === 'month' || normalizedDuration === 'monthly') {
-    return 'tháng';
-  }
-
-  if (normalizedDuration === 'year' || normalizedDuration === 'yearly' || normalizedDuration === 'annual') {
-    return 'năm';
-  }
-
-  if (normalizedDuration === 'week' || normalizedDuration === 'weekly') {
-    return 'tuần';
-  }
-
-  if (/^\d+$/.test(rawDuration)) {
-    return `${rawDuration} tháng`;
-  }
-
-  return rawDuration;
+  return `${formatInteger(days)} ngày`;
 };
 
 const unwrapApiData = (response: any) => ({
@@ -63,21 +52,80 @@ const unwrapApiData = (response: any) => ({
   data: response?.data?.data ?? response?.data,
 });
 
-const mapPlan = (plan: any) => {
-  const entitlement = plan?.entitlement || {};
-  const features = ENTITLEMENT_FEATURE_LABELS
+const buildPlanFeatures = (entitlement: any) => {
+  const features = ENTITLEMENT_FORMAT_LABELS
     .filter(([key]) => Boolean(entitlement?.[key]))
     .map(([, label]) => label);
 
+  const pushFeature = (enabled: boolean, label: string) => {
+    if (enabled && !features.includes(label)) {
+      features.push(label);
+    }
+  };
+
+  pushFeature(
+    Boolean(entitlement?.canCreateRoadMap || entitlement?.canCreateRoadmap),
+    'Tạo lộ trình học tập',
+  );
+
+  pushFeature(Boolean(entitlement?.hasAiCompanionMode), 'AI Companion Mode');
+  pushFeature(
+    Boolean(entitlement?.hasAiContentStructuring || entitlement?.hasWorkspaceAnalytics),
+    'AI Content Structuring',
+  );
+  pushFeature(
+    Boolean(
+      entitlement?.hasPersonalizedLearningAnalytic ||
+        entitlement?.hasWorkspaceAnalytics
+    ),
+    'Phân tích học tập cá nhân',
+  );
+  pushFeature(
+    Boolean(entitlement?.hasAiSummaryAndTextReading),
+    'AI đọc & tóm tắt văn bản',
+  );
+  pushFeature(
+    Boolean(entitlement?.hasAdvanceQuizConfig),
+    'Cấu hình quiz nâng cao',
+  );
+
+  const planIncludedCredits = Number(entitlement?.planIncludedCredits || 0);
+  if (planIncludedCredits > 0) {
+    features.push(`Bao gồm ${formatInteger(planIncludedCredits)} credit`);
+  }
+
+  return features;
+};
+
+const mapPlan = (plan: any) => {
+  const entitlement = plan?.entitlement || {};
+  const planId = Number(plan?.planCatalogId ?? plan?.planId ?? plan?.id ?? 0);
+
   return {
     ...plan,
-    id: plan?.planCatalogId ?? plan?.planId ?? plan?.id,
+    id: planId,
     name: plan?.displayName ?? plan?.planName ?? plan?.name,
     type: normalizePlanType(plan?.planScope ?? plan?.type),
-    duration: plan?.duration ?? 'month',
-    durationLabel: normalizePlanDuration(plan?.duration),
-    features,
+    planLevel: Number(plan?.planLevel ?? 0),
+    durationInDay: Number(plan?.durationInDay ?? 0),
+    durationLabel: normalizePlanDuration(plan?.durationInDay),
+    entitlement,
+    features: buildPlanFeatures(entitlement),
   };
+};
+
+const applyRecommendedFlag = (items: any[]) => {
+  const sortedItems = [...items].sort(
+    (left, right) => Number(left?.price ?? 0) - Number(right?.price ?? 0),
+  );
+  const firstPaidIndex = sortedItems.findIndex(
+    item => Number(item?.price ?? 0) > 0,
+  );
+
+  return sortedItems.map((item, index) => ({
+    ...item,
+    recommended: firstPaidIndex >= 0 && index === firstPaidIndex,
+  }));
 };
 
 const PaymentAPI = {
@@ -86,6 +134,7 @@ const PaymentAPI = {
       ...unwrapApiData(res),
       data: mapPlan(res.data?.data),
     })),
+
   getPurchasablePlans: (type: 'INDIVIDUAL' | 'GROUP') =>
     (type === 'GROUP'
       ? api.get('/api/plan-catalog/active/group')
@@ -93,36 +142,117 @@ const PaymentAPI = {
     ).then(res => {
       const raw = res.data?.data;
       const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+
       return {
         ...unwrapApiData(res),
-        data: list.map(mapPlan),
+        data: applyRecommendedFlag(
+          list
+            .map(mapPlan)
+            .filter(item => Number(item?.id || 0) > 0),
+        ),
       };
     }),
-  createMomoPayment: (planId: number, groupId?: number) =>
-    (groupId
-      ? api.post(`/api/momo/create-workspace/${groupId}`)
+
+  createMomoPayment: (
+    planId: number,
+    workspaceId?: number,
+    extraSlotCount = 0,
+  ) =>
+    (workspaceId
+      ? api.post(`/api/momo/create-workspace/${workspaceId}`, null, {
+          params: {
+            planId,
+            ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
+          },
+        })
       : api.post(`/api/momo/create/${planId}`)
     ).then(unwrapApiData),
-  createVnpayPayment: (planId: number, groupId?: number) =>
-    (groupId
-      ? api.post(`/api/vnpay/create-workspace/${groupId}`)
+
+  createVnpayPayment: (
+    planId: number,
+    workspaceId?: number,
+    extraSlotCount = 0,
+  ) =>
+    (workspaceId
+      ? api.post(`/api/vnpay/create-workspace/${workspaceId}`, null, {
+          params: {
+            planId,
+            ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
+          },
+        })
       : api.post(`/api/vnpay/create/${planId}`)
     ).then(unwrapApiData),
+
+  createStripePayment: (
+    planId: number,
+    workspaceId?: number,
+    extraSlotCount = 0,
+  ) =>
+    (workspaceId
+      ? api.post(`/api/stripe/create-workspace/${workspaceId}`, null, {
+          params: {
+            planId,
+            ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
+          },
+        })
+      : api.post(`/api/stripe/create/${planId}`)
+    ).then(unwrapApiData),
+
   createMomoCreditPayment: (creditPackageId: number, workspaceId?: number) =>
     api
-      .post(
-        `/api/momo/create-credit/${creditPackageId}${
-          workspaceId ? `?workspaceId=${workspaceId}` : ''
-        }`,
-      )
+      .post(`/api/momo/create-credit/${creditPackageId}`, null, {
+        params: {
+          ...(workspaceId ? {workspaceId} : {}),
+        },
+      })
       .then(unwrapApiData),
+
   createVnpayCreditPayment: (creditPackageId: number, workspaceId?: number) =>
     api
-      .post(
-        `/api/vnpay/create-credit/${creditPackageId}${
-          workspaceId ? `?workspaceId=${workspaceId}` : ''
-        }`,
-      )
+      .post(`/api/vnpay/create-credit/${creditPackageId}`, null, {
+        params: {
+          ...(workspaceId ? {workspaceId} : {}),
+        },
+      })
+      .then(unwrapApiData),
+
+  createStripeCreditPayment: (creditPackageId: number, workspaceId?: number) =>
+    api
+      .post(`/api/stripe/create-credit/${creditPackageId}`, null, {
+        params: {
+          ...(workspaceId ? {workspaceId} : {}),
+        },
+      })
+      .then(unwrapApiData),
+
+  createMomoCustomCreditPayment: (creditUnits: number, workspaceId?: number) =>
+    api
+      .post('/api/momo/create-custom-credit', null, {
+        params: {
+          creditUnits,
+          ...(workspaceId ? {workspaceId} : {}),
+        },
+      })
+      .then(unwrapApiData),
+
+  createVnPayCustomCreditPayment: (creditUnits: number, workspaceId?: number) =>
+    api
+      .post('/api/vnpay/create-custom-credit', null, {
+        params: {
+          creditUnits,
+          ...(workspaceId ? {workspaceId} : {}),
+        },
+      })
+      .then(unwrapApiData),
+
+  createStripeCustomCreditPayment: (creditUnits: number, workspaceId?: number) =>
+    api
+      .post('/api/stripe/create-custom-credit', null, {
+        params: {
+          creditUnits,
+          ...(workspaceId ? {workspaceId} : {}),
+        },
+      })
       .then(unwrapApiData),
 };
 

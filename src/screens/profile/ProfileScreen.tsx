@@ -638,7 +638,7 @@ export default function ProfileScreen({navigation}: any) {
               title="Mua credit"
               variant="outline"
               size="sm"
-              onPress={() => navigation.navigate('CreditPackages')}
+              onPress={() => navigation.navigate('PersonalWallet')}
               icon="lightning-bolt"
               style={styles.creditActionBtn}
             />
@@ -806,7 +806,7 @@ export default function ProfileScreen({navigation}: any) {
             icon: 'lightning-bolt-circle',
             label: 'Mua credit',
             desc: 'Nạp thêm credit cho tài khoản',
-            screen: 'CreditPackages',
+            screen: 'Subscription',
             color: Colors.primary,
           },
           {
