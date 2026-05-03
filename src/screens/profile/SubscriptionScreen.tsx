@@ -428,15 +428,6 @@ export default function SubscriptionScreen({navigation, route}: any) {
             styles.heroSection,
             {backgroundColor: colors.surface, borderColor: colors.border},
           ]}>
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={() => navigation.goBack()}
-            style={styles.backInline}>
-            <Icon name="arrow-left" size={16} color={colors.textSecondary} />
-            <Text style={[styles.backInlineText, {color: colors.textSecondary}]}>
-              Quay lại
-            </Text>
-          </TouchableOpacity>
 
           <Text style={[styles.pageTitle, {color: colors.heading}]}>
             {pageTitle}

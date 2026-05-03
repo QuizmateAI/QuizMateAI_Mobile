@@ -14,11 +14,27 @@ import FlashcardStudyScreen from '../screens/home/FlashcardStudyScreen';
 export type HomeStackParamList = {
   HomeMain: undefined;
   Workspace: {workspaceId: number; title?: string};
-  GroupWorkspace: {groupId: number; title?: string};
-  GroupManagement: {groupId: number; title?: string};
+  GroupWorkspace: {
+    groupId: number;
+    title?: string;
+    detailKey?: 'challenge' | 'ranking' | 'notifications';
+  };
+  GroupManagement: {
+    groupId: number;
+    title?: string;
+    initialTab?: 'dashboard' | 'members' | 'ranking' | 'logs' | 'wallet' | 'settings';
+  };
   CreateAIQuiz: {workspaceId: number; materials?: any[]; initialMode?: 'ai' | 'manual'};
   CreateAIFlashcard: {workspaceId: number; materials?: any[]};
-  FlashcardStudy: {flashcardId: number; title?: string; contextType?: 'WORKSPACE' | 'GROUP'};
+  FlashcardStudy: {
+    flashcardId: number;
+    title?: string;
+    contextType?: 'WORKSPACE' | 'GROUP';
+    contextId?: number;
+    workspaceId?: number;
+    groupId?: number;
+    backTitle?: string;
+  };
   RoadmapJourney: {
     contextType: 'WORKSPACE' | 'GROUP';
     contextId: number;

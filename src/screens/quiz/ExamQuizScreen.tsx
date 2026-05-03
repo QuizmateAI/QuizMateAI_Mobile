@@ -16,6 +16,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Button from '../../components/ui/Button';
 import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
+import ChallengeAPI from '../../api/ChallengeAPI';
 import {
   isMultipleChoiceQuestion,
   isMatchingQuestion,
@@ -24,7 +25,14 @@ import {
 import {MatchingPair} from '../../components/features/MatchingQuestion';
 
 export default function ExamQuizScreen({navigation, route}: any) {
-  const {quizId, title, backContext, quizDetailParams} = route.params;
+  const {
+    quizId,
+    title,
+    backContext,
+    quizDetailParams,
+    challengeContext,
+    challengeAttempt,
+  } = route.params;
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const [quiz, setQuiz] = useState<any>(null);
@@ -78,6 +86,20 @@ export default function ExamQuizScreen({navigation, route}: any) {
   };
 
   const isPerQuestionMode = quiz ? !isTotalTimerMode(quiz?.timerMode) : false;
+
+  const startAttemptRequest = useCallback(async () => {
+    if (challengeAttempt) {
+      return {data: challengeAttempt};
+    }
+
+    const workspaceId = Number(challengeContext?.workspaceId || 0);
+    const eventId = Number(challengeContext?.eventId || 0);
+    if (Number.isInteger(workspaceId) && workspaceId > 0 && Number.isInteger(eventId) && eventId > 0) {
+      return ChallengeAPI.startAttempt(workspaceId, eventId);
+    }
+
+    return QuizAPI.startAttempt(quizId);
+  }, [challengeAttempt, challengeContext, quizId]);
 
   const getAttemptRemainingSeconds = (
     timeoutAt?: string | null,
@@ -303,7 +325,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
 
   const handleStart = async () => {
     try {
-      const res = await QuizAPI.startAttempt(quizId);
+      const res = await startAttemptRequest();
       const attempt = res.data || {};
       const nextAttemptId = Number(attempt?.id || attempt?.attemptId || 0);
       setAttemptId(nextAttemptId || null);
@@ -376,7 +398,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
         startTimer();
       }
     } catch (error: any) {
-      if (shouldActivateAndRetry(error)) {
+      if (!challengeContext && shouldActivateAndRetry(error)) {
         try {
           await QuizAPI.toggleStatus(quizId);
           setQuiz((prev: any) =>
@@ -387,7 +409,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
                 }
               : prev,
           );
-          const retryRes = await QuizAPI.startAttempt(quizId);
+          const retryRes = await startAttemptRequest();
           const attempt = retryRes.data || {};
           const nextAttemptId = Number(attempt?.id || attempt?.attemptId || 0);
           setAttemptId(nextAttemptId || null);

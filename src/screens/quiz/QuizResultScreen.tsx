@@ -341,18 +341,26 @@ export default function QuizResultScreen({navigation, route}: any) {
       phaseIdOverride ?? currentPhaseProgress?.phaseId ?? roadmapContext.phaseId ?? 0,
     );
 
+    const roadmapParams = {
+      contextType: roadmapContext.contextType,
+      contextId: roadmapContext.contextId,
+      title: backContext?.title,
+      roadmapId: roadmapContext.roadmapId ?? undefined,
+      phaseId:
+        Number.isInteger(fallbackPhaseId) && fallbackPhaseId > 0
+          ? fallbackPhaseId
+          : undefined,
+    };
+    const routeNames = navigation.getState?.()?.routeNames || [];
+
+    if (roadmapContext.contextType === 'GROUP' && routeNames.includes('RoadmapJourney')) {
+      navigation.navigate('RoadmapJourney', roadmapParams);
+      return true;
+    }
+
     navigation.navigate('Home', {
       screen: 'RoadmapJourney',
-      params: {
-        contextType: roadmapContext.contextType,
-        contextId: roadmapContext.contextId,
-        title: backContext?.title,
-        roadmapId: roadmapContext.roadmapId ?? undefined,
-        phaseId:
-          Number.isInteger(fallbackPhaseId) && fallbackPhaseId > 0
-            ? fallbackPhaseId
-            : undefined,
-      },
+      params: roadmapParams,
     });
 
     return true;
@@ -366,6 +374,66 @@ export default function QuizResultScreen({navigation, route}: any) {
     roadmapContext.phaseId,
     roadmapContext.roadmapId,
   ]);
+
+  const handleBack = () => {
+    const routeNames = navigation.getState?.()?.routeNames || [];
+
+    if (
+      backContext?.type === 'workspace' &&
+      Number.isInteger(backContext.workspaceId) &&
+      backContext.workspaceId > 0
+    ) {
+      navigation.navigate('Home', {
+        screen: 'Workspace',
+        params: {
+          workspaceId: backContext.workspaceId,
+          title: backContext.title,
+        },
+      });
+      return;
+    }
+
+    if (
+      backContext?.type === 'group' &&
+      Number.isInteger(backContext.groupId) &&
+      backContext.groupId > 0
+    ) {
+      if (routeNames.includes('GroupWorkspace')) {
+        navigation.navigate('GroupWorkspace', {
+          groupId: backContext.groupId,
+          title: backContext.title,
+        });
+        return;
+      }
+
+      navigation.navigate('Home', {
+        screen: 'GroupWorkspace',
+        params: {
+          groupId: backContext.groupId,
+          title: backContext.title,
+        },
+      });
+      return;
+    }
+
+    if (
+      backContext?.type === 'roadmap' &&
+      Number.isInteger(backContext.contextId) &&
+      backContext.contextId > 0
+    ) {
+      navigateBackToRoadmap();
+      return;
+    }
+
+    try {
+      navigation.reset({
+        index: 0,
+        routes: [{name: 'QuizList'}],
+      });
+  } catch {
+      navigation.navigate('QuizList');
+    }
+  };
 
   const handleGenerateKnowledgeAfterPreLearning = useCallback(async () => {
     if (!canTriggerKnowledgeAfterPreLearning || !isAssessmentReady) {
@@ -472,56 +540,6 @@ export default function QuizResultScreen({navigation, route}: any) {
     ? assessmentData.weaknesses.filter(Boolean)
     : [];
 
-  const handleBack = () => {
-    if (
-      backContext?.type === 'workspace' &&
-      Number.isInteger(backContext.workspaceId) &&
-      backContext.workspaceId > 0
-    ) {
-      navigation.navigate('Home', {
-        screen: 'Workspace',
-        params: {
-          workspaceId: backContext.workspaceId,
-          title: backContext.title,
-        },
-      });
-      return;
-    }
-
-    if (
-      backContext?.type === 'group' &&
-      Number.isInteger(backContext.groupId) &&
-      backContext.groupId > 0
-    ) {
-      navigation.navigate('Home', {
-        screen: 'GroupWorkspace',
-        params: {
-          groupId: backContext.groupId,
-          title: backContext.title,
-        },
-      });
-      return;
-    }
-
-    if (
-      backContext?.type === 'roadmap' &&
-      Number.isInteger(backContext.contextId) &&
-      backContext.contextId > 0
-    ) {
-      navigateBackToRoadmap();
-      return;
-    }
-
-    try {
-      navigation.reset({
-        index: 0,
-        routes: [{name: 'QuizList'}],
-      });
-    } catch {
-      navigation.navigate('QuizList');
-    }
-  };
-
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -614,10 +632,6 @@ export default function QuizResultScreen({navigation, route}: any) {
               : statusVariant === 'fail'
               ? 'Đừng bỏ cuộc, luyện tập sẽ giúp bạn tiến bộ!'
               : 'Quiz này không có ngưỡng đậu. Kết quả được hiển thị theo độ chính xác.'}
-          </Text>
-
-          <Text style={[styles.scoreValue, {color: c.title}]}>
-            {displayPercent}%
           </Text>
         </View>
 

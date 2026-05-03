@@ -1,10 +1,12 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Alert,
+  findNodeHandle,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -12,13 +14,16 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
+import {useAuth} from '../../context/AuthContext';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import QuizAPI from '../../api/QuizAPI';
+import GroupDiscussionAPI from '../../api/GroupDiscussionAPI';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import type {QuizBackContext, QuizDetailRouteParams} from '../../navigation/QuizStack';
+import useWebSocket from '../../hooks/useWebSocket';
 
-type QuizDetailTab = 'overview' | 'questions' | 'history';
+type QuizDetailTab = 'overview' | 'questions' | 'history' | 'discussion';
 
 type QuizDetailParams = Partial<QuizDetailRouteParams>;
 
@@ -28,6 +33,7 @@ const tabs: Array<{
   icon: string;
 }> = [
   {key: 'overview', label: 'Tổng quan', icon: 'information-outline'},
+  {key: 'discussion', label: 'Thảo luận', icon: 'message-text-outline'},
   {key: 'questions', label: 'Câu hỏi', icon: 'format-list-bulleted'},
   {key: 'history', label: 'Lịch sử làm bài', icon: 'history'},
 ];
@@ -111,6 +117,27 @@ function formatDateTime(value: any) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function relativeTime(value: any) {
+  if (!value) {
+    return '';
+  }
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) {
+    return formatDateTime(value);
+  }
+  const diffSeconds = Math.max(0, Math.round((Date.now() - time) / 1000));
+  if (diffSeconds < 60) {
+    return 'vừa xong';
+  }
+  if (diffSeconds < 3600) {
+    return `${Math.floor(diffSeconds / 60)} phút trước`;
+  }
+  if (diffSeconds < 86400) {
+    return `${Math.floor(diffSeconds / 3600)} giờ trước`;
+  }
+  return formatDateTime(value);
 }
 
 function formatNumber(value: any) {
@@ -329,6 +356,155 @@ function getQuestionKey(question: any, fallbackIndex: number) {
   return String(question?.id || question?.questionId || fallbackIndex);
 }
 
+function getQuestionId(question: any) {
+  return toPositiveNumber(question?.questionId || question?.id);
+}
+
+function normalizeDiscussionMessageId(value: any) {
+  if (value == null) {
+    return '';
+  }
+  return String(value).trim();
+}
+
+function buildDiscussionMessageMap(messages: any[] = []) {
+  const messageMap = new Map<string, any>();
+  toArray(messages).forEach(message => {
+    const messageId = normalizeDiscussionMessageId(message?.id || message?.messageId);
+    if (messageId) {
+      messageMap.set(messageId, message);
+    }
+  });
+  return messageMap;
+}
+
+function formatDiscussionPreview(body: any) {
+  return String(body || '')
+    .replace(/\[\[q:\d+:(\d+)\]\]/g, '#$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getDiscussionReplyPreview(messageMap: Map<string, any>, message: any) {
+  const parentMessageId = normalizeDiscussionMessageId(message?.parentMessageId);
+  if (!parentMessageId) {
+    return null;
+  }
+
+  const parentMessage = messageMap.get(parentMessageId);
+  if (!parentMessage) {
+    return {
+      id: parentMessageId,
+      missing: true,
+      authorName: null,
+      authorUserName: null,
+      body: '',
+    };
+  }
+
+  return {
+    id: parentMessageId,
+    missing: false,
+    authorName: firstText(parentMessage?.authorName, parentMessage?.user?.name, 'User'),
+    authorUserName: firstText(parentMessage?.authorUserName, parentMessage?.user?.username),
+    body: formatDiscussionPreview(parentMessage?.body || parentMessage?.content || parentMessage?.message),
+  };
+}
+
+function getDiscussionReplyDepth(messageMap: Map<string, any>, message: any, maxDepth = 1) {
+  let depth = 0;
+  let cursorId = normalizeDiscussionMessageId(message?.parentMessageId);
+  const visited = new Set<string>();
+
+  while (cursorId && depth < maxDepth && !visited.has(cursorId)) {
+    visited.add(cursorId);
+    depth += 1;
+    cursorId = normalizeDiscussionMessageId(messageMap.get(cursorId)?.parentMessageId);
+  }
+
+  return depth;
+}
+
+function parseDiscussionBody(body: any) {
+  return String(body || '').split(/(\[\[q:\d+:\d+\]\])/);
+}
+
+function buildDraftTagMarker(question: any) {
+  const questionIndex = toPositiveNumber(question?.index || question?.questionIndex || question?.order || 0);
+  const questionText = firstText(question?.content, question?.questionText, question?.text);
+  return questionText ? `[#${questionIndex}] ${questionText}` : `[#${questionIndex}]`;
+}
+
+function encodeDraftTags(draft: string, draftTags: Record<string, {questionId: number; index: number}>) {
+  let encoded = draft;
+  Object.entries(draftTags).forEach(([marker, tag]) => {
+    encoded = encoded.split(marker).join(`[[q:${tag.questionId}:${tag.index}]]`);
+  });
+  return encoded;
+}
+
+function compareDiscussionMessages(left: any, right: any) {
+  const leftTime = Date.parse(left?.createdAt || left?.sentAt || '') || 0;
+  const rightTime = Date.parse(right?.createdAt || right?.sentAt || '') || 0;
+
+  if (leftTime !== rightTime) {
+    return leftTime - rightTime;
+  }
+
+  const leftId = Number(left?.messageId ?? left?.id ?? 0) || 0;
+  const rightId = Number(right?.messageId ?? right?.id ?? 0) || 0;
+  return leftId - rightId;
+}
+
+function upsertDiscussionMessage(messages: any[] = [], incomingMessage: any) {
+  const incomingId = normalizeDiscussionMessageId(incomingMessage?.id ?? incomingMessage?.messageId);
+  if (!incomingId) {
+    return toArray(messages);
+  }
+
+  const nextMessages = [...toArray(messages)];
+  const existingIndex = nextMessages.findIndex(message => normalizeDiscussionMessageId(message?.id ?? message?.messageId) === incomingId);
+
+  if (existingIndex >= 0) {
+    nextMessages[existingIndex] = {...nextMessages[existingIndex], ...incomingMessage};
+  } else {
+    nextMessages.push(incomingMessage);
+  }
+
+  return nextMessages.sort(compareDiscussionMessages);
+}
+
+function removeDiscussionMessage(messages: any[] = [], messageId: any) {
+  const normalizedMessageId = normalizeDiscussionMessageId(messageId);
+  if (!normalizedMessageId) {
+    return toArray(messages);
+  }
+
+  return toArray(messages).filter(message => normalizeDiscussionMessageId(message?.id ?? message?.messageId) !== normalizedMessageId);
+}
+
+function matchesDiscussionRealtimeThread(event: any, quizId: number, questionId: number | null = null) {
+  const eventType = String(event?.type || '').trim().toUpperCase();
+  if (!eventType || eventType === 'SOCKET_RESTORED') {
+    return false;
+  }
+
+  const normalizedQuizId = Number(quizId);
+  const eventQuizId = Number(event?.quizId);
+  if (Number.isInteger(normalizedQuizId) && normalizedQuizId > 0 && eventQuizId !== normalizedQuizId) {
+    return false;
+  }
+
+  const normalizedQuestionId = questionId == null ? null : Number(questionId);
+  const eventQuestionId = event?.questionId == null || event?.questionId === '' ? null : Number(event.questionId);
+
+  if (normalizedQuestionId == null) {
+    return eventQuestionId == null;
+  }
+
+  return eventQuestionId === normalizedQuestionId;
+}
+
 function getMaterialNames(quiz: any) {
   const candidateArrays = [
     quiz?.materials,
@@ -427,6 +603,26 @@ function getStatusLabel(value: any) {
   return firstText(value, 'Không rõ');
 }
 
+function getDiscussionMessageId(message: any) {
+  return String(
+    message?.messageId ||
+      message?.groupDiscussionMessageId ||
+      message?.id ||
+      `${message?.authorId || 'author'}:${message?.createdAt || message?.body || ''}`,
+  );
+}
+
+function getDiscussionAuthor(message: any) {
+  return firstText(
+    message?.authorName,
+    message?.authorFullName,
+    message?.fullName,
+    message?.user?.fullName,
+    message?.authorUserName,
+    'Thành viên',
+  );
+}
+
 function buildBackContext(params: QuizDetailParams, quiz: any): QuizBackContext {
   if (params.backContext) {
     return params.backContext;
@@ -482,9 +678,10 @@ function buildLearningContext(params: QuizDetailParams, quiz: any) {
 }
 
 export default function QuizDetailScreen({navigation, route}: any) {
-  const params: QuizDetailParams = route.params || {};
+  const params = useMemo<QuizDetailParams>(() => route.params || {}, [route.params]);
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
+  const {user} = useAuth();
   const initialQuiz = params.quiz || null;
   const initialQuizId = toPositiveNumber(params.quizId || getQuizIdFrom(initialQuiz));
   const [quiz, setQuiz] = useState<any>(initialQuiz);
@@ -497,6 +694,24 @@ export default function QuizDetailScreen({navigation, route}: any) {
   const [loadError, setLoadError] = useState('');
   const [shareLoading, setShareLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [discussionMessages, setDiscussionMessages] = useState<any[]>([]);
+  const [discussionLoading, setDiscussionLoading] = useState(false);
+  const [discussionPosting, setDiscussionPosting] = useState(false);
+  const [discussionDraft, setDiscussionDraft] = useState('');
+  const [discussionDraftTags, setDiscussionDraftTags] = useState<Record<string, {questionId: number; index: number}>>({});
+  const [discussionReplyTarget, setDiscussionReplyTarget] = useState<any>(null);
+  const [discussionSelection, setDiscussionSelection] = useState({start: 0, end: 0});
+  const [discussionSlashQuery, setDiscussionSlashQuery] = useState('');
+  const [discussionSlashRange, setDiscussionSlashRange] = useState<{start: number; end: number} | null>(null);
+  const [discussionQuestionContext, setDiscussionQuestionContext] = useState<{
+    questionId: number;
+    label: string;
+  } | null>(null);
+
+  const scrollRef = useRef<ScrollView | null>(null);
+  const scrollContentRef = useRef<View | null>(null);
+  const questionCardRefs = useRef<Record<string, View | null>>({});
+  const pendingQuestionScrollKeyRef = useRef<string>('');
 
   const effectiveQuiz = useMemo(
     () => ({
@@ -511,6 +726,17 @@ export default function QuizDetailScreen({navigation, route}: any) {
     () => sections.flatMap(section => section.questions),
     [sections],
   );
+  const questionLookup = useMemo(() => {
+    const map = new Map<number, {question: any; index: number}>();
+    allQuestions.forEach((question, index) => {
+      const questionId = getQuestionId(question);
+      if (questionId > 0) {
+        map.set(questionId, {question, index: index + 1});
+      }
+    });
+    return map;
+  }, [allQuestions]);
+  const discussionMessageMap = useMemo(() => buildDiscussionMessageMap(discussionMessages), [discussionMessages]);
   const firstQuestionKey = useMemo(
     () => (allQuestions.length > 0 ? getQuestionKey(allQuestions[0], 1) : ''),
     [allQuestions],
@@ -536,6 +762,85 @@ export default function QuizDetailScreen({navigation, route}: any) {
     }
     return 0;
   }, [backContext, params.contextId, params.contextType, params.groupId]);
+  const discussionCanAccess = Boolean(isGroupContext && groupHistoryContextId > 0 && quizId > 0);
+  const discussionCurrentUserId = Number((user as any)?.id || (user as any)?.userID || 0);
+  const visibleDiscussionMessages = useMemo(() => {
+    if (!discussionQuestionContext?.questionId) {
+      return discussionMessages;
+    }
+
+    return discussionMessages.filter(message => {
+      const payloadQuestionId = toPositiveNumber(message?.questionId || message?.data?.questionId);
+      return !payloadQuestionId || payloadQuestionId === discussionQuestionContext.questionId;
+    });
+  }, [discussionMessages, discussionQuestionContext?.questionId]);
+  const discussionFilteredSuggestions = useMemo(() => {
+    const suggestions = allQuestions.map((question, index) => ({question, index: index + 1}));
+    if (!discussionSlashQuery.trim()) {
+      return suggestions.slice(0, 12);
+    }
+
+    const query = discussionSlashQuery.toLowerCase().trim();
+    return suggestions
+      .filter(({question, index}) => {
+        const content = firstText(question?.content, question?.questionText, question?.text).toLowerCase();
+        const questionIndex = String(index);
+        return content.includes(query) || questionIndex.includes(query);
+      })
+      .slice(0, 12);
+  }, [allQuestions, discussionSlashQuery]);
+
+  const scrollToQuestionKey = useCallback((questionKey: string) => {
+    const scrollView = scrollRef.current;
+    const scrollContent = scrollContentRef.current;
+    const targetNode = questionCardRefs.current[questionKey];
+    if (!scrollView || !scrollContent || !targetNode) {
+      return;
+    }
+
+    const contentHandle = findNodeHandle(scrollContent);
+    if (!contentHandle) {
+      return;
+    }
+
+    try {
+      (targetNode as any).measureLayout(
+        contentHandle,
+        (_x: number, y: number) => {
+          scrollView.scrollTo({y: Math.max(y - 120, 0), animated: true});
+        },
+        () => {},
+      );
+    } catch {
+      // Ignore measurement errors (rare on some Android layouts)
+    }
+  }, []);
+
+  const handleJumpToQuestion = useCallback(
+    (question: any, globalIndex: number) => {
+      const key = getQuestionKey(question, globalIndex);
+      pendingQuestionScrollKeyRef.current = key;
+      setActiveTab('questions');
+    },
+    [setActiveTab],
+  );
+
+  useEffect(() => {
+    if (activeTab !== 'questions') {
+      return;
+    }
+    const pendingKey = pendingQuestionScrollKeyRef.current;
+    if (!pendingKey) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToQuestionKey(pendingKey);
+        pendingQuestionScrollKeyRef.current = '';
+      });
+    });
+  }, [activeTab, scrollToQuestionKey, sections]);
 
   const displayTitle = firstText(
     effectiveQuiz?.title,
@@ -613,6 +918,10 @@ export default function QuizDetailScreen({navigation, route}: any) {
     ],
     [durationInMinutes, effectiveQuiz, history, normalizedIntent, params, questionCount],
   );
+  const visibleTabs = useMemo(
+    () => tabs.filter(tab => tab.key !== 'discussion' || isGroupContext),
+    [isGroupContext],
+  );
 
   const fetchHistory = useCallback(
     async (showSpinner = true) => {
@@ -643,6 +952,216 @@ export default function QuizDetailScreen({navigation, route}: any) {
       }
     },
     [groupHistoryContextId, quizId],
+  );
+
+  const fetchDiscussion = useCallback(
+    async (showSpinner = true, questionIdOverride?: number | null) => {
+      if (!isGroupContext || !groupHistoryContextId || !quizId) {
+        setDiscussionMessages([]);
+        return;
+      }
+      const normalizedQuestionId =
+        questionIdOverride === undefined
+          ? toPositiveNumber(discussionQuestionContext?.questionId)
+          : toPositiveNumber(questionIdOverride);
+      if (showSpinner) {
+        setDiscussionLoading(true);
+      }
+      try {
+        const response = await GroupDiscussionAPI.getMessages(
+          groupHistoryContextId,
+          quizId,
+          normalizedQuestionId || undefined,
+        );
+        setDiscussionMessages(Array.isArray(response?.data) ? [...response.data].sort(compareDiscussionMessages) : []);
+      } catch {
+        setDiscussionMessages([]);
+      } finally {
+        if (showSpinner) {
+          setDiscussionLoading(false);
+        }
+      }
+    },
+    [discussionQuestionContext?.questionId, groupHistoryContextId, isGroupContext, quizId],
+  );
+
+  const updateDiscussionSlashState = useCallback((value: string, selectionStart: number) => {
+    const textBeforeCursor = value.slice(0, selectionStart);
+    const slashMatch = textBeforeCursor.match(/(?:^|[\s\n])\/([^\s]*)$/);
+
+    if (slashMatch) {
+      const slashStart = textBeforeCursor.lastIndexOf('/');
+      setDiscussionSlashQuery(slashMatch[1]);
+      setDiscussionSlashRange({start: slashStart, end: selectionStart});
+      return;
+    }
+
+    setDiscussionSlashQuery('');
+    setDiscussionSlashRange(null);
+  }, []);
+
+  const handleDiscussionInputChange = useCallback((value: string) => {
+    setDiscussionDraft(value);
+    updateDiscussionSlashState(value, discussionSelection.start);
+  }, [discussionSelection.start, updateDiscussionSlashState]);
+
+  const handleDiscussionSelectionChange = useCallback((event: any) => {
+    const selection = event?.nativeEvent?.selection || {start: 0, end: 0};
+    setDiscussionSelection(selection);
+    updateDiscussionSlashState(discussionDraft, selection.start);
+  }, [discussionDraft, updateDiscussionSlashState]);
+
+  const handleSelectDiscussionQuestion = useCallback((question: any, questionIndexOverride?: number) => {
+    if (!discussionSlashRange) {
+      return;
+    }
+
+    const questionId = getQuestionId(question);
+    const questionIndex = questionIndexOverride || toPositiveNumber(question?.index || question?.questionIndex || question?.order || 0) || questionLookup.get(questionId)?.index || 0;
+    if (!questionId || !questionIndex) {
+      return;
+    }
+
+    const marker = buildDraftTagMarker({...question, index: questionIndex});
+    const before = discussionDraft.slice(0, discussionSlashRange.start).replace(/[ \t]+$/, '');
+    const after = discussionDraft.slice(discussionSlashRange.end).replace(/^[ \t]+/, '');
+    const prefix = before ? (before.endsWith('\n') ? before : `${before}\n`) : '';
+    const suffix = after ? `\n${after}` : '\n';
+    const nextDraft = `${prefix}${marker}${suffix}`;
+
+    setDiscussionDraft(nextDraft);
+    setDiscussionDraftTags(prev => ({
+      ...prev,
+      [marker]: {questionId, index: questionIndex},
+    }));
+    setDiscussionSlashQuery('');
+    setDiscussionSlashRange(null);
+    setDiscussionSelection({start: prefix.length + marker.length + 1, end: prefix.length + marker.length + 1});
+  }, [discussionDraft, discussionSlashRange, questionLookup]);
+
+  const handleReplyDiscussion = useCallback((message: any) => {
+    const messageId = normalizeDiscussionMessageId(message?.id || message?.messageId);
+    if (!messageId) {
+      return;
+    }
+
+    setDiscussionReplyTarget({
+      id: messageId,
+      authorName: firstText(message?.authorName, message?.user?.name, 'User'),
+      authorUserName: firstText(message?.authorUserName, message?.user?.username),
+      body: formatDiscussionPreview(message?.body || message?.content || message?.message),
+    });
+  }, []);
+
+  useWebSocket({
+    groupId: isGroupContext ? groupHistoryContextId : undefined,
+    enabled: isGroupContext && groupHistoryContextId > 0 && quizId > 0,
+    onDiscussionUpdate: payload => {
+      const payloadQuizId = toPositiveNumber(payload?.quizId || payload?.data?.quizId);
+      const payloadQuestionId = toPositiveNumber(
+        payload?.questionId || payload?.data?.questionId,
+      );
+      const currentQuestionId = toPositiveNumber(discussionQuestionContext?.questionId);
+      if (!payloadQuizId || payloadQuizId === quizId) {
+        if (!payloadQuestionId || !currentQuestionId || payloadQuestionId === currentQuestionId) {
+          fetchDiscussion(false);
+        }
+      }
+    },
+  });
+
+  const handlePostDiscussion = useCallback(async () => {
+    const body = discussionDraft.trim();
+    if (!body || !groupHistoryContextId || !quizId || discussionPosting) {
+      return;
+    }
+    setDiscussionPosting(true);
+    try {
+      const encodedBody = encodeDraftTags(body, discussionDraftTags);
+      const response = await GroupDiscussionAPI.postMessage(groupHistoryContextId, quizId, {
+        body: encodedBody,
+        questionId: discussionQuestionContext?.questionId || undefined,
+        parentMessageId: discussionReplyTarget?.id || undefined,
+      });
+      const created = response?.data;
+      setDiscussionDraft('');
+      setDiscussionDraftTags({});
+      setDiscussionReplyTarget(null);
+      setDiscussionSlashQuery('');
+      setDiscussionSlashRange(null);
+      if (created) {
+        setDiscussionMessages(prev => upsertDiscussionMessage(prev, created));
+      }
+      fetchDiscussion(false);
+    } catch {
+      showToast('Không thể gửi thảo luận', 'error');
+    } finally {
+      setDiscussionPosting(false);
+    }
+  }, [
+    discussionDraft,
+    discussionDraftTags,
+    discussionQuestionContext?.questionId,
+    discussionPosting,
+    discussionReplyTarget?.id,
+    fetchDiscussion,
+    groupHistoryContextId,
+    quizId,
+    showToast,
+  ]);
+
+  const handleDeleteDiscussion = useCallback(
+    (message: any) => {
+      const messageId = getDiscussionMessageId(message);
+      if (!messageId || !groupHistoryContextId || !quizId) {
+        return;
+      }
+
+      Alert.alert('Xóa tin nhắn?', 'Tin nhắn thảo luận sẽ bị xóa khỏi nhóm.', [
+        {text: 'Hủy', style: 'cancel'},
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await GroupDiscussionAPI.deleteMessage(groupHistoryContextId, quizId, messageId);
+              setDiscussionMessages(prev =>
+                removeDiscussionMessage(prev, messageId),
+              );
+              setDiscussionReplyTarget(current => (current?.id === messageId ? null : current));
+            } catch {
+              showToast('Không thể xóa tin nhắn', 'error');
+            }
+          },
+        },
+      ]);
+    },
+    [groupHistoryContextId, quizId, showToast],
+  );
+
+  const handleOpenGeneralDiscussion = useCallback(() => {
+    setDiscussionQuestionContext(null);
+    setDiscussionReplyTarget(null);
+    setActiveTab('discussion');
+    fetchDiscussion(true, null);
+  }, [fetchDiscussion]);
+
+  const handleOpenQuestionDiscussion = useCallback(
+    (question: any, index: number) => {
+      const questionId = getQuestionId(question);
+      if (!questionId) {
+        showToast('Câu hỏi này chưa có ID để mở thảo luận', 'error');
+        return;
+      }
+      setDiscussionQuestionContext({
+        questionId,
+        label: `Câu ${index}`,
+      });
+      setDiscussionReplyTarget(null);
+      setActiveTab('discussion');
+      fetchDiscussion(true, questionId);
+    },
+    [fetchDiscussion, showToast],
   );
 
   const fetchDetail = useCallback(
@@ -681,11 +1200,24 @@ export default function QuizDetailScreen({navigation, route}: any) {
   useEffect(() => {
     fetchDetail();
     fetchHistory(false);
-  }, [fetchDetail, fetchHistory]);
+    fetchDiscussion(false);
+  }, [fetchDetail, fetchHistory, fetchDiscussion]);
 
   useEffect(() => {
     setExpandedQuestions({});
   }, [quizId]);
+
+  useEffect(() => {
+    if (activeTab !== 'discussion' || !isGroupContext || !groupHistoryContextId || !quizId) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      fetchDiscussion(false);
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [activeTab, fetchDiscussion, groupHistoryContextId, isGroupContext, quizId]);
 
   useEffect(() => {
     if (!firstQuestionKey || Object.keys(expandedQuestions).length > 0) {
@@ -696,11 +1228,13 @@ export default function QuizDetailScreen({navigation, route}: any) {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchDetail(false), fetchHistory(false)]);
+    await Promise.all([fetchDetail(false), fetchHistory(false), fetchDiscussion(false)]);
     setRefreshing(false);
-  }, [fetchDetail, fetchHistory]);
+  }, [fetchDetail, fetchHistory, fetchDiscussion]);
 
   const handleBack = useCallback(() => {
+    const routeNames = navigation.getState?.()?.routeNames || [];
+
     if (
       backContext.type === 'workspace' &&
       Number.isInteger(backContext.workspaceId) &&
@@ -721,6 +1255,14 @@ export default function QuizDetailScreen({navigation, route}: any) {
       Number.isInteger(backContext.groupId) &&
       backContext.groupId > 0
     ) {
+      if (routeNames.includes('GroupWorkspace')) {
+        navigation.navigate('GroupWorkspace', {
+          groupId: backContext.groupId,
+          title: backContext.title,
+        });
+        return;
+      }
+
       navigation.navigate('Home', {
         screen: 'GroupWorkspace',
         params: {
@@ -736,6 +1278,20 @@ export default function QuizDetailScreen({navigation, route}: any) {
       Number.isInteger(backContext.contextId) &&
       backContext.contextId > 0
     ) {
+      if (
+        backContext.contextType === 'GROUP' &&
+        routeNames.includes('RoadmapJourney')
+      ) {
+        navigation.navigate('RoadmapJourney', {
+          contextType: backContext.contextType,
+          contextId: backContext.contextId,
+          title: backContext.title,
+          roadmapId: backContext.roadmapId,
+          phaseId: backContext.phaseId,
+        });
+        return;
+      }
+
       navigation.navigate('Home', {
         screen: 'RoadmapJourney',
         params: {
@@ -930,6 +1486,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -940,17 +1497,18 @@ export default function QuizDetailScreen({navigation, route}: any) {
             tintColor={Colors.primary}
           />
         }>
-        {loadError ? (
-          <View
-            style={[
-              styles.emptyState,
-              {backgroundColor: colors.surface, borderColor: colors.border},
-            ]}>
-            <Icon name="alert-circle-outline" size={36} color={Colors.error} />
-            <Text style={[styles.emptyTitle, {color: colors.heading}]}>{loadError}</Text>
-          </View>
-        ) : (
-          <>
+        <View ref={scrollContentRef} collapsable={false}>
+          {loadError ? (
+            <View
+              style={[
+                styles.emptyState,
+                {backgroundColor: colors.surface, borderColor: colors.border},
+              ]}>
+              <Icon name="alert-circle-outline" size={36} color={Colors.error} />
+              <Text style={[styles.emptyTitle, {color: colors.heading}]}>{loadError}</Text>
+            </View>
+          ) : (
+            <>
             <View
               style={[
                 styles.heroCard,
@@ -1024,7 +1582,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
                 styles.tabs,
                 {backgroundColor: colors.surface, borderColor: colors.border},
               ]}>
-              {tabs.map(tab => {
+              {visibleTabs.map(tab => {
                 const isActive = activeTab === tab.key;
                 return (
                   <TouchableOpacity
@@ -1104,6 +1662,312 @@ export default function QuizDetailScreen({navigation, route}: any) {
               </View>
             ) : null}
 
+            {activeTab === 'discussion' && isGroupContext ? (
+              <View style={styles.section}>
+                <View
+                  style={[
+                    styles.discussionPanel,
+                    {backgroundColor: colors.surface, borderColor: colors.border},
+                  ]}>
+                  <View style={styles.panelTitleRow}>
+                    <Icon name="message-text-outline" size={18} color={Colors.primary} />
+                    <View style={styles.discussionTitleWrap}>
+                      <Text style={[styles.panelTitle, {color: colors.heading}]}>
+                        {discussionQuestionContext
+                          ? `Thảo luận ${discussionQuestionContext.label.toLowerCase()}`
+                          : 'Thảo luận nhóm'}
+                      </Text>
+                      <Text style={[styles.panelText, {color: colors.textSecondary}]}>
+                        {discussionQuestionContext
+                          ? 'Trao đổi riêng về đáp án, lời giải hoặc điểm chưa rõ của câu hỏi này.'
+                          : 'Trao đổi về quiz, lời giải và những điểm chưa rõ với thành viên trong nhóm.'}
+                      </Text>
+                    </View>
+                  </View>
+                  {discussionQuestionContext ? (
+                    <TouchableOpacity
+                      activeOpacity={0.78}
+                      onPress={handleOpenGeneralDiscussion}
+                      style={[
+                        styles.discussionScopeButton,
+                        {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+                      ]}>
+                      <Icon name="message-reply-text-outline" size={16} color={Colors.primary} />
+                      <Text style={[styles.discussionScopeText, {color: Colors.primary}]}>
+                        Chuyển về thảo luận chung
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+
+                  {discussionLoading ? (
+                    <View style={styles.discussionLoader}>
+                      <LoadingSpinner />
+                    </View>
+                  ) : visibleDiscussionMessages.length === 0 ? (
+                    <View style={[styles.discussionEmpty, {backgroundColor: colors.surfaceVariant}]}>
+                      <Icon name="chat-outline" size={28} color={colors.textTertiary} />
+                      <Text style={[styles.emptyTitle, {color: colors.heading}]}>
+                        Chưa có thảo luận
+                      </Text>
+                      <Text style={[styles.emptySubtitle, {color: colors.textSecondary}]}>
+                        Hãy mở đầu cuộc trao đổi cho quiz này hoặc gõ / để tag câu hỏi.
+                      </Text>
+                    </View>
+                  ) : (
+                    visibleDiscussionMessages.map(message => {
+                      const authorId = Number(message?.authorId || message?.userId || message?.user?.id || 0);
+                      const canDelete = discussionCurrentUserId > 0 && authorId === discussionCurrentUserId;
+                      const messageId = getDiscussionMessageId(message);
+                      const replyPreview = getDiscussionReplyPreview(discussionMessageMap, message);
+                      const replyDepth = getDiscussionReplyDepth(discussionMessageMap, message);
+                      const bodyParts = parseDiscussionBody(firstText(message?.body, message?.content, message?.message));
+                      return (
+                        <View
+                          key={messageId}
+                          style={[
+                            styles.discussionMessage,
+                            {
+                              backgroundColor: colors.surfaceVariant,
+                              borderColor: colors.border,
+                              marginLeft: replyDepth > 0 ? 18 : 0,
+                              borderLeftWidth: replyDepth > 0 ? 3 : 1,
+                              borderLeftColor: replyDepth > 0 ? Colors.primary : colors.border,
+                            },
+                          ]}>
+                          <View style={styles.discussionAvatar}>
+                            <Text style={styles.discussionAvatarText}>
+                              {getDiscussionAuthor(message).charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={styles.discussionMessageBody}>
+                            <View style={styles.discussionMessageHeader}>
+                              <Text style={[styles.discussionAuthor, {color: colors.heading}]} numberOfLines={1}>
+                                {getDiscussionAuthor(message)}
+                              </Text>
+                              <Text style={[styles.discussionTime, {color: colors.textTertiary}]}>
+                                {relativeTime(message?.createdAt || message?.sentAt)}
+                              </Text>
+                            </View>
+                            {replyPreview ? (
+                              <View
+                                style={[
+                                  styles.discussionReplyPreview,
+                                  {backgroundColor: colors.backgroundSecondary, borderColor: colors.border},
+                                ]}>
+                                <Icon name="reply" size={14} color={Colors.primary} />
+                                <View style={styles.discussionReplyPreviewBody}>
+                                  <Text style={[styles.discussionReplyPreviewTitle, {color: colors.heading}]}> 
+                                    {replyPreview.missing
+                                      ? 'Bình luận gốc không còn tồn tại'
+                                      : `Đang trả lời ${replyPreview.authorName || 'User'}`}
+                                  </Text>
+                                  {!replyPreview.missing ? (
+                                    <Text style={[styles.discussionReplyPreviewText, {color: colors.textSecondary}]} numberOfLines={2}>
+                                      {replyPreview.body || 'Không có nội dung'}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                              </View>
+                            ) : null}
+                            <View style={styles.discussionBodyWrap}>
+                              {bodyParts.map((part, partIndex) => {
+                                const tagMatch = part.match(/^\[\[q:(\d+):(\d+)\]\]$/);
+                                if (tagMatch) {
+                                  const taggedQuestionId = Number(tagMatch[1]);
+                                  const taggedQuestionIndex = Number(tagMatch[2]);
+                                  const taggedQuestion = questionLookup.get(taggedQuestionId);
+                                  const taggedQuestionText = taggedQuestion
+                                    ? firstText(
+                                        taggedQuestion.question?.content,
+                                        taggedQuestion.question?.questionText,
+                                        taggedQuestion.question?.text,
+                                      )
+                                    : '';
+                                  return (
+                                    <TouchableOpacity
+                                      key={`${messageId}-tag-${partIndex}`}
+                                      activeOpacity={0.8}
+                                      onPress={() => {
+                                        if (taggedQuestion?.question) {
+                                          handleJumpToQuestion(taggedQuestion.question, taggedQuestionIndex);
+                                        }
+                                      }}
+                                      style={[
+                                        styles.discussionTagChip,
+                                        {backgroundColor: isDark ? 'rgba(37,99,235,0.16)' : '#EFF6FF', borderColor: Colors.primary},
+                                      ]}>
+                                      <Icon name="tag-outline" size={12} color={Colors.primary} />
+                                      <Text
+                                        style={[styles.discussionTagChipText, {color: Colors.primary}]}
+                                        numberOfLines={1}
+                                        ellipsizeMode="tail"> 
+                                        {taggedQuestion
+                                          ? `Câu ${taggedQuestionIndex}: ${taggedQuestionText || `Câu ${taggedQuestionIndex}`}`
+                                          : `#${taggedQuestionIndex}`}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                }
+
+                                if (!part) {
+                                  return null;
+                                }
+
+                                return (
+                                  <Text key={`${messageId}-text-${partIndex}`} style={[styles.discussionBodyText, {color: colors.text}]}> 
+                                    {part}
+                                  </Text>
+                                );
+                              })}
+                            </View>
+                            <View style={styles.discussionActionsRow}>
+                              <TouchableOpacity
+                                onPress={() => handleReplyDiscussion(message)}
+                                style={styles.discussionReplyButton}
+                                activeOpacity={0.75}>
+                                <Icon name="reply" size={14} color={Colors.primary} />
+                                <Text style={[styles.discussionReplyText, {color: Colors.primary}]}>Trả lời</Text>
+                              </TouchableOpacity>
+                            {canDelete ? (
+                              <TouchableOpacity
+                                onPress={() => handleDeleteDiscussion(message)}
+                                style={styles.discussionDeleteButton}>
+                                <Icon name="trash-can-outline" size={14} color={Colors.error} />
+                                <Text style={[styles.discussionDeleteText, {color: Colors.error}]}>
+                                  Xóa
+                                </Text>
+                              </TouchableOpacity>
+                            ) : null}
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+
+                  {discussionCanAccess ? (
+                    <>
+                      {discussionReplyTarget ? (
+                        <View
+                          style={[
+                            styles.discussionReplyBanner,
+                            {backgroundColor: colors.backgroundSecondary, borderColor: colors.border},
+                          ]}>
+                          <View style={styles.discussionReplyBannerBody}>
+                            <Text style={[styles.discussionReplyBannerTitle, {color: colors.heading}]}> 
+                              Đang trả lời {discussionReplyTarget.authorName || 'User'}
+                            </Text>
+                            <Text style={[styles.discussionReplyBannerText, {color: colors.textSecondary}]} numberOfLines={2}>
+                              {discussionReplyTarget.body || 'Không có nội dung'}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => setDiscussionReplyTarget(null)}
+                            style={styles.discussionClearReplyButton}
+                            activeOpacity={0.75}>
+                            <Icon name="close" size={16} color={colors.textTertiary} />
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+
+                      <View style={styles.discussionComposerWrap}>
+                        {discussionSlashQuery || discussionSlashRange ? (
+                          <View
+                            style={[
+                              styles.discussionSuggestions,
+                              {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+                            ]}>
+                            <View style={styles.discussionSuggestionsHeader}>
+                              <Text style={[styles.discussionSuggestionsTitle, {color: colors.heading}]}> 
+                                Chọn câu hỏi
+                              </Text>
+                              <Text style={[styles.discussionSuggestionsHint, {color: colors.textTertiary}]}> 
+                                Gõ / để lọc và chạm để chèn tag
+                              </Text>
+                            </View>
+                            <ScrollView
+                              style={styles.discussionSuggestionsList}
+                              contentContainerStyle={styles.discussionSuggestionsListContent}
+                              showsVerticalScrollIndicator
+                              nestedScrollEnabled
+                              keyboardShouldPersistTaps="handled">
+                              {discussionFilteredSuggestions.map(({question, index}) => {
+                                const questionId = getQuestionId(question);
+                                const questionIndex = index;
+                                const questionText = firstText(question?.content, question?.questionText, question?.text);
+                                return (
+                                  <TouchableOpacity
+                                    key={String(questionId || questionIndex)}
+                                    activeOpacity={0.78}
+                                    onPress={() => handleSelectDiscussionQuestion(question, questionIndex)}
+                                    style={[
+                                      styles.discussionSuggestionItem,
+                                      {backgroundColor: colors.surface, borderColor: colors.border},
+                                    ]}>
+                                    <View
+                                      style={[
+                                        styles.discussionSuggestionIndex,
+                                        {backgroundColor: isDark ? 'rgba(37,99,235,0.18)' : '#DBEAFE'},
+                                      ]}>
+                                      <Text style={[styles.discussionSuggestionIndexText, {color: Colors.primary}]}>#{questionIndex}</Text>
+                                    </View>
+                                    <View style={styles.discussionSuggestionContent}>
+                                      <Text style={[styles.discussionSuggestionTitle, {color: colors.heading}]} numberOfLines={1}>
+                                        {questionText || `Câu ${questionIndex}`}
+                                      </Text>
+                                      <Text
+                                        style={[styles.discussionSuggestionSubtitle, {color: colors.textSecondary}]}
+                                        numberOfLines={1}>
+                                        Chạm để chèn tag vào thảo luận
+                                      </Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
+                        ) : null}
+
+                        <View
+                          style={[
+                            styles.discussionComposer,
+                            {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+                          ]}>
+                          <View style={styles.discussionComposerAvatar}>
+                            <Text style={styles.discussionAvatarText}>
+                              {firstText((user as any)?.fullName, (user as any)?.name, 'U').charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <TextInput
+                            value={discussionDraft}
+                            onChangeText={handleDiscussionInputChange}
+                            onSelectionChange={handleDiscussionSelectionChange}
+                            multiline
+                            placeholder={discussionReplyTarget ? 'Trả lời bình luận này...' : 'Viết thảo luận... Gõ / để tag câu hỏi'}
+                            placeholderTextColor={colors.placeholder}
+                            style={[styles.discussionInput, {color: colors.text}]}
+                          />
+                          <TouchableOpacity
+                            onPress={handlePostDiscussion}
+                            disabled={!discussionDraft.trim() || discussionPosting}
+                            style={[
+                              styles.discussionSend,
+                              (!discussionDraft.trim() || discussionPosting) && styles.disabledButton,
+                            ]}>
+                            <Icon
+                              name={discussionPosting ? 'clock-outline' : 'send'}
+                              size={18}
+                              color="#FFFFFF"
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+
             {activeTab === 'questions' ? (
               <View style={styles.section}>
                 {allQuestions.length === 0 ? (
@@ -1145,15 +2009,20 @@ export default function QuizDetailScreen({navigation, route}: any) {
                         const explanation = getExplanationText(question, answers);
                         const fallbackCorrectAnswers = getFallbackCorrectAnswers(question, answers);
                         return (
-                          <TouchableOpacity
+                          <View
                             key={questionKey}
-                            activeOpacity={0.78}
-                            onPress={() => toggleQuestion(question, globalIndex)}
-                            style={[
-                              styles.questionCard,
-                              {backgroundColor: colors.surface, borderColor: colors.border},
-                            ]}>
-                            <View style={styles.questionHeader}>
+                            ref={node => {
+                              questionCardRefs.current[questionKey] = node;
+                            }}
+                            collapsable={false}>
+                            <TouchableOpacity
+                              activeOpacity={0.78}
+                              onPress={() => toggleQuestion(question, globalIndex)}
+                              style={[
+                                styles.questionCard,
+                                {backgroundColor: colors.surface, borderColor: colors.border},
+                              ]}>
+                              <View style={styles.questionHeader}>
                               <View style={styles.questionIndex}>
                                 <Text style={styles.questionIndexText}>{globalIndex}</Text>
                               </View>
@@ -1177,9 +2046,9 @@ export default function QuizDetailScreen({navigation, route}: any) {
                                 size={20}
                                 color={colors.textTertiary}
                               />
-                            </View>
-                            {expanded ? (
-                              <View style={styles.answerList}>
+                              </View>
+                              {expanded ? (
+                                <View style={styles.answerList}>
                                 {answers.length > 0 ? (
                                   answers.map((answer: any, answerIndex: number) => {
                                     const correct = isAnswerCorrect(answer);
@@ -1271,9 +2140,39 @@ export default function QuizDetailScreen({navigation, route}: any) {
                                     </Text>
                                   </View>
                                 ) : null}
+                                {isGroupContext ? (
+                                  <TouchableOpacity
+                                    activeOpacity={0.78}
+                                    onPress={() => handleOpenQuestionDiscussion(question, globalIndex)}
+                                    style={[
+                                      styles.questionDiscussionButton,
+                                      {
+                                        backgroundColor: isDark
+                                          ? 'rgba(37,99,235,0.16)'
+                                          : '#EFF6FF',
+                                        borderColor: isDark
+                                          ? 'rgba(96,165,250,0.34)'
+                                          : '#BFDBFE',
+                                      },
+                                    ]}>
+                                    <Icon
+                                      name="message-text-outline"
+                                      size={16}
+                                      color={Colors.primary}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.questionDiscussionText,
+                                        {color: Colors.primary},
+                                      ]}>
+                                      Thảo luận câu {globalIndex}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ) : null}
                               </View>
-                            ) : null}
-                          </TouchableOpacity>
+                                ) : null}
+                            </TouchableOpacity>
+                          </View>
                         );
                       })}
                     </View>
@@ -1358,8 +2257,9 @@ export default function QuizDetailScreen({navigation, route}: any) {
                 )}
               </View>
             ) : null}
-          </>
-        )}
+            </>
+          )}
+        </View>
       </ScrollView>
 
       <View
@@ -1598,6 +2498,220 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {fontSize: 15, fontWeight: '700', marginTop: 10, textAlign: 'center'},
   emptySubtitle: {fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 19},
+  discussionPanel: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.base,
+    gap: Spacing.md,
+    position: 'relative',
+  },
+  discussionTitleWrap: {flex: 1, minWidth: 0},
+  discussionScopeButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  discussionScopeText: {fontSize: 12, fontWeight: '800'},
+  discussionLoader: {minHeight: 120, justifyContent: 'center'},
+  discussionEmpty: {
+    borderRadius: BorderRadius.md,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    gap: 4,
+  },
+  discussionMessage: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: 10,
+  },
+  discussionReplyPreview: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  discussionReplyPreviewBody: {flex: 1, minWidth: 0},
+  discussionReplyPreviewTitle: {fontSize: 12, fontWeight: '700'},
+  discussionReplyPreviewText: {fontSize: 11, marginTop: 2, lineHeight: 16},
+  discussionAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discussionAvatarText: {color: '#FFFFFF', fontSize: 13, fontWeight: '800'},
+  discussionMessageBody: {flex: 1, minWidth: 0},
+  discussionBodyWrap: {
+    marginTop: 6,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+  },
+  discussionMessageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  discussionAuthor: {flex: 1, fontSize: 13, fontWeight: '800'},
+  discussionTime: {fontSize: 11},
+  discussionBodyText: {fontSize: 14, lineHeight: 21, marginTop: 6},
+  discussionTagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    gap: 4,
+    marginRight: 4,
+    marginTop: 6,
+    maxWidth: '96%',
+    flexShrink: 1,
+  },
+  discussionTagChipText: {fontSize: 11, fontWeight: '800', flexShrink: 1},
+  discussionActionsRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flexWrap: 'wrap',
+  },
+  discussionReplyButton: {flexDirection: 'row', alignItems: 'center', gap: 4},
+  discussionReplyText: {fontSize: 12, fontWeight: '800'},
+  discussionDeleteButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  discussionDeleteText: {fontSize: 12, fontWeight: '700'},
+  discussionReplyBanner: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  discussionReplyBannerBody: {flex: 1, minWidth: 0},
+  discussionReplyBannerTitle: {fontSize: 12, fontWeight: '800'},
+  discussionReplyBannerText: {fontSize: 11, marginTop: 2, lineHeight: 16},
+  discussionClearReplyButton: {padding: 4},
+  discussionSuggestions: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
+    position: 'absolute',
+    left: Spacing.base,
+    right: Spacing.base,
+    bottom: 58,
+    zIndex: 20,
+    elevation: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: {width: 0, height: 10},
+    height: 260,
+    gap: Spacing.sm,
+  },
+  discussionComposerWrap: {
+    position: 'relative',
+    overflow: 'visible',
+    marginTop: 2,
+  },
+  discussionSuggestionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  discussionSuggestionsTitle: {fontSize: 12, fontWeight: '800'},
+  discussionSuggestionsHint: {fontSize: 10},
+  discussionSuggestionsList: {flex: 1, minHeight: 0},
+  discussionSuggestionsListContent: {gap: Spacing.sm, paddingBottom: 2},
+  discussionSuggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    gap: 8,
+  },
+  discussionSuggestionIndex: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discussionSuggestionIndexText: {fontSize: 11, fontWeight: '800'},
+  discussionSuggestionContent: {flex: 1, minWidth: 0},
+  discussionSuggestionTitle: {fontSize: 13, fontWeight: '700'},
+  discussionSuggestionSubtitle: {fontSize: 11, marginTop: 2},
+  discussionComposer: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  discussionComposerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  discussionInput: {
+    flex: 1,
+    minHeight: 42,
+    maxHeight: 110,
+    fontSize: 14,
+    lineHeight: 20,
+    paddingVertical: 8,
+  },
+  discussionSend: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  questionDiscussionButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 9,
+    marginTop: Spacing.sm,
+    gap: 6,
+  },
+  questionDiscussionText: {fontSize: 12, fontWeight: '800'},
   questionSection: {gap: Spacing.sm},
   questionSectionHeader: {
     flexDirection: 'row',

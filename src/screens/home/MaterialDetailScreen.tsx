@@ -18,14 +18,14 @@ import {BorderRadius, Spacing} from '../../theme/spacing';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Badge from '../../components/ui/Badge';
 
-function resolveTextPayload(payload: any, fallback = '') {
+function resolveTextPayload(payload: any, fallback = ''): string {
   if (typeof payload === 'string') {
     return payload;
   }
 
   if (Array.isArray(payload)) {
     const joined = payload
-      .map(item => resolveTextPayload(item, ''))
+      .map((item: any) => resolveTextPayload(item, ''))
       .filter(Boolean)
       .join('\n');
     return joined || fallback;
@@ -222,7 +222,7 @@ export default function MaterialDetailScreen({navigation, route}: any) {
     return () => {
       mounted = false;
     };
-  }, [loadModerationReport, materialId]);
+  }, [loadModerationReport, material, materialId]);
 
   const statusVariant =
     normalizedStatus === 'READY' || normalizedStatus === 'ACTIVE'

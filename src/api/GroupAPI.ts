@@ -63,6 +63,11 @@ const GroupAPI = {
       ...res,
       data: res.data?.data || null,
     })),
+  getWorkspaceDetail: (groupId: number) =>
+    api.get(`/api/workspace/${groupId}`).then(res => ({
+      ...res,
+      data: res.data?.data || res.data || null,
+    })),
   toggleVisibility: (groupId: number) =>
     api.put(`/api/group/${groupId}/visibility`).then(res => ({
       ...res,
@@ -101,6 +106,11 @@ const GroupAPI = {
     api.delete(`/api/group/${groupId}/members/${memberId}`),
   getOverallRanking: (groupId: number) =>
     api.get(`/api/group/${groupId}/ranking/overall`).then(res => ({
+      ...res,
+      data: res.data?.data || null,
+    })),
+  getRankingMemberDetail: (groupId: number, userId: number) =>
+    api.get(`/api/group/${groupId}/ranking/overall/members/${userId}`).then(res => ({
       ...res,
       data: res.data?.data || null,
     })),

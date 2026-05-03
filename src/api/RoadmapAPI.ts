@@ -8,6 +8,16 @@ const mapRoadmap = (item: any) => ({
 
 const unwrapData = (res: any) => res?.data?.data ?? res?.data;
 
+const getWorkspaceRoadmapId = async (workspaceId: number) => {
+  const workspaceRes = await api.get(`/api/workspace/${workspaceId}`);
+  const workspace = unwrapData(workspaceRes) || {};
+  return {
+    response: workspaceRes,
+    workspace,
+    roadmapId: workspace?.roadmapId ?? workspace?.roadmap_id ?? workspace?.data?.roadmapId,
+  };
+};
+
 const RoadmapAPI = {
   getForWorkspace: async (workspaceId: number) => {
     try {
@@ -61,12 +71,50 @@ const RoadmapAPI = {
       };
     }
   },
-  getForGroup: async (_groupId: number) => {
-    // BE currently has no roadmap-by-group list endpoint.
-    return {
-      data: [],
-      status: 200,
-    };
+  getForGroup: async (groupId: number) => {
+    try {
+      const {response, workspace, roadmapId} = await getWorkspaceRoadmapId(groupId);
+
+      if (!roadmapId) {
+        return {
+          ...response,
+          data: [],
+        };
+      }
+
+      try {
+        const structureRes = await api.get(`/api/roadmaps/${roadmapId}/structure`);
+        const structure = unwrapData(structureRes) || {};
+        return {
+          ...structureRes,
+          data: [
+            mapRoadmap({
+              roadmapId,
+              title: structure?.title || workspace?.roadmapTitle || `Roadmap #${roadmapId}`,
+              status: structure?.status || workspace?.roadmapStatus,
+              description: structure?.description,
+              stats: structure?.stats,
+            }),
+          ],
+        };
+      } catch {
+        return {
+          ...response,
+          data: [
+            mapRoadmap({
+              roadmapId,
+              title: workspace?.roadmapTitle || `Roadmap #${roadmapId}`,
+              status: workspace?.roadmapStatus,
+            }),
+          ],
+        };
+      }
+    } catch {
+      return {
+        data: [],
+        status: 200,
+      };
+    }
   },
   getById: (id: number) =>
     api.get(`/api/roadmaps/${id}/structure`).then(res => ({

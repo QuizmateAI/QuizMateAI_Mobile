@@ -54,6 +54,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
   const normalizedGroupId = Number(groupId || route?.params?.workspaceId || 0);
   const requestedInitialTab = String(route?.params?.initialTab || '').toLowerCase();
   const {isDark, colors} = useTheme();
+  const screenBackground = isDark ? colors.backgroundSecondary : colors.background;
   const {user} = useAuth();
   const {showToast} = useToast();
 
@@ -519,7 +520,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
 
   return (
     <SafeAreaView
-      style={[styles.container, {backgroundColor: colors.backgroundSecondary}]}
+      style={[styles.container, {backgroundColor: screenBackground}]}
       edges={['top']}>
       {/* Header */}
       <View
@@ -1042,18 +1043,18 @@ export default function GroupManagementScreen({navigation, route}: any) {
                           },
                         ]}>
                         <View style={{flex: 1}}>
-                          <Text style={[styles.paymentHistoryTitle, {color: colors.heading}]}> 
+                          <Text style={[styles.paymentHistoryTitle, {color: colors.heading}]}>
                             {payment?.targetType || 'PAYMENT'}
                           </Text>
-                          <Text style={[styles.paymentHistoryMeta, {color: colors.textSecondary}]}> 
+                          <Text style={[styles.paymentHistoryMeta, {color: colors.textSecondary}]}>
                             {payment?.orderId || 'Không có mã đơn'}
                           </Text>
                         </View>
                         <View style={{alignItems: 'flex-end'}}>
-                          <Text style={[styles.paymentHistoryAmount, {color: colors.heading}]}> 
+                          <Text style={[styles.paymentHistoryAmount, {color: colors.heading}]}>
                             {Number(payment?.amount || 0).toLocaleString('vi-VN')}đ
                           </Text>
-                          <Text style={[styles.paymentHistoryStatus, {color: colors.textSecondary}]}> 
+                          <Text style={[styles.paymentHistoryStatus, {color: colors.textSecondary}]}>
                             {String(payment?.status || '').toUpperCase() || 'UNKNOWN'}
                           </Text>
                         </View>
@@ -1510,7 +1511,7 @@ export default function GroupManagementScreen({navigation, route}: any) {
             ]}>
             <Icon name="alert-outline" size={28} color={Colors.error} />
           </View>
-          <Text style={[styles.deleteMessage, {color: colors.text}]}> 
+          <Text style={[styles.deleteMessage, {color: colors.text}]}>
             Bạn có chắc muốn xóa "{group?.groupName}" không? Hành động này
             không thể hoàn tác và toàn bộ dữ liệu nhóm sẽ bị mất.
           </Text>
@@ -1558,6 +1559,7 @@ function StatCard({
   value: number;
   color: string;
   colors: any;
+  isDark?: boolean;
 }) {
   return (
     <View

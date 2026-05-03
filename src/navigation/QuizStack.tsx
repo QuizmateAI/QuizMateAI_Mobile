@@ -14,6 +14,8 @@ import CreditPackagesScreen from '../screens/profile/CreditPackagesScreen';
 import PaymentScreen from '../screens/profile/PaymentScreen';
 import PaymentWebViewScreen from '../screens/profile/PaymentWebViewScreen';
 import PaymentResultScreen from '../screens/profile/PaymentResultScreen';
+import FlashcardStudyScreen from '../screens/home/FlashcardStudyScreen';
+import RoadmapJourneyScreen from '../screens/home/RoadmapJourneyScreen';
 import {type VoicePracticeConfig} from '../utils/voicePractice';
 
 export type QuizBackContext =
@@ -48,11 +50,15 @@ export type QuizDetailRouteParams = {
 
 export type QuizStackParamList = {
   GroupList: undefined;
-  GroupWorkspace: {groupId: number; title?: string};
+  GroupWorkspace: {
+    groupId: number;
+    title?: string;
+    detailKey?: 'challenge' | 'ranking' | 'notifications';
+  };
   GroupManagement: {
     groupId: number;
     title?: string;
-    initialTab?: 'dashboard' | 'members' | 'ranking' | 'logs' | 'settings';
+    initialTab?: 'dashboard' | 'members' | 'ranking' | 'logs' | 'wallet' | 'settings';
   };
   Subscription:
     | {
@@ -92,6 +98,23 @@ export type QuizStackParamList = {
     title?: string;
     contextType?: 'WORKSPACE' | 'GROUP';
   };
+  FlashcardStudy: {
+    flashcardId: number;
+    title?: string;
+    contextType?: 'WORKSPACE' | 'GROUP';
+    contextId?: number;
+    workspaceId?: number;
+    groupId?: number;
+    backTitle?: string;
+  };
+  RoadmapJourney: {
+    contextType: 'WORKSPACE' | 'GROUP';
+    contextId: number;
+    title?: string;
+    materials?: any[];
+    roadmapId?: number;
+    phaseId?: number;
+  };
   QuizDetail: QuizDetailRouteParams;
   PracticeQuiz: {
     quizId: number;
@@ -111,6 +134,12 @@ export type QuizStackParamList = {
     title?: string;
     backContext?: QuizBackContext;
     quizDetailParams?: QuizDetailRouteParams;
+    challengeContext?: {
+      workspaceId: number;
+      eventId: number;
+      participantId?: number;
+    };
+    challengeAttempt?: any;
   };
   QuizResult: {attemptId: number; backContext?: QuizBackContext};
 };
@@ -132,6 +161,8 @@ export default function QuizStack() {
         name="WorkspaceProfileWizard"
         component={WorkspaceProfileWizardScreen}
       />
+      <Stack.Screen name="FlashcardStudy" component={FlashcardStudyScreen} />
+      <Stack.Screen name="RoadmapJourney" component={RoadmapJourneyScreen} />
       <Stack.Screen name="QuizDetail" component={QuizDetailScreen} />
       <Stack.Screen name="PracticeQuiz" component={PracticeQuizScreen} />
       <Stack.Screen name="VoicePracticeQuiz" component={VoicePracticeQuizScreen} />

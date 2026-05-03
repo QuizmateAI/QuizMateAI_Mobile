@@ -12,6 +12,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import {Colors} from '../../theme/colors';
 import WorkspaceAPI from '../../api/WorkspaceAPI';
+import {useTheme} from '../../context/ThemeContext';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -253,14 +254,16 @@ function cardWidth(columns: number) {
 function AccuracyRing({
   accuracy,
   label,
-  colors,
+  colors: passedColors,
   size = 118,
 }: {
   accuracy: number;
   label: string;
-  colors: any;
+  colors?: any;
   size?: number;
 }) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
   const pctValue = Math.max(0, Math.min(100, Math.round((accuracy || 0) * 100)));
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
@@ -276,7 +279,7 @@ function AccuracyRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#E2E8F0"
+          stroke={colors.borderLight || colors.border || '#E2E8F0'}
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -306,13 +309,22 @@ function SegmentedControl({
   items,
   value,
   onChange,
+  colors: passedColors,
 }: {
   items: Array<{value: string; label: string}>;
   value: string;
   onChange: (next: string) => void;
+  colors?: any;
 }) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+
   return (
-    <View style={styles.segmentWrap}>
+    <View
+      style={[
+        styles.segmentWrap,
+        {backgroundColor: colors.surface, borderColor: colors.border},
+      ]}>
       {items.map(item => {
         const active = value === item.value;
         return (
@@ -324,7 +336,7 @@ function SegmentedControl({
             <Text
               style={[
                 styles.segmentText,
-                {color: active ? '#FFFFFF' : '#475569'},
+                {color: active ? '#FFFFFF' : colors.textSecondary},
               ]}>
               {item.label}
             </Text>
@@ -338,10 +350,18 @@ function SegmentedControl({
 function SurfaceSwitcher({
   surface,
   onChange,
+  colors: passedColors,
 }: {
   surface: string;
   onChange: (next: string) => void;
+  colors?: any;
 }) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+  const isDarkTheme =
+    colors.background === Colors.dark.background ||
+    colors.surface === Colors.dark.surface;
+
   return (
     <View style={styles.surfaceGrid}>
       {SURFACES.map(item => {
@@ -353,18 +373,41 @@ function SurfaceSwitcher({
             onPress={() => onChange(item.value)}
             style={[
               styles.surfaceCard,
-              active ? styles.surfaceCardActive : styles.surfaceCardInactive,
+              {
+                backgroundColor: active
+                  ? isDarkTheme
+                    ? 'rgba(37, 99, 235, 0.18)'
+                    : Colors.primaryLight
+                  : colors.surface,
+                borderColor: active ? Colors.primary : colors.border,
+              },
             ]}>
-            <View style={[styles.surfaceIcon, active && styles.surfaceIconActive]}>
+            <View
+              style={[
+                styles.surfaceIcon,
+                {
+                  backgroundColor: active
+                    ? `${Colors.primary}18`
+                    : colors.surfaceVariant,
+                },
+              ]}>
               <Icon
                 name={item.icon}
                 size={20}
-                color={active ? Colors.primary : '#64748B'}
+                color={active ? Colors.primary : colors.textSecondary}
               />
             </View>
             <View style={styles.surfaceContent}>
-              <Text style={styles.surfaceTitle}>{item.title}</Text>
-              <Text style={styles.surfaceDescription}>{item.description}</Text>
+              <Text style={[styles.surfaceTitle, {color: colors.heading}]}>
+                {item.title}
+              </Text>
+              <Text
+                style={[
+                  styles.surfaceDescription,
+                  {color: colors.textSecondary},
+                ]}>
+                {item.description}
+              </Text>
             </View>
           </TouchableOpacity>
         );
@@ -380,6 +423,7 @@ function StatCard({
   subValue,
   accentColor,
   width,
+  colors: passedColors,
 }: {
   icon: string;
   label: string;
@@ -387,16 +431,34 @@ function StatCard({
   subValue?: string;
   accentColor: string;
   width: number;
+  colors?: any;
 }) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+
   return (
-    <View style={[styles.statCard, {width}]}>
+    <View
+      style={[
+        styles.statCard,
+        {
+          width,
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}>
       <View style={[styles.statTopBar, {backgroundColor: accentColor}]} />
       <View style={[styles.statIconWrap, {backgroundColor: `${accentColor}15`}]}>
         <Icon name={icon} size={18} color={accentColor} />
       </View>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-      {subValue ? <Text style={styles.statSubValue}>{subValue}</Text> : null}
+      <Text style={[styles.statLabel, {color: colors.textSecondary}]}>
+        {label}
+      </Text>
+      <Text style={[styles.statValue, {color: colors.heading}]}>{value}</Text>
+      {subValue ? (
+        <Text style={[styles.statSubValue, {color: colors.textTertiary}]}>
+          {subValue}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -406,15 +468,26 @@ function InsightCard({
   value,
   description,
   tone,
+  colors: passedColors,
 }: {
   title: string;
   value: string;
   description: string;
   tone: 'emerald' | 'amber';
+  colors?: any;
 }) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+  const isDarkTheme =
+    colors.background === Colors.dark.background ||
+    colors.surface === Colors.dark.surface;
   const palette =
     tone === 'emerald'
-      ? {bg: '#ECFDF5', border: '#A7F3D0', title: '#065F46'}
+      ? isDarkTheme
+        ? {bg: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.32)', title: '#6EE7B7'}
+        : {bg: '#ECFDF5', border: '#A7F3D0', title: '#065F46'}
+      : isDarkTheme
+      ? {bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.32)', title: '#FCD34D'}
       : {bg: '#FFFBEB', border: '#FDE68A', title: '#92400E'};
 
   return (
@@ -424,8 +497,10 @@ function InsightCard({
         {backgroundColor: palette.bg, borderColor: palette.border},
       ]}>
       <Text style={[styles.insightTitle, {color: palette.title}]}>{title}</Text>
-      <Text style={styles.insightValue}>{value}</Text>
-      <Text style={styles.insightDescription}>{description}</Text>
+      <Text style={[styles.insightValue, {color: colors.heading}]}>{value}</Text>
+      <Text style={[styles.insightDescription, {color: colors.textSecondary}]}>
+        {description}
+      </Text>
     </View>
   );
 }
@@ -434,15 +509,28 @@ function SectionCard({
   title,
   subtitle,
   children,
+  colors: passedColors,
 }: {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  colors?: any;
 }) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+
   return (
-    <View style={styles.sectionCard}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
+    <View
+      style={[
+        styles.sectionCard,
+        {backgroundColor: colors.surface, borderColor: colors.border},
+      ]}>
+      <Text style={[styles.sectionTitle, {color: colors.heading}]}>{title}</Text>
+      {subtitle ? (
+        <Text style={[styles.sectionSubtitle, {color: colors.textSecondary}]}>
+          {subtitle}
+        </Text>
+      ) : null}
       <View style={styles.sectionBody}>{children}</View>
     </View>
   );
@@ -454,13 +542,17 @@ function SimpleBarList({
   bucketType,
   getValue,
   showPercent = false,
+  colors: passedColors,
 }: {
   title: string;
   buckets: any[];
   bucketType: 'difficulty' | 'bloom' | 'default';
   getValue: (bucket: any) => number;
   showPercent?: boolean;
+  colors?: any;
 }) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
   const sanitized = buckets.filter(Boolean);
   if (sanitized.length === 0) {
     return null;
@@ -469,7 +561,7 @@ function SimpleBarList({
   const maxValue = Math.max(...sanitized.map(bucket => getValue(bucket)), 1);
 
   return (
-    <SectionCard title={title}>
+    <SectionCard title={title} colors={colors}>
       <View style={styles.metricList}>
         {sanitized.map((bucket, index) => {
           const value = getValue(bucket);
@@ -483,12 +575,18 @@ function SimpleBarList({
           return (
             <View key={`${label}:${index}`} style={styles.metricRow}>
               <View style={styles.metricHeader}>
-                <Text style={styles.metricLabel}>{label}</Text>
-                <Text style={styles.metricValue}>
+                <Text style={[styles.metricLabel, {color: colors.heading}]}>
+                  {label}
+                </Text>
+                <Text style={[styles.metricValue, {color: colors.textSecondary}]}>
                   {showPercent ? `${Math.round(value)}%` : fmtNumber(value)}
                 </Text>
               </View>
-              <View style={styles.metricTrack}>
+              <View
+                style={[
+                  styles.metricTrack,
+                  {backgroundColor: colors.borderLight || colors.border},
+                ]}>
                 <View
                   style={[
                     styles.metricFill,
@@ -508,15 +606,23 @@ function StackedProgress({
   correct,
   incorrect,
   pending,
+  colors: passedColors,
 }: {
   correct: number;
   incorrect: number;
   pending: number;
+  colors?: any;
 }) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
   const total = Math.max(1, correct + incorrect + pending);
   return (
     <View>
-      <View style={styles.stackedBar}>
+      <View
+        style={[
+          styles.stackedBar,
+          {backgroundColor: colors.borderLight || colors.border},
+        ]}>
         <View
           style={[
             styles.stackedGreen,
@@ -539,17 +645,26 @@ function StackedProgress({
         ) : null}
       </View>
       <View style={styles.legendRow}>
-        <Text style={styles.legendText}>Đúng ({fmtNumber(correct)})</Text>
-        <Text style={styles.legendText}>Sai ({fmtNumber(incorrect)})</Text>
+        <Text style={[styles.legendText, {color: colors.textSecondary}]}>
+          Đúng ({fmtNumber(correct)})
+        </Text>
+        <Text style={[styles.legendText, {color: colors.textSecondary}]}>
+          Sai ({fmtNumber(incorrect)})
+        </Text>
         {pending > 0 ? (
-          <Text style={styles.legendText}>Chưa chấm ({fmtNumber(pending)})</Text>
+          <Text style={[styles.legendText, {color: colors.textSecondary}]}>
+            Chưa chấm ({fmtNumber(pending)})
+          </Text>
         ) : null}
       </View>
     </View>
   );
 }
 
-function QuizListCard({items}: {items: any[]}) {
+function QuizListCard({items, colors: passedColors}: {items: any[]; colors?: any}) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+
   if (!Array.isArray(items) || items.length === 0) {
     return null;
   }
@@ -557,27 +672,41 @@ function QuizListCard({items}: {items: any[]}) {
   return (
     <SectionCard
       title="Bảng hiệu suất theo quiz"
-      subtitle="Tổng hợp số lần làm, độ chính xác và thời gian trung bình của từng quiz">
+      subtitle="Tổng hợp số lần làm, độ chính xác và thời gian trung bình của từng quiz"
+      colors={colors}>
       <View style={styles.quizTableWrap}>
         {items.map((item, index) => (
-          <View key={`${item?.quizId || index}:${item?.quizTitle || 'quiz'}`} style={styles.quizRow}>
+          <View
+            key={`${item?.quizId || index}:${item?.quizTitle || 'quiz'}`}
+            style={[
+              styles.quizRow,
+              {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+            ]}>
             <View style={styles.quizRowHeader}>
-              <Text style={styles.quizName} numberOfLines={1}>
+              <Text
+                style={[styles.quizName, {color: colors.heading}]}
+                numberOfLines={1}>
                 {item?.quizTitle || 'Quiz'}
               </Text>
               <Text style={styles.quizAccuracy}>
                 {fmtPercentFromRatio(item?.averageAccuracy)}
               </Text>
             </View>
-            <Text style={styles.quizMeta}>
+            <Text style={[styles.quizMeta, {color: colors.textSecondary}]}>
               {item?.quizType || 'Quiz'} • {translateDifficulty(item?.difficulty)}
             </Text>
             <View style={styles.quizMetaGrid}>
-              <Text style={styles.quizMetaItem}>Lượt làm: {fmtNumber(item?.totalAttempts)}</Text>
-              <Text style={styles.quizMetaItem}>Điểm TB: {fmtScore(item?.averageScore)}</Text>
-              <Text style={styles.quizMetaItem}>TB thời gian: {fmtSeconds(item?.averageDurationSeconds)}</Text>
+              <Text style={[styles.quizMetaItem, {color: colors.text}]}>
+                Lượt làm: {fmtNumber(item?.totalAttempts)}
+              </Text>
+              <Text style={[styles.quizMetaItem, {color: colors.text}]}>
+                Điểm TB: {fmtScore(item?.averageScore)}
+              </Text>
+              <Text style={[styles.quizMetaItem, {color: colors.text}]}>
+                TB thời gian: {fmtSeconds(item?.averageDurationSeconds)}
+              </Text>
             </View>
-            <Text style={styles.quizMetaFoot}>
+            <Text style={[styles.quizMetaFoot, {color: colors.textTertiary}]}>
               Lần gần nhất: {fmtDateTime(item?.latestCompletedAt)}
             </Text>
           </View>
@@ -592,6 +721,7 @@ function QuestionSurface({
 }: {
   stats: any;
 }) {
+  const {colors} = useTheme();
   const current = stats?.currentQuestionStats;
   const lifetime = stats?.lifetimeQuestionAttemptStats;
   const totalQuestions = Number(current?.totalWorkspaceQuestions || 0);
@@ -702,16 +832,22 @@ function QuestionSurface({
             <AccuracyRing
               accuracy={Number(current?.accuracyInMode || 0)}
               label="Độ chính xác"
-              colors={Colors.light}
+              colors={colors}
             />
-            <Text style={styles.progressCount}>
+            <Text style={[styles.progressCount, {color: colors.heading}]}>
               {fmtNumber(attemptedQuestions)} / {fmtNumber(totalQuestions)}
             </Text>
             <Text style={styles.progressBadge}>{attemptedPercent}% Đã làm</Text>
           </View>
           <View style={styles.progressRight}>
-            <Text style={styles.progressLabel}>Tiến độ</Text>
-            <View style={styles.linearTrack}>
+            <Text style={[styles.progressLabel, {color: colors.textSecondary}]}>
+              Tiến độ
+            </Text>
+            <View
+              style={[
+                styles.linearTrack,
+                {backgroundColor: colors.borderLight || colors.border},
+              ]}>
               <View
                 style={[
                   styles.linearFill,
@@ -723,6 +859,7 @@ function QuestionSurface({
               correct={correctQuestions}
               incorrect={incorrectQuestions}
               pending={pendingQuestions}
+              colors={colors}
             />
           </View>
         </View>
@@ -766,12 +903,18 @@ function QuestionSurface({
               return (
                 <View key={`${bucket?.label || index}`} style={styles.metricRow}>
                   <View style={styles.metricHeader}>
-                    <Text style={styles.metricLabel}>
+                    <Text style={[styles.metricLabel, {color: colors.heading}]}>
                       {translateBloom(bucket?.label)}
                     </Text>
-                    <Text style={styles.metricValue}>{value}%</Text>
+                    <Text style={[styles.metricValue, {color: colors.textSecondary}]}>
+                      {value}%
+                    </Text>
                   </View>
-                  <View style={styles.metricTrack}>
+                  <View
+                    style={[
+                      styles.metricTrack,
+                      {backgroundColor: colors.borderLight || colors.border},
+                    ]}>
                     <View
                       style={[
                         styles.metricFill,
@@ -783,7 +926,9 @@ function QuestionSurface({
               );
             })
           ) : (
-            <Text style={styles.emptyHint}>Chưa đủ dữ liệu Bloom.</Text>
+            <Text style={[styles.emptyHint, {color: colors.textSecondary}]}>
+              Chưa đủ dữ liệu Bloom.
+            </Text>
           )}
         </View>
       </SectionCard>
@@ -850,6 +995,7 @@ function QuizSurface({
 }: {
   stats: any;
 }) {
+  const {colors} = useTheme();
   const current = stats?.currentQuizStats;
   const lifetime = stats?.lifetimeQuizAttemptStats;
   const bestQuiz = pickQuizInsightItem(lifetime?.byQuiz || [], 'best');
@@ -928,9 +1074,9 @@ function QuizSurface({
             <AccuracyRing
               accuracy={Number(current?.averageAccuracyInMode || 0)}
               label="Độ chính xác"
-              colors={Colors.light}
+              colors={colors}
             />
-            <Text style={styles.progressCount}>
+            <Text style={[styles.progressCount, {color: colors.heading}]}>
               {fmtScore(current?.averageScoreInMode)}
             </Text>
             <Text style={styles.progressBadge}>Điểm trung bình</Text>
@@ -940,10 +1086,12 @@ function QuizSurface({
               <MiniMetric
                 label="Tổng lượt làm"
                 value={fmtNumber(lifetime?.totalQuizAttempts)}
+                colors={colors}
               />
               <MiniMetric
                 label="Quiz hoàn thành"
                 value={fmtNumber(lifetime?.distinctCompletedQuizzes)}
+                colors={colors}
               />
               <MiniMetric
                 label="TB thời gian"
@@ -951,6 +1099,7 @@ function QuizSurface({
                   lifetime?.averageDurationSeconds ??
                     current?.averageDurationSecondsInMode,
                 )}
+                colors={colors}
               />
             </View>
           </View>
@@ -1023,18 +1172,37 @@ function QuizSurface({
             />
           </View>
 
-          <QuizListCard items={lifetime?.byQuiz || []} />
+          <QuizListCard items={lifetime?.byQuiz || []} colors={colors} />
         </SectionCard>
       ) : null}
     </View>
   );
 }
 
-function MiniMetric({label, value}: {label: string; value: string}) {
+function MiniMetric({
+  label,
+  value,
+  colors: passedColors,
+}: {
+  label: string;
+  value: string;
+  colors?: any;
+}) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+
   return (
-    <View style={styles.miniMetricCard}>
-      <Text style={styles.miniMetricLabel}>{label}</Text>
-      <Text style={styles.miniMetricValue}>{value}</Text>
+    <View
+      style={[
+        styles.miniMetricCard,
+        {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+      ]}>
+      <Text style={[styles.miniMetricLabel, {color: colors.textSecondary}]}>
+        {label}
+      </Text>
+      <Text style={[styles.miniMetricValue, {color: colors.heading}]}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -1194,7 +1362,11 @@ export default function WorkspaceStatisticsPanel({
 
   if (loading) {
     return (
-      <View style={styles.stateCard}>
+      <View
+        style={[
+          styles.stateCard,
+          {backgroundColor: colors.surface, borderColor: colors.border},
+        ]}>
         <ActivityIndicator size="large" color={Colors.primary} />
         <Text style={[styles.stateText, {color: colors.textSecondary}]}>
           Đang tải thống kê học tập...
@@ -1205,7 +1377,11 @@ export default function WorkspaceStatisticsPanel({
 
   if (error) {
     return (
-      <View style={styles.stateCard}>
+      <View
+        style={[
+          styles.stateCard,
+          {backgroundColor: colors.surface, borderColor: colors.border},
+        ]}>
         <Icon name="alert-circle-outline" size={28} color={Colors.error} />
         <Text style={[styles.stateText, {color: colors.textSecondary}]}>
           {error}
@@ -1223,8 +1399,16 @@ export default function WorkspaceStatisticsPanel({
 
   return (
     <View style={styles.root}>
-      <View style={styles.heroCard}>
-        <View style={styles.heroIconWrap}>
+      <View
+        style={[
+          styles.heroCard,
+          {backgroundColor: colors.surface, borderColor: colors.border},
+        ]}>
+        <View
+          style={[
+            styles.heroIconWrap,
+            {backgroundColor: `${Colors.primary}18`},
+          ]}>
           <Icon
             name={
               surface === 'QUIZ'
@@ -1236,9 +1420,11 @@ export default function WorkspaceStatisticsPanel({
           />
         </View>
         <View style={styles.heroContent}>
-          <Text style={styles.heroTitle}>Thống kê học tập</Text>
+          <Text style={[styles.heroTitle, {color: colors.heading}]}>
+            Dashboard cá nhân
+          </Text>
           <Text style={styles.heroWorkspace}>{currentWorkspaceName}</Text>
-          <Text style={styles.heroDescription}>
+          <Text style={[styles.heroDescription, {color: colors.textSecondary}]}>
             {
               SURFACES.find(item => item.value === surface)?.description
             }
@@ -1246,7 +1432,7 @@ export default function WorkspaceStatisticsPanel({
         </View>
       </View>
 
-      <SurfaceSwitcher surface={surface} onChange={setSurface} />
+      <SurfaceSwitcher surface={surface} onChange={setSurface} colors={colors} />
       <SegmentedControl
         items={availableModes.map(mode => ({
           value: mode.value,
@@ -1254,10 +1440,15 @@ export default function WorkspaceStatisticsPanel({
         }))}
         value={attemptMode}
         onChange={setAttemptMode}
+        colors={colors}
       />
 
       {!hasCurrentSurfaceData ? (
-        <View style={styles.stateCard}>
+        <View
+          style={[
+            styles.stateCard,
+            {backgroundColor: colors.surface, borderColor: colors.border},
+          ]}>
           <Icon name="chart-box-outline" size={28} color="#94A3B8" />
           <Text style={[styles.stateText, {color: colors.textSecondary}]}>
             {surface === 'QUIZ'

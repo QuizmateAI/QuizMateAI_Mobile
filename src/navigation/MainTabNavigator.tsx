@@ -33,19 +33,20 @@ export default function MainTabNavigator() {
     }),
     [colors.border, isDark],
   );
+  const hiddenTabBarStyle = useMemo(() => ({display: 'none' as const}), []);
 
   const getHomeTabBarStyle = (route: RouteProp<MainTabParamList, 'Home'>) => {
     const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'HomeMain';
-    if (focusedRoute === 'Workspace' || focusedRoute === 'GroupWorkspace') {
-      return {display: 'none'};
+    if (focusedRoute === 'Workspace' || focusedRoute === 'GroupWorkspace' || focusedRoute === 'RoadmapJourney') {
+      return hiddenTabBarStyle;
     }
     return baseTabBarStyle;
   };
 
   const getQuizTabBarStyle = (route: RouteProp<MainTabParamList, 'Quiz'>) => {
     const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'GroupList';
-    if (focusedRoute === 'GroupWorkspace' || focusedRoute === 'GroupManagement') {
-      return {display: 'none'};
+    if (focusedRoute === 'GroupWorkspace' || focusedRoute === 'GroupManagement' || focusedRoute === 'RoadmapJourney') {
+      return hiddenTabBarStyle;
     }
     return baseTabBarStyle;
   };
