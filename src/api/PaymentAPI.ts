@@ -1,5 +1,7 @@
 import api from './api';
 
+const CLIENT_TYPE = 'MOBILE';
+
 const normalizePlanType = (type: any) => {
   const rawType = typeof type === 'string' ? type.toUpperCase() : '';
 
@@ -162,10 +164,13 @@ const PaymentAPI = {
       ? api.post(`/api/momo/create-workspace/${workspaceId}`, null, {
           params: {
             planId,
+            clientType: CLIENT_TYPE,
             ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
           },
         })
-      : api.post(`/api/momo/create/${planId}`)
+      : api.post(`/api/momo/create/${planId}`, null, {
+          params: {clientType: CLIENT_TYPE},
+        })
     ).then(unwrapApiData),
 
   createVnpayPayment: (
@@ -177,10 +182,13 @@ const PaymentAPI = {
       ? api.post(`/api/vnpay/create-workspace/${workspaceId}`, null, {
           params: {
             planId,
+            clientType: CLIENT_TYPE,
             ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
           },
         })
-      : api.post(`/api/vnpay/create/${planId}`)
+      : api.post(`/api/vnpay/create/${planId}`, null, {
+          params: {clientType: CLIENT_TYPE},
+        })
     ).then(unwrapApiData),
 
   createStripePayment: (
@@ -192,16 +200,20 @@ const PaymentAPI = {
       ? api.post(`/api/stripe/create-workspace/${workspaceId}`, null, {
           params: {
             planId,
+            clientType: CLIENT_TYPE,
             ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
           },
         })
-      : api.post(`/api/stripe/create/${planId}`)
+      : api.post(`/api/stripe/create/${planId}`, null, {
+          params: {clientType: CLIENT_TYPE},
+        })
     ).then(unwrapApiData),
 
   createMomoCreditPayment: (creditPackageId: number, workspaceId?: number) =>
     api
       .post(`/api/momo/create-credit/${creditPackageId}`, null, {
         params: {
+          clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
         },
       })
@@ -211,6 +223,7 @@ const PaymentAPI = {
     api
       .post(`/api/vnpay/create-credit/${creditPackageId}`, null, {
         params: {
+          clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
         },
       })
@@ -220,6 +233,7 @@ const PaymentAPI = {
     api
       .post(`/api/stripe/create-credit/${creditPackageId}`, null, {
         params: {
+          clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
         },
       })
@@ -230,6 +244,7 @@ const PaymentAPI = {
       .post('/api/momo/create-custom-credit', null, {
         params: {
           creditUnits,
+          clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
         },
       })
@@ -240,6 +255,7 @@ const PaymentAPI = {
       .post('/api/vnpay/create-custom-credit', null, {
         params: {
           creditUnits,
+          clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
         },
       })
@@ -250,6 +266,7 @@ const PaymentAPI = {
       .post('/api/stripe/create-custom-credit', null, {
         params: {
           creditUnits,
+          clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
         },
       })

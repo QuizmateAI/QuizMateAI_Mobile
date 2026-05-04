@@ -109,16 +109,21 @@ export default function PaymentWebViewScreen({navigation, route}: any) {
     [navigation, provider, purchaseType],
   );
 
-  const keepPaymentInsideApp = useCallback(() => {
-    showToast(
-      'Vui lòng hoàn tất thanh toán trong khung app để Mobile nhận kết quả.',
-      'warning',
-    );
-  }, [showToast]);
+  const keepPaymentInsideApp = useCallback(
+    (url: string) => {
+      console.log('[PaymentWebView] non-http URL blocked:', url);
+      showToast(
+        'Vui lòng hoàn tất thanh toán trong khung app để Mobile nhận kết quả.',
+        'warning',
+      );
+    },
+    [showToast],
+  );
 
   const handleRequest = useCallback(
     (request: any) => {
       const nextUrl = String(request?.url || '');
+      console.log('[PaymentWebView] onShouldStartLoadWithRequest:', nextUrl);
 
       if (isBlankWebViewUrl(nextUrl)) {
         return true;
@@ -129,7 +134,7 @@ export default function PaymentWebViewScreen({navigation, route}: any) {
       }
 
       if (!isHttpUrl(nextUrl)) {
-        keepPaymentInsideApp();
+        keepPaymentInsideApp(nextUrl);
         return false;
       }
 

@@ -51,6 +51,18 @@ export default function MainTabNavigator() {
     return baseTabBarStyle;
   };
 
+  const getProfileTabBarStyle = (route: RouteProp<MainTabParamList, 'Profile'>) => {
+    const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'ProfileMain';
+    if (
+      focusedRoute === 'Payment' ||
+      focusedRoute === 'PaymentWebView' ||
+      focusedRoute === 'PaymentResult'
+    ) {
+      return hiddenTabBarStyle;
+    }
+    return baseTabBarStyle;
+  };
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -94,12 +106,13 @@ export default function MainTabNavigator() {
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{
+        options={({route}) => ({
           tabBarLabel: 'Hồ sơ',
+          tabBarStyle: getProfileTabBarStyle(route),
           tabBarIcon: ({color, size, focused}) => (
             <TabIcon name={focused ? 'account-circle' : 'account-circle-outline'} color={color} size={size} />
           ),
-        }}
+        })}
       />
     </Tab.Navigator>
   );
