@@ -29,7 +29,12 @@ const PAYMENT_RESULT_PATHS = [
   '/stripe/return',
 ];
 
-const getQueryValue = (params: URLSearchParams, keys: string[]) => {
+type ParamLike = {
+  get: (key: string) => string | null;
+  has: (key: string) => boolean;
+};
+
+const getQueryValue = (params: ParamLike, keys: string[]) => {
   for (const key of keys) {
     const value = params.get(key);
     if (value != null && String(value).trim().length > 0) {
@@ -39,7 +44,7 @@ const getQueryValue = (params: URLSearchParams, keys: string[]) => {
   return '';
 };
 
-const hasQueryValue = (params: URLSearchParams, keys: string[]) =>
+const hasQueryValue = (params: ParamLike, keys: string[]) =>
   keys.some(key => params.has(key));
 
 export const isPaymentCallbackUrl = (url: string) => {
@@ -47,6 +52,13 @@ export const isPaymentCallbackUrl = (url: string) => {
     return false;
   }
   const normalized = String(url).toLowerCase();
+
+  // Shortcut: app's own deep link scheme — covers Hermes URL-parser quirks
+  // where `host` may not be 'payment' for non-special schemes.
+  if (normalized.startsWith('quizmateai:')) {
+    console.log('[isPaymentCallbackUrl] matched quizmateai scheme:', url);
+    return true;
+  }
 
   try {
     const parsed = new URL(url);
@@ -56,10 +68,6 @@ export const isPaymentCallbackUrl = (url: string) => {
     const matchesResultPath = PAYMENT_RESULT_PATHS.some(
       resultPath => path.includes(resultPath) || pathWithHost.includes(resultPath),
     );
-
-    if (parsed.protocol.toLowerCase() === 'quizmateai:' && host === 'payment') {
-      return true;
-    }
 
     if (matchesResultPath) {
       return true;
@@ -72,7 +80,6 @@ export const isPaymentCallbackUrl = (url: string) => {
     );
   } catch {
     return (
-      normalized.includes('quizmateai://payment') ||
       normalized.includes('payment-result') ||
       normalized.includes('/payment/result') ||
       normalized.includes('/payments/result') ||
@@ -83,15 +90,66 @@ export const isPaymentCallbackUrl = (url: string) => {
   }
 };
 
+const buildSearchParamsFromRawUrl = (url: string): ParamLike => {
+  const map = new Map<string, string>();
+  const queryStart = url.indexOf('?');
+  if (queryStart < 0) {
+    return {get: k => map.get(k) ?? null, has: k => map.has(k)};
+  }
+  const hashStart = url.indexOf('#', queryStart);
+  const queryString =
+    hashStart >= 0 ? url.slice(queryStart + 1, hashStart) : url.slice(queryStart + 1);
+
+  for (const pair of queryString.split('&')) {
+    if (!pair) continue;
+    const eqIdx = pair.indexOf('=');
+    let key: string;
+    let value: string;
+    if (eqIdx < 0) {
+      key = pair;
+      value = '';
+    } else {
+      key = pair.slice(0, eqIdx);
+      value = pair.slice(eqIdx + 1);
+    }
+    try {
+      key = decodeURIComponent(key.replace(/\+/g, ' '));
+      value = decodeURIComponent(value.replace(/\+/g, ' '));
+    } catch {
+      // keep raw on decode failure
+    }
+    if (!map.has(key)) {
+      map.set(key, value);
+    }
+  }
+  return {get: k => map.get(k) ?? null, has: k => map.has(k)};
+};
+
 export const parsePaymentResultFromUrl = (url: string): PaymentResultPayload | null => {
   if (!url) {
     return null;
   }
 
   try {
-    const parsed = new URL(url);
-    const params = parsed.searchParams;
-    const path = parsed.pathname.toLowerCase();
+    const isAppDeepLink = String(url).toLowerCase().startsWith('quizmateai:');
+    let params: ParamLike;
+    let path = '';
+
+    if (isAppDeepLink) {
+      // Bypass URL constructor for app's deep link to avoid Hermes
+      // non-special-scheme parsing quirks that may drop query string.
+      params = buildSearchParamsFromRawUrl(url);
+      console.log(
+        '[parsePaymentResultFromUrl] deep-link parse: status=',
+        params.get('status'),
+        'orderId=',
+        params.get('orderId'),
+      );
+    } else {
+      const parsed = new URL(url);
+      params = parsed.searchParams;
+      path = parsed.pathname.toLowerCase();
+    }
 
     const resultCode = getQueryValue(params, [
       'resultCode',
