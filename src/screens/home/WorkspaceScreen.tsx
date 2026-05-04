@@ -169,7 +169,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
       const activityMap: Record<BottomTab, {name: string; type: string}> = {
         chat: {name: 'Tổng quan', type: 'overview'},
         sources: {name: 'Tài liệu', type: 'sources'},
-        stats: {name: 'Dashboard', type: 'dashboard'},
+        stats: {name: 'Thống kê', type: 'statistics'},
         studio: {name: 'Studio', type: 'studio'},
       };
       const activity = activityMap[tab];
@@ -1211,7 +1211,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
         />
         <ToolbarTab
           icon="chart-box-outline"
-          label="Dashboard"
+          label="Thống kê"
           active={activeBottomTab === 'stats'}
           onPress={() => handleChangeBottomTab('stats')}
           colors={colors}
