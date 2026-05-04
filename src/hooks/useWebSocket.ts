@@ -6,6 +6,7 @@ import {API_URL, WS_URL} from '@env';
 
 type MaterialCallback = (payload: any) => void;
 type ProgressCallback = (payload: any) => void;
+type RealtimeCallback = (payload: any) => void;
 
 type UseWebSocketOptions = {
   workspaceId?: number | string | null;
@@ -15,6 +16,8 @@ type UseWebSocketOptions = {
   onMaterialDeleted?: MaterialCallback;
   onMaterialUpdated?: MaterialCallback;
   onProgress?: ProgressCallback;
+  onDiscussionUpdate?: RealtimeCallback;
+  onChallengeUpdate?: RealtimeCallback;
 };
 
 const ACCESS_TOKEN_KEY = '@quizmate_token';
@@ -236,6 +239,8 @@ export default function useWebSocket({
   onMaterialDeleted,
   onMaterialUpdated,
   onProgress,
+  onDiscussionUpdate,
+  onChallengeUpdate,
 }: UseWebSocketOptions = {}) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<any>(null);
@@ -247,6 +252,8 @@ export default function useWebSocket({
     onMaterialDeleted,
     onMaterialUpdated,
     onProgress,
+    onDiscussionUpdate,
+    onChallengeUpdate,
   });
 
   useEffect(() => {
@@ -255,8 +262,17 @@ export default function useWebSocket({
       onMaterialDeleted,
       onMaterialUpdated,
       onProgress,
+      onDiscussionUpdate,
+      onChallengeUpdate,
     };
-  }, [onMaterialUploaded, onMaterialDeleted, onMaterialUpdated, onProgress]);
+  }, [
+    onMaterialUploaded,
+    onMaterialDeleted,
+    onMaterialUpdated,
+    onProgress,
+    onDiscussionUpdate,
+    onChallengeUpdate,
+  ]);
 
   const parseAndDispatchTopicMessage = useCallback((message: IMessage) => {
     let data: any = null;
@@ -385,6 +401,48 @@ export default function useWebSocket({
               parseAndDispatchTopicMessage,
             );
             subscriptionsRef.current.push(groupSub);
+          }
+
+          const workspaceTopicId = workspaceId || groupId;
+
+          if (workspaceTopicId && callbackRefs.current.onDiscussionUpdate) {
+            const discussionSub = stompClient.subscribe(
+              `/topic/workspace/${workspaceTopicId}/discussion`,
+              message => {
+                try {
+                  const data = JSON.parse(message.body);
+                  setLastMessage({
+                    type: 'discussion:update',
+                    data,
+                    timestamp: Date.now(),
+                  });
+                  callbackRefs.current.onDiscussionUpdate?.(data);
+                } catch {
+                  // Ignore malformed discussion payload.
+                }
+              },
+            );
+            subscriptionsRef.current.push(discussionSub);
+          }
+
+          if (workspaceTopicId && callbackRefs.current.onChallengeUpdate) {
+            const challengeSub = stompClient.subscribe(
+              `/topic/workspace/${workspaceTopicId}/challenge`,
+              message => {
+                try {
+                  const data = JSON.parse(message.body);
+                  setLastMessage({
+                    type: 'challenge:update',
+                    data,
+                    timestamp: Date.now(),
+                  });
+                  callbackRefs.current.onChallengeUpdate?.(data);
+                } catch {
+                  // Ignore malformed challenge payload.
+                }
+              },
+            );
+            subscriptionsRef.current.push(challengeSub);
           }
         },
         onDisconnect: () => {

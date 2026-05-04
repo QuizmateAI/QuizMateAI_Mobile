@@ -57,8 +57,8 @@ const STUDIO_ITEMS = (counts: {q: number; f: number; s: number; r: number}) => [
 
 export default function WorkspaceScreen({navigation, route}: any) {
   const {workspaceId, title} = route.params;
-  const {isDark, colors: themeColors} = useTheme();
-  const colors = isDark ? {...themeColors, ...Colors.light} : themeColors;
+  const {isDark, colors} = useTheme();
+  const screenBackground = isDark ? colors.backgroundSecondary : colors.background;
   const {showToast} = useToast();
   const [workspace, setWorkspace] = useState<any>(null);
   const [materials, setMaterials] = useState<any[]>([]);
@@ -156,9 +156,12 @@ export default function WorkspaceScreen({navigation, route}: any) {
         flashcardId,
         title: flashcard?.name || flashcard?.title,
         contextType: 'WORKSPACE',
+        contextId: Number(workspaceId),
+        workspaceId: Number(workspaceId),
+        backTitle: title,
       });
     },
-    [addAccessHistory, navigation, showToast],
+    [addAccessHistory, navigation, showToast, title, workspaceId],
   );
 
   const handleChangeBottomTab = useCallback(
@@ -166,7 +169,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
       const activityMap: Record<BottomTab, {name: string; type: string}> = {
         chat: {name: 'Tổng quan', type: 'overview'},
         sources: {name: 'Tài liệu', type: 'sources'},
-        stats: {name: 'Thống kê', type: 'stats'},
+        stats: {name: 'Dashboard', type: 'dashboard'},
         studio: {name: 'Studio', type: 'studio'},
       };
       const activity = activityMap[tab];
@@ -620,7 +623,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
 
   return (
     <SafeAreaView
-      style={[styles.container, {backgroundColor: colors.backgroundSecondary}]}
+      style={[styles.container, {backgroundColor: screenBackground}]}
       edges={['top']}>
       <WelcomeBackground isDark={isDark} />
       {/* ─── Header ─── */}
@@ -1208,7 +1211,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
         />
         <ToolbarTab
           icon="chart-box-outline"
-          label="Công cụ"
+          label="Dashboard"
           active={activeBottomTab === 'stats'}
           onPress={() => handleChangeBottomTab('stats')}
           colors={colors}
@@ -1274,7 +1277,6 @@ function ToolbarTab({
   colors: any;
   badge?: number;
 }) {
-  const resolvedLabel = icon === 'chart-box-outline' ? 'Thống kê' : label;
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -1302,7 +1304,7 @@ function ToolbarTab({
             fontWeight: active ? '600' : '400',
           },
         ]}>
-        {resolvedLabel}
+        {label}
       </Text>
     </TouchableOpacity>
   );

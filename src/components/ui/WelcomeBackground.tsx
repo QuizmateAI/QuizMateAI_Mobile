@@ -1,5 +1,11 @@
 import React, {useEffect, useMemo, useRef} from 'react';
-import {View, StyleSheet, Animated, Dimensions} from 'react-native';
+import {
+  Animated,
+  Dimensions,
+  StyleSheet,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
@@ -149,11 +155,11 @@ function AnimatedDrop({
       },
     ],
     position: 'absolute' as const,
-    left: `${left}%`,
-    top: '-10%',
+    left: `${left}%` as `${number}%`,
+    top: '-10%' as `${number}%`,
     zIndex: 0,
     opacity,
-  };
+  } as Animated.WithAnimatedObject<ViewStyle>;
 
   return (
     <Animated.View style={animatedStyle}>

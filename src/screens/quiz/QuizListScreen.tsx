@@ -1,11 +1,11 @@
-import React, {useState, useEffect, useCallback, useMemo} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
   FlatList,
-  TouchableOpacity,
   RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -15,6 +15,25 @@ import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import QuizAPI from '../../api/QuizAPI';
+
+function formatShortDate(value: any) {
+  if (!value) {
+    return 'Chưa rõ';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  return date.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function getQuizId(item: any) {
+  return Number(item?.id || item?.quizId || 0);
+}
 
 export default function QuizListScreen({navigation}: any) {
   const {isDark, colors} = useTheme();
@@ -35,41 +54,17 @@ export default function QuizListScreen({navigation}: any) {
     [],
   );
 
-  const fetchQuizzes = useCallback(async ({silent = false} = {}) => {
-    try {
-      if (!silent && !hasResolvedInitialFetch) {
-        setLoading(true);
-      }
-      const res = await QuizAPI.getByUser();
-      setQuizzes(res.data || []);
-      setFetchError(null);
-    } catch {
-      setFetchError('Không thể tải danh sách quiz');
-      if (!quizzes.length) {
-        showToast('Không thể tải danh sách quiz', 'error');
-      }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      setHasResolvedInitialFetch(true);
-    }
-  }, [hasResolvedInitialFetch, quizzes.length, showToast]);
-
-  useEffect(() => {
-    fetchQuizzes();
-  }, [fetchQuizzes]);
-
-  const statusMeta = useMemo(() => {
-    return {
+  const statusMeta = useMemo(
+    () => ({
       ACTIVE: {
         label: 'Đang mở',
         bg: isDark ? 'rgba(16,185,129,0.2)' : Colors.successLight,
-        text: isDark ? Colors.success : Colors.success,
+        text: Colors.success,
       },
       DRAFT: {
         label: 'Nháp',
         bg: isDark ? 'rgba(245,158,11,0.2)' : Colors.warningLight,
-        text: isDark ? Colors.warning : Colors.warning,
+        text: Colors.warning,
       },
       PROCESSING: {
         label: 'Đang tạo',
@@ -79,7 +74,7 @@ export default function QuizListScreen({navigation}: any) {
       ERROR: {
         label: 'Lỗi',
         bg: isDark ? 'rgba(239,68,68,0.2)' : Colors.errorLight,
-        text: isDark ? Colors.error : Colors.error,
+        text: Colors.error,
       },
       COMPLETED: {
         label: 'Hoàn thành',
@@ -91,8 +86,9 @@ export default function QuizListScreen({navigation}: any) {
         bg: isDark ? 'rgba(148,163,184,0.2)' : '#E2E8F0',
         text: colors.textSecondary,
       },
-    };
-  }, [isDark]);
+    }),
+    [colors.textSecondary, isDark],
+  );
 
   const getDurationLabel = useCallback((item: any) => {
     const minutes = Number(
@@ -111,214 +107,233 @@ export default function QuizListScreen({navigation}: any) {
     return 'Không giới hạn';
   }, []);
 
-                {(() => {
-                  const normalizedStatus = String(item.status || '').toUpperCase();
-                  const statusStyle = statusMeta[normalizedStatus];
-                  const difficulty =
-                    difficultyLabels[String(item.overallDifficulty || '').toUpperCase()];
-                  return (
-                    <>
-                      <View style={styles.quizTitleRow}>
-                        <Text
-                          style={[styles.quizName, {color: colors.heading}]}
-                          numberOfLines={2}
-                        >
-                          {item.name}
-                        </Text>
-                        <Icon
-                          name="chevron-right"
-                          size={20}
-                          color={colors.textTertiary}
-                        />
-                      </View>
-                      <View style={styles.quizInfoRow}>
-                        <View style={styles.infoTag}>
-                          <Text style={[styles.infoTagLabel, {color: colors.textTertiary}]}>CÂU HỎI</Text>
-                          <Text style={[styles.infoTagValue, {color: colors.heading}]}> {item.questionCount || 0}</Text>
-                        </View>
-                        {normalizedStatus ? (
-                          <View
-                            style={[
-                              styles.statusPill,
-                              {
-                                backgroundColor:
-                                  statusStyle?.bg ||
-                                  (isDark
-                                    ? 'rgba(148,163,184,0.2)'
-                                    : '#E2E8F0'),
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.statusText,
-                                {color: statusStyle?.text || colors.textSecondary},
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {statusStyle?.label || normalizedStatus}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <View style={styles.quizMetaLine}>
-                        {difficulty ? (
-                          <View style={styles.metaItem}>
-                            <Icon name="chart-bar" size={12} color={Colors.warning} />
-                            <Text style={[styles.metaText, {color: Colors.warning}]}>
-                              {difficulty}
-                            </Text>
-                          </View>
-                        ) : null}
-                        <View style={styles.metaItem}>
-                          <Icon
-                            name={item.communityShared ? 'lock-open-outline' : 'lock-outline'}
-                            size={12}
-                            color={colors.textSecondary}
-                          />
-                          <Text style={[styles.metaText, {color: colors.textSecondary}]}>
-                            {item.communityShared ? 'Công khai' : 'Riêng tư'}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.quizMetaLine}>
-                        <View style={styles.metaItem}>
-                          <Icon name="clock-outline" size={12} color={colors.textSecondary} />
-                          <Text style={[styles.metaText, {color: colors.textSecondary}]}>
-                            {getDurationLabel(item)}
-                          </Text>
-                        </View>
-                        {item.updatedAt || item.createdAt ? (
-                          <View style={styles.metaItem}>
-                            <Icon name="calendar-month-outline" size={12} color={colors.textSecondary} />
-                            <Text style={[styles.metaText, {color: colors.textSecondary}]}>
-                              {formatShortDate(item.updatedAt || item.createdAt)}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    </>
-                  );
-                })()}
-                              {difficulty}
-                            </Text>
-                          </View>
-                        ) : null}
-                        <View
-                          style={[
-                            styles.metaPill,
-                            {
-                              backgroundColor: isDark
-                                ? 'rgba(148,163,184,0.18)'
-                                : '#E2E8F0',
-                            },
-                          ]}
-                        >
-                          <Icon name="clock-outline" size={12} color={colors.textSecondary} />
-                          <Text
-                            style={[styles.metaPillText, {color: colors.textSecondary}]}
-                            numberOfLines={1}>
-                            {getDurationLabel(item)}
-                          </Text>
-                        </View>
-                        <View
-                          style={[
-                            styles.metaPill,
-                            {
-                              backgroundColor: isDark
-                                ? 'rgba(16,185,129,0.18)'
-                                : '#D1FAE5',
-                            },
-                          ]}
-                        >
-                          <Icon
-                            name={item.communityShared ? 'earth' : 'lock-outline'}
-                            size={12}
-                            color={item.communityShared ? '#10B981' : colors.textSecondary}
-                          />
-                          <Text
-                            style={[
-                              styles.metaPillText,
-                              {
-                                color: item.communityShared
-                                  ? '#10B981'
-                                  : colors.textSecondary,
-                              },
-                            ]}
-                            numberOfLines={1}>
-                            {item.communityShared ? 'Công khai' : 'Riêng tư'}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.quizMetaRow}>
-                        <Text
-                          style={[styles.quizMeta, {color: colors.textSecondary}]}
-                        >
-                          {item.questionCount || 0} câu hỏi
-                        </Text>
-                        {item.updatedAt || item.createdAt ? (
-                          <Text
-                            style={[styles.quizMeta, {color: colors.textSecondary}]}
-                          >
-                            {formatShortDate(item.updatedAt || item.createdAt)}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </>
-                  );
-                })()}
+  const fetchQuizzes = useCallback(
+    async ({silent = false} = {}) => {
+      try {
+        if (!silent && !hasResolvedInitialFetch) {
+          setLoading(true);
+        }
+        const res = await QuizAPI.getByUser();
+        setQuizzes(res.data || []);
+        setFetchError(null);
+      } catch {
+        setFetchError('Không thể tải danh sách quiz');
+        if (!quizzes.length) {
+          showToast('Không thể tải danh sách quiz', 'error');
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        setHasResolvedInitialFetch(true);
+      }
+    },
+    [hasResolvedInitialFetch, quizzes.length, showToast],
+  );
+
+  useEffect(() => {
+    fetchQuizzes();
+  }, [fetchQuizzes]);
+
+  const openQuiz = useCallback(
+    (item: any, mode: 'practice' | 'exam') => {
+      const quizId = getQuizId(item);
+      if (!quizId) {
+        showToast('Thiếu Quiz ID', 'error');
+        return;
+      }
+
+      navigation.navigate(mode === 'practice' ? 'PracticeQuiz' : 'ExamQuiz', {
+        quizId,
+        title: item?.name || item?.title,
+        backContext: {type: 'quiz-list'},
+      });
+    },
+    [navigation, showToast],
+  );
+
+  const renderQuizItem = useCallback(
+    ({item}: {item: any}) => {
+      const normalizedStatus = String(item?.status || '').toUpperCase();
+      const statusStyle =
+        statusMeta[normalizedStatus as keyof typeof statusMeta];
+      const difficulty =
+        difficultyLabels[String(item?.overallDifficulty || '').toUpperCase()];
+      const title = item?.name || item?.title || 'Quiz chưa đặt tên';
+
+      return (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => openQuiz(item, 'practice')}
+          style={[
+            styles.quizCard,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              shadowColor: isDark ? '#000000' : '#94A3B8',
+            },
+          ]}>
+          <View style={styles.quizCardHeader}>
+            <View
+              style={[
+                styles.quizIcon,
+                {backgroundColor: isDark ? 'rgba(37,99,235,0.16)' : '#EFF6FF'},
+              ]}>
+              <Icon name="head-question-outline" size={24} color={Colors.primary} />
+            </View>
+
+            <View style={styles.quizCardInfo}>
+              <View style={styles.quizTitleRow}>
+                <Text
+                  style={[styles.quizName, {color: colors.heading}]}
+                  numberOfLines={2}>
+                  {title}
+                </Text>
+                <Icon name="chevron-right" size={20} color={colors.textTertiary} />
+              </View>
+
+              <View style={styles.quizInfoRow}>
+                <View style={styles.infoTag}>
+                  <Text style={[styles.infoTagLabel, {color: colors.textTertiary}]}>
+                    CÂU HỎI
+                  </Text>
+                  <Text style={[styles.infoTagValue, {color: colors.heading}]}>
+                    {item?.questionCount || 0}
+                  </Text>
+                </View>
+
+                {normalizedStatus ? (
+                  <View
+                    style={[
+                      styles.statusPill,
+                      {
+                        backgroundColor:
+                          statusStyle?.bg ||
+                          (isDark ? 'rgba(148,163,184,0.2)' : '#E2E8F0'),
+                      },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.statusText,
+                        {color: statusStyle?.text || colors.textSecondary},
+                      ]}
+                      numberOfLines={1}>
+                      {statusStyle?.label || normalizedStatus}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.quizMetaLine}>
+                {difficulty ? (
+                  <View style={styles.metaItem}>
+                    <Icon name="chart-bar" size={12} color={Colors.warning} />
+                    <Text style={[styles.metaText, {color: Colors.warning}]}>
+                      {difficulty}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.metaItem}>
+                  <Icon
+                    name={item?.communityShared ? 'lock-open-outline' : 'lock-outline'}
+                    size={12}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={[styles.metaText, {color: colors.textSecondary}]}>
+                    {item?.communityShared ? 'Công khai' : 'Riêng tư'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.quizMetaLine}>
+                <View style={styles.metaItem}>
+                  <Icon name="clock-outline" size={12} color={colors.textSecondary} />
+                  <Text style={[styles.metaText, {color: colors.textSecondary}]}>
+                    {getDurationLabel(item)}
+                  </Text>
+                </View>
+
+                {item?.updatedAt || item?.createdAt ? (
+                  <View style={styles.metaItem}>
+                    <Icon
+                      name="calendar-month-outline"
+                      size={12}
+                      color={colors.textSecondary}
+                    />
+                    <Text style={[styles.metaText, {color: colors.textSecondary}]}>
+                      {formatShortDate(item?.updatedAt || item?.createdAt)}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </View>
-            <View style={styles.quizCardFooter}>
-              <View style={styles.quizActions}>
-                <TouchableOpacity
-                  onPress={() => {
-                    const quizId = item.id || item.quizId;
-                    if (!quizId) {
-                      showToast('Thiếu Quiz ID', 'error');
-                      return;
-                    }
-                    navigation.navigate('PracticeQuiz', {
-                      quizId,
-                      title: item.name || item.title,
-                      backContext: {type: 'quiz-list'},
-                    });
-                  }}
-                  style={[
-                    styles.actionBtn,
-                    {backgroundColor: isDark ? 'rgba(37,99,235,0.15)' : '#EFF6FF'},
-                  ]}>
-                  <Icon name="play-outline" size={14} color={Colors.primary} />
-                  <Text style={[styles.actionText, {color: Colors.primary}]}>
-                    Luyện tập
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    const quizId = item.id || item.quizId;
-                    if (!quizId) {
-                      showToast('Thiếu Quiz ID', 'error');
-                      return;
-                    }
-                    navigation.navigate('ExamQuiz', {
-                      quizId,
-                      title: item.name || item.title,
-                      backContext: {type: 'quiz-list'},
-                    });
-                  }}
-                  style={[
-                    styles.actionBtn,
-                    {backgroundColor: isDark ? 'rgba(234,88,12,0.15)' : '#FFF7ED'},
-                  ]}>
-                  <Icon name="timer-outline" size={14} color="#EA580C" />
-                  <Text style={[styles.actionText, {color: '#EA580C'}]}>
-                    Thi thử
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
+          </View>
+
+          <View style={styles.quizActions}>
+            <TouchableOpacity
+              onPress={() => openQuiz(item, 'practice')}
+              style={[
+                styles.actionBtn,
+                {backgroundColor: isDark ? 'rgba(37,99,235,0.15)' : '#EFF6FF'},
+              ]}>
+              <Icon name="play-outline" size={14} color={Colors.primary} />
+              <Text style={[styles.actionText, {color: Colors.primary}]}>
+                Luyện tập
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => openQuiz(item, 'exam')}
+              style={[
+                styles.actionBtn,
+                {backgroundColor: isDark ? 'rgba(234,88,12,0.15)' : '#FFF7ED'},
+              ]}>
+              <Icon name="timer-outline" size={14} color="#EA580C" />
+              <Text style={[styles.actionText, {color: '#EA580C'}]}>Thi thử</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    [
+      colors.border,
+      colors.heading,
+      colors.surface,
+      colors.textSecondary,
+      colors.textTertiary,
+      difficultyLabels,
+      getDurationLabel,
+      isDark,
+      openQuiz,
+      statusMeta,
+    ],
+  );
+
+  if (loading && !hasResolvedInitialFetch) {
+    return (
+      <SafeAreaView
+        style={[styles.container, {backgroundColor: colors.background}]}>
+        <LoadingSpinner />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
+      <View
+        style={[
+          styles.header,
+          {backgroundColor: colors.surface, borderBottomColor: colors.border},
+        ]}>
+        <Text style={[styles.headerTitle, {color: colors.heading}]}>
+          Quiz của bạn
+        </Text>
+      </View>
+
+      <FlatList
+        data={quizzes}
+        keyExtractor={(item, index) => String(getQuizId(item) || index)}
+        renderItem={renderQuizItem}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
@@ -328,7 +343,6 @@ export default function QuizListScreen({navigation}: any) {
                 styles.inlineAlert,
                 {backgroundColor: isDark ? 'rgba(245,158,11,0.15)' : '#FFFBEB'},
               ]}>
-            >
               <Icon name="alert-circle-outline" size={16} color={Colors.warning} />
               <Text style={[styles.inlineAlertText, {color: colors.textSecondary}]}>
                 Không thể làm mới danh sách quiz. Dữ liệu cũ vẫn được giữ.
@@ -417,19 +431,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginTop: 6,
+    flexWrap: 'wrap',
   },
   infoTag: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 2,
+    gap: 4,
   },
-  infoTagLabel: {fontSize: 10, fontWeight: '700', letterSpacing: 0.4},
+  infoTagLabel: {fontSize: 10, fontWeight: '700', letterSpacing: 0},
   infoTagValue: {fontSize: 12, fontWeight: '700'},
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  statusText: {fontSize: 11, fontWeight: '600'},
   quizMetaLine: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginTop: 6,
+    flexWrap: 'wrap',
   },
   metaItem: {
     flexDirection: 'row',
@@ -437,13 +459,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaText: {fontSize: 12, fontWeight: '600'},
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  statusText: {fontSize: 11, fontWeight: '600'},
-  quizCardFooter: {},
   quizActions: {
     flexDirection: 'row',
     gap: 8,
@@ -465,7 +480,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyTitle: {fontSize: 16, fontWeight: '600', marginTop: 12},
-  emptySubtitle: {fontSize: 13},
+  emptySubtitle: {fontSize: 13, textAlign: 'center'},
   inlineAlert: {
     flexDirection: 'row',
     alignItems: 'center',

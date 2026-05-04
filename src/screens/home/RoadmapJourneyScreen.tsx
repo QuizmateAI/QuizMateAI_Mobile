@@ -239,6 +239,25 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   const panelAnimationRef = useRef<{stop: () => void} | null>(null);
   const isMountedRef = useRef(true);
 
+  const handleBack = useCallback(() => {
+    const normalizedContextId = Number(contextId || 0);
+    if (contextType === 'GROUP' && Number.isInteger(normalizedContextId) && normalizedContextId > 0) {
+      navigation.navigate('GroupWorkspace', {
+        groupId: normalizedContextId,
+        title,
+      });
+      return;
+    }
+    if (contextType === 'WORKSPACE' && Number.isInteger(normalizedContextId) && normalizedContextId > 0) {
+      navigation.navigate('Workspace', {
+        workspaceId: normalizedContextId,
+        title,
+      });
+      return;
+    }
+    navigation.goBack();
+  }, [contextId, contextType, navigation, title]);
+
   useEffect(() => {
     if (
       Platform.OS === 'android' &&
@@ -3598,7 +3617,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: colors.backgroundSecondary}]}>
       <View style={[styles.header, {borderBottomColor: colors.border, backgroundColor: colors.surface}]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>

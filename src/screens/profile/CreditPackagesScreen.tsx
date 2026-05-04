@@ -163,7 +163,9 @@ export default function CreditPackagesScreen({navigation, route}: any) {
           setSelectedPackageId(currentSelectedId => {
             if (
               currentSelectedId &&
-              normalizedPackages.some(item => item.id === currentSelectedId)
+              normalizedPackages.some(
+                (item: CreditPackageItem) => item.id === currentSelectedId,
+              )
             ) {
               return currentSelectedId;
             }

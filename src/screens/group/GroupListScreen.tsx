@@ -14,7 +14,7 @@ import {useTheme} from '../../context/ThemeContext';
 import {useAuth} from '../../context/AuthContext';
 import {useToast} from '../../context/ToastContext';
 import {Colors} from '../../theme/colors';
-import {BorderRadius, Spacing} from '../../theme/spacing';
+import {Spacing} from '../../theme/spacing';
 import Avatar from '../../components/ui/Avatar';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import GroupCard from '../../components/features/GroupCard';
@@ -145,8 +145,10 @@ export default function GroupListScreen({navigation}: any) {
               styles.iconBtn,
               {
                 backgroundColor: isDark
-                  ? Colors.dark.surfaceVariant
-                  : '#F1F5F9',
+                  ? colors.surfaceVariant
+                  : colors.surface,
+                borderColor: colors.border,
+                borderWidth: StyleSheet.hairlineWidth,
               },
             ]}>
             <Icon

@@ -43,7 +43,15 @@ const normalizeItems = (rawItems: any[]) => {
 };
 
 export default function FlashcardStudyScreen({navigation, route}: any) {
-  const {flashcardId, title} = route.params || {};
+  const {
+    flashcardId,
+    title,
+    contextType,
+    contextId,
+    workspaceId,
+    groupId,
+    backTitle,
+  } = route.params || {};
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
 
@@ -51,7 +59,7 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
   const [detail, setDetail] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isFlipped, setIsFlipped] = useState(false);
+  const [_isFlipped, setIsFlipped] = useState(false);
   const flipAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -64,11 +72,43 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
   const [editBack, setEditBack] = useState('');
   const [editSaving, setEditSaving] = useState(false);
 
+  const handleBack = useCallback(() => {
+    const normalizedContextType = String(contextType || '').toUpperCase();
+    const resolvedGroupId = Number(groupId || contextId || 0);
+    const resolvedWorkspaceId = Number(workspaceId || contextId || 0);
+
+    if (
+      normalizedContextType === 'GROUP' &&
+      Number.isInteger(resolvedGroupId) &&
+      resolvedGroupId > 0
+    ) {
+      navigation.navigate('GroupWorkspace', {
+        groupId: resolvedGroupId,
+        title: backTitle,
+      });
+      return;
+    }
+
+    if (
+      normalizedContextType === 'WORKSPACE' &&
+      Number.isInteger(resolvedWorkspaceId) &&
+      resolvedWorkspaceId > 0
+    ) {
+      navigation.navigate('Workspace', {
+        workspaceId: resolvedWorkspaceId,
+        title: backTitle,
+      });
+      return;
+    }
+
+    navigation.goBack();
+  }, [backTitle, contextId, contextType, groupId, navigation, workspaceId]);
+
   const fetchDetail = useCallback(async () => {
     const normalizedId = Number(flashcardId || 0);
     if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
       showToast('Thiếu Flashcard ID', 'error');
-      navigation.goBack();
+      handleBack();
       return;
     }
 
@@ -86,11 +126,11 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
       slideAnim.setValue(0);
     } catch {
       showToast('Không thể tải chi tiết flashcard', 'error');
-      navigation.goBack();
+      handleBack();
     } finally {
       setLoading(false);
     }
-  }, [flashcardId, flipAnim, navigation, showToast, slideAnim]);
+  }, [flashcardId, flipAnim, handleBack, showToast, slideAnim]);
 
   useEffect(() => {
     fetchDetail();
@@ -254,7 +294,7 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}> 
+      <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
         <View style={styles.loaderWrap}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={[styles.loaderText, {color: colors.textSecondary}]}>Đang tải flashcard...</Text>
@@ -264,9 +304,9 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
   }
 
   return (
-    <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}> 
-      <View style={[styles.header, {borderBottomColor: colors.border, backgroundColor: colors.surface}]}> 
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
+    <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
+      <View style={[styles.header, {borderBottomColor: colors.border, backgroundColor: colors.surface}]}>
+        <TouchableOpacity onPress={handleBack} style={styles.iconBtn}>
           <Icon name="chevron-left" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={{flex: 1}}>
@@ -542,7 +582,7 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
                         {frontPreview.length > 0 ? (
                           <ContentRenderer blocks={frontPreview} />
                         ) : (
-                          <Text style={[styles.listFront, {color: colors.heading}]}> 
+                          <Text style={[styles.listFront, {color: colors.heading}]}>
                             {item.front || 'Không có mặt trước'}
                           </Text>
                         )}
@@ -550,7 +590,7 @@ export default function FlashcardStudyScreen({navigation, route}: any) {
                         {backPreview.length > 0 ? (
                           <ContentRenderer blocks={backPreview} />
                         ) : (
-                          <Text style={[styles.listBack, {color: isDark ? '#94a3b8' : '#64748b'}]}> 
+                          <Text style={[styles.listBack, {color: isDark ? '#94a3b8' : '#64748b'}]}>
                             {item.back || 'Không có mặt sau'}
                           </Text>
                         )}
