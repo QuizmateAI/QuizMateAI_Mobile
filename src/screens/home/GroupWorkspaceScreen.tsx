@@ -458,6 +458,8 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       (canReviewMaterials ? 'LEADER' : 'MEMBER'),
   ).toUpperCase();
 
+  const isLeader = canReviewMaterials || currentRoleLabel === 'LEADER';
+
   const rankingRows = useMemo(() => {
     if (Array.isArray(rankingData?.members)) {
       return rankingData.members;
@@ -1294,200 +1296,359 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         {/* ───── STUDIO TAB ───── */}
         {activeBottomTab === 'studio' && (
           <View>
-            <Text style={[styles.sectionTitle, {color: colors.heading}]}>
-              Dashboard cá nhân
-            </Text>
-            <Text style={[styles.studioSubtitle, {color: colors.textSecondary}]}>
-              Theo dõi vai trò, tài nguyên, hoạt động và tiến độ học của bạn trong nhóm.
-            </Text>
-
-            <View
-              style={[
-                styles.dashboardHero,
-                {backgroundColor: colors.surface, borderColor: colors.border},
-              ]}>
-              <View style={styles.dashboardBadgeRow}>
-                <View style={[styles.dashboardBadge, {backgroundColor: isDark ? 'rgba(16,185,129,0.14)' : '#ECFDF5'}]}>
-                  <Text style={[styles.dashboardBadgeText, {color: isDark ? '#6EE7B7' : '#047857'}]}>
-                    Không gian nhóm
-                  </Text>
-                </View>
-                <View style={[styles.dashboardBadge, {backgroundColor: colors.surfaceVariant}]}>
-                  <Text style={[styles.dashboardBadgeText, {color: colors.textSecondary}]}>
-                    {formatRoleLabel(currentRoleLabel)}
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.dashboardTitle, {color: colors.heading}]}>
-                Xin chào, {currentMember?.fullName || (user as any)?.fullName || 'thành viên'}
-              </Text>
-              <Text style={[styles.dashboardDescription, {color: colors.textSecondary}]}>
-                {groupDetail?.description ||
-                  `Bạn đang học trong ${groupDetail?.groupName || groupDetail?.name || title || 'nhóm này'}. Mở lộ trình, xem hoạt động hoặc kiểm tra thử thách ngay từ dashboard.`}
-              </Text>
-              <View style={styles.dashboardActions}>
-                <TouchableOpacity
-                  activeOpacity={0.78}
-                  onPress={() =>
-                    navigation.navigate('RoadmapJourney', {
-                      contextType: 'GROUP',
-                      contextId: normalizedGroupId,
-                      title,
-                    })
-                  }
-                  style={[styles.dashboardPrimaryButton, {backgroundColor: '#0891B2'}]}>
-                  <Icon name="map-outline" size={17} color="#FFFFFF" />
-                  <Text style={styles.dashboardPrimaryText}>Mở lộ trình</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.78}
-                  onPress={() =>
-                    navigation.push('GroupWorkspace', {
-                      groupId: normalizedGroupId,
-                      title,
-                      detailKey: 'notifications',
-                    })
-                  }
-                  style={[
-                    styles.dashboardSecondaryButton,
-                    {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
-                  ]}>
-                  <Icon name="history" size={17} color={colors.icon} />
-                  <Text style={[styles.dashboardSecondaryText, {color: colors.text}]}>
-                    Hoạt động
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.studioGrid}>
-              <OverviewCard
-                icon="shield-check-outline"
-                label="Vai trò"
-                value={formatRoleLabel(currentRoleLabel)}
-                color="#0EA5E9"
-                colors={colors}
-              />
-              <OverviewCard
-                icon="account-multiple"
-                label="Thành viên"
-                value={members.length}
-                color="#2563EB"
-                colors={colors}
-              />
-              <OverviewCard
-                icon="folder-open-outline"
-                label="Tài liệu"
-                value={materials.length}
-                color="#059669"
-                colors={colors}
-              />
-              <OverviewCard
-                icon="calendar-outline"
-                label="Ngày vào"
-                value={formatCompactDate(currentMember?.joinedAt).split(' ')[0]}
-                color="#7C3AED"
-                colors={colors}
-              />
-            </View>
-
-            <View
-              style={[
-                styles.dashboardReadCard,
-                {backgroundColor: colors.surface, borderColor: colors.border},
-              ]}>
-              <Text style={[styles.dashboardCardEyebrow, {color: colors.textTertiary}]}>
-                GROUP QUICK READ
-              </Text>
-              <View style={styles.dashboardReadGrid}>
-                <DashboardReadItem
-                  label="Tên nhóm"
-                  value={groupDetail?.groupName || groupDetail?.name || title || 'Nhóm'}
-                  colors={colors}
-                />
-                <DashboardReadItem
-                  label="Lộ trình"
-                  value={roadmaps.length > 0 ? `${roadmaps.length} lộ trình` : 'Chưa có'}
-                  colors={colors}
-                />
-                <DashboardReadItem
-                  label="Thử thách"
-                  value={`${challenges.length} thử thách`}
-                  colors={colors}
-                />
-              </View>
-            </View>
-
-            <View
-              style={[
-                styles.dashboardReadCard,
-                {backgroundColor: colors.surface, borderColor: colors.border},
-              ]}>
-              <View style={styles.panelTitleRow}>
-                <Icon name="chart-line" size={18} color={Colors.primary} />
-                <Text style={[styles.dashboardSectionHeading, {color: colors.heading}]}>
-                  Learning snapshot
+            {isLeader ? (
+              <>
+                <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+                  Tổng quan
                 </Text>
-              </View>
-              <View style={styles.snapshotGrid}>
-                {[
-                  {
-                    label: 'Quiz',
-                    value: dashboardSummary?.totalQuizzes ?? quizzes.length,
-                    icon: 'head-question-outline',
-                    color: '#2563EB',
-                  },
-                  {
-                    label: 'Flashcard',
-                    value: dashboardSummary?.totalFlashcards ?? flashcards.length,
-                    icon: 'cards-outline',
-                    color: '#EA580C',
-                  },
-                  {
-                    label: 'Xếp hạng',
-                    value: rankingRows.length ? `Top ${rankingRows.length}` : 'N/A',
-                    icon: 'trophy-outline',
-                    color: '#F59E0B',
-                  },
-                ].map(item => (
-                  <View
-                    key={item.label}
-                    style={[
-                      styles.snapshotTile,
-                      {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
-                    ]}>
-                    <Icon name={item.icon} size={18} color={item.color} />
-                    <Text style={[styles.snapshotValue, {color: colors.heading}]}>
-                      {String(item.value)}
-                    </Text>
-                    <Text style={[styles.snapshotLabel, {color: colors.textSecondary}]}>
-                      {item.label}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
+                <Text style={[styles.studioSubtitle, {color: colors.textSecondary}]}>
+                  Theo dõi nhanh tình trạng nhóm và truy cập công cụ quản trị.
+                </Text>
 
-            {groupLogs.length > 0 ? (
-              <View
-                style={[
-                  styles.dashboardReadCard,
-                  {backgroundColor: colors.surface, borderColor: colors.border},
-                ]}>
-                <View style={styles.panelTitleRow}>
-                  <Icon name="history" size={18} color="#0EA5E9" />
-                  <Text style={[styles.dashboardSectionHeading, {color: colors.heading}]}>
-                    Hoạt động gần đây
+                <View
+                  style={[
+                    styles.dashboardHero,
+                    {backgroundColor: colors.surface, borderColor: colors.border},
+                  ]}>
+                  <View style={styles.dashboardBadgeRow}>
+                    <View
+                      style={[
+                        styles.dashboardBadge,
+                        {
+                          backgroundColor: isDark
+                            ? 'rgba(37, 99, 235, 0.18)'
+                            : Colors.primaryLight,
+                        },
+                      ]}>
+                      <Text style={[styles.dashboardBadgeText, {color: Colors.primary}]}>
+                        Quản trị nhóm
+                      </Text>
+                    </View>
+                    <View style={[styles.dashboardBadge, {backgroundColor: colors.surfaceVariant}]}>
+                      <Text style={[styles.dashboardBadgeText, {color: colors.textSecondary}]}>
+                        Trưởng nhóm
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={[styles.dashboardTitle, {color: colors.heading}]}>
+                    {groupDetail?.groupName || groupDetail?.name || title || 'Nhóm học tập'}
                   </Text>
+                  <Text style={[styles.dashboardDescription, {color: colors.textSecondary}]}>
+                    {groupDetail?.description ||
+                      'Xem tổng quan tài nguyên, thành viên và các hạng mục cần xử lý trong nhóm.'}
+                  </Text>
+
+                  <View style={styles.dashboardActions}>
+                    <TouchableOpacity
+                      activeOpacity={0.78}
+                      onPress={() =>
+                        navigation.navigate('GroupManagement', {
+                          groupId: normalizedGroupId,
+                          title,
+                          initialTab: 'dashboard',
+                        })
+                      }
+                      style={[styles.dashboardPrimaryButton, {backgroundColor: Colors.primary}]}>
+                      <Icon name="chart-line" size={17} color="#FFFFFF" />
+                      <Text style={styles.dashboardPrimaryText}>Mở quản trị</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      activeOpacity={0.78}
+                      onPress={() => setActiveBottomTab('sources')}
+                      style={[
+                        styles.dashboardSecondaryButton,
+                        {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+                      ]}>
+                      <Icon name="file-check-outline" size={17} color={colors.icon} />
+                      <Text style={[styles.dashboardSecondaryText, {color: colors.text}]}>
+                        Duyệt tài liệu
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                {groupLogs.slice(0, 3).map((log: any, index: number) => (
-                  <ActivityFeedItem
-                    key={`${log?.logId || index}:${log?.logTime || log?.createdAt || ''}`}
-                    log={log}
+
+                <View style={styles.studioGrid}>
+                  <OverviewCard
+                    icon="account-multiple"
+                    label="Thành viên"
+                    value={members.length}
+                    color="#2563EB"
                     colors={colors}
                   />
-                ))}
-              </View>
+                  <OverviewCard
+                    icon="file-document-outline"
+                    label="Tài liệu"
+                    value={materials.filter(src => !isDeletedMaterial(src)).length}
+                    color="#64748B"
+                    colors={colors}
+                  />
+                  <OverviewCard
+                    icon="head-question-outline"
+                    label="Quiz"
+                    value={dashboardSummary?.totalQuizzes ?? quizzes.length}
+                    color="#7C3AED"
+                    colors={colors}
+                  />
+                  <OverviewCard
+                    icon="cards-outline"
+                    label="Flashcard"
+                    value={dashboardSummary?.totalFlashcards ?? flashcards.length}
+                    color="#EA580C"
+                    colors={colors}
+                  />
+                  <OverviewCard
+                    icon="map-outline"
+                    label="Lộ trình"
+                    value={dashboardSummary?.totalRoadmaps ?? roadmaps.length}
+                    color="#059669"
+                    colors={colors}
+                  />
+                  <OverviewCard
+                    icon="file-check-outline"
+                    label="Chờ duyệt"
+                    value={pendingReviewMaterials.length}
+                    color="#10B981"
+                    colors={colors}
+                  />
+                </View>
+
+                {pendingReviewMaterials.length > 0 ? (
+                  <View
+                    style={[
+                      styles.dashboardReadCard,
+                      {backgroundColor: colors.surface, borderColor: colors.border},
+                    ]}>
+                    <Text style={[styles.dashboardCardEyebrow, {color: colors.textTertiary}]}>
+                      CẦN XỬ LÝ
+                    </Text>
+                    <Text style={[styles.dashboardSectionHeading, {color: colors.heading}]}>
+                      {pendingReviewMaterials.length} tài liệu đang chờ duyệt
+                    </Text>
+                    <View style={styles.dashboardReadGrid}>
+                      <DashboardReadItem
+                        label="Chuyển đến"
+                        value="Tài liệu"
+                        colors={colors}
+                      />
+                      <DashboardReadItem
+                        label="Hành động"
+                        value="Duyệt / Từ chối"
+                        colors={colors}
+                      />
+                      <DashboardReadItem
+                        label="Mẹo"
+                        value="Nhấn “Duyệt tài liệu” để xử lý"
+                        colors={colors}
+                      />
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+                  Dashboard cá nhân
+                </Text>
+                <Text style={[styles.studioSubtitle, {color: colors.textSecondary}]}>
+                  Theo dõi vai trò, tài nguyên, hoạt động và tiến độ học của bạn trong nhóm.
+                </Text>
+
+                <View
+                  style={[
+                    styles.dashboardHero,
+                    {backgroundColor: colors.surface, borderColor: colors.border},
+                  ]}>
+                  <View style={styles.dashboardBadgeRow}>
+                    <View style={[styles.dashboardBadge, {backgroundColor: isDark ? 'rgba(16,185,129,0.14)' : '#ECFDF5'}]}>
+                      <Text style={[styles.dashboardBadgeText, {color: isDark ? '#6EE7B7' : '#047857'}]}>
+                        Không gian nhóm
+                      </Text>
+                    </View>
+                    <View style={[styles.dashboardBadge, {backgroundColor: colors.surfaceVariant}]}>
+                      <Text style={[styles.dashboardBadgeText, {color: colors.textSecondary}]}>
+                        {formatRoleLabel(currentRoleLabel)}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.dashboardTitle, {color: colors.heading}]}>
+                    Xin chào, {currentMember?.fullName || (user as any)?.fullName || 'thành viên'}
+                  </Text>
+                  <Text style={[styles.dashboardDescription, {color: colors.textSecondary}]}>
+                    {groupDetail?.description ||
+                      `Bạn đang học trong ${groupDetail?.groupName || groupDetail?.name || title || 'nhóm này'}. Mở lộ trình, xem hoạt động hoặc kiểm tra thử thách ngay từ dashboard.`}
+                  </Text>
+                  <View style={styles.dashboardActions}>
+                    <TouchableOpacity
+                      activeOpacity={0.78}
+                      onPress={() =>
+                        navigation.navigate('RoadmapJourney', {
+                          contextType: 'GROUP',
+                          contextId: normalizedGroupId,
+                          title,
+                        })
+                      }
+                      style={[styles.dashboardPrimaryButton, {backgroundColor: '#0891B2'}]}>
+                      <Icon name="map-outline" size={17} color="#FFFFFF" />
+                      <Text style={styles.dashboardPrimaryText}>Mở lộ trình</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      activeOpacity={0.78}
+                      onPress={() =>
+                        navigation.push('GroupWorkspace', {
+                          groupId: normalizedGroupId,
+                          title,
+                          detailKey: 'notifications',
+                        })
+                      }
+                      style={[
+                        styles.dashboardSecondaryButton,
+                        {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+                      ]}>
+                      <Icon name="history" size={17} color={colors.icon} />
+                      <Text style={[styles.dashboardSecondaryText, {color: colors.text}]}>
+                        Hoạt động
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.studioGrid}>
+                  <OverviewCard
+                    icon="shield-check-outline"
+                    label="Vai trò"
+                    value={formatRoleLabel(currentRoleLabel)}
+                    color="#0EA5E9"
+                    colors={colors}
+                  />
+                  <OverviewCard
+                    icon="account-multiple"
+                    label="Thành viên"
+                    value={members.length}
+                    color="#2563EB"
+                    colors={colors}
+                  />
+                </View>
+              </>
+            )}
+            {!isLeader ? (
+              <>
+                <View style={styles.studioGrid}>
+                  <OverviewCard
+                    icon="folder-open-outline"
+                    label="Tài liệu"
+                    value={materials.length}
+                    color="#059669"
+                    colors={colors}
+                  />
+                  <OverviewCard
+                    icon="calendar-outline"
+                    label="Ngày vào"
+                    value={formatCompactDate(currentMember?.joinedAt).split(' ')[0]}
+                    color="#7C3AED"
+                    colors={colors}
+                  />
+                </View>
+
+                <View
+                  style={[
+                    styles.dashboardReadCard,
+                    {backgroundColor: colors.surface, borderColor: colors.border},
+                  ]}>
+                  <Text style={[styles.dashboardCardEyebrow, {color: colors.textTertiary}]}>
+                    GROUP QUICK READ
+                  </Text>
+                  <View style={styles.dashboardReadGrid}>
+                    <DashboardReadItem
+                      label="Tên nhóm"
+                      value={groupDetail?.groupName || groupDetail?.name || title || 'Nhóm'}
+                      colors={colors}
+                    />
+                    <DashboardReadItem
+                      label="Lộ trình"
+                      value={roadmaps.length > 0 ? `${roadmaps.length} lộ trình` : 'Chưa có'}
+                      colors={colors}
+                    />
+                    <DashboardReadItem
+                      label="Thử thách"
+                      value={`${challenges.length} thử thách`}
+                      colors={colors}
+                    />
+                  </View>
+                </View>
+
+                <View
+                  style={[
+                    styles.dashboardReadCard,
+                    {backgroundColor: colors.surface, borderColor: colors.border},
+                  ]}>
+                  <View style={styles.panelTitleRow}>
+                    <Icon name="chart-line" size={18} color={Colors.primary} />
+                    <Text style={[styles.dashboardSectionHeading, {color: colors.heading}]}>
+                      Learning snapshot
+                    </Text>
+                  </View>
+                  <View style={styles.snapshotGrid}>
+                    {[
+                      {
+                        label: 'Quiz',
+                        value: dashboardSummary?.totalQuizzes ?? quizzes.length,
+                        icon: 'head-question-outline',
+                        color: '#2563EB',
+                      },
+                      {
+                        label: 'Flashcard',
+                        value: dashboardSummary?.totalFlashcards ?? flashcards.length,
+                        icon: 'cards-outline',
+                        color: '#EA580C',
+                      },
+                      {
+                        label: 'Xếp hạng',
+                        value: rankingRows.length ? `Top ${rankingRows.length}` : 'N/A',
+                        icon: 'trophy-outline',
+                        color: '#F59E0B',
+                      },
+                    ].map(item => (
+                      <View
+                        key={item.label}
+                        style={[
+                          styles.snapshotTile,
+                          {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+                        ]}>
+                        <Icon name={item.icon} size={18} color={item.color} />
+                        <Text style={[styles.snapshotValue, {color: colors.heading}]}>
+                          {String(item.value)}
+                        </Text>
+                        <Text style={[styles.snapshotLabel, {color: colors.textSecondary}]}>
+                          {item.label}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                {groupLogs.length > 0 ? (
+                  <View
+                    style={[
+                      styles.dashboardReadCard,
+                      {backgroundColor: colors.surface, borderColor: colors.border},
+                    ]}>
+                    <View style={styles.panelTitleRow}>
+                      <Icon name="history" size={18} color="#0EA5E9" />
+                      <Text style={[styles.dashboardSectionHeading, {color: colors.heading}]}>
+                        Hoạt động gần đây
+                      </Text>
+                    </View>
+                    {groupLogs.slice(0, 3).map((log: any, index: number) => (
+                      <ActivityFeedItem
+                        key={`${log?.logId || index}:${log?.logTime || log?.createdAt || ''}`}
+                        log={log}
+                        colors={colors}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+              </>
             ) : null}
           </View>
         )}
@@ -1926,7 +2087,13 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                     fontWeight: activeBottomTab === tab ? '600' : '400',
                   },
                 ]}>
-                {tab === 'chat' ? 'Tổng quan' : tab === 'sources' ? 'Tài liệu' : 'Dashboard'}
+                {tab === 'chat'
+                  ? 'Tổng quan'
+                  : tab === 'sources'
+                  ? 'Tài liệu'
+                  : isLeader
+                  ? 'Tổng quan'
+                  : 'Dashboard'}
               </Text>
             </TouchableOpacity>
           ))}

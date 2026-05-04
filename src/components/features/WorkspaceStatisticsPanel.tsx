@@ -1,20 +1,25 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import Svg, {Circle} from 'react-native-svg';
+import Svg, {
+  Circle,
+  G,
+  Line,
+  Polygon,
+  Rect,
+  Text as SvgText,
+} from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import {Colors} from '../../theme/colors';
 import WorkspaceAPI from '../../api/WorkspaceAPI';
 import {useTheme} from '../../context/ThemeContext';
-
-const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
 const ATTEMPT_MODES = [
   {value: 'OFFICIAL', label: 'Kiểm tra chính thức'},
@@ -40,7 +45,19 @@ const SURFACES = [
 ];
 
 const DIFFICULTY_ORDER = ['EASY', 'MEDIUM', 'HARD', 'CUSTOM', 'UNSPECIFIED'];
-const BLOOM_ORDER = ['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE'];
+// Match FE ordering for consistent radar/bar charts.
+const BLOOM_ORDER = ['ANALYZE', 'UNDERSTAND', 'REMEMBER', 'EVALUATE', 'APPLY'];
+
+const BLOOM_COLORS: Record<string, {main: string}> = {
+  REMEMBER: {main: '#6366f1'},
+  UNDERSTAND: {main: '#06b6d4'},
+  APPLY: {main: '#22c55e'},
+  ANALYZE: {main: '#f59e0b'},
+  EVALUATE: {main: '#ef4444'},
+};
+
+const NARROW_SCREEN_WIDTH = 360;
+const MEDIUM_SCREEN_WIDTH = 420;
 
 type Props = {
   workspaceId: number;
@@ -245,10 +262,554 @@ function pickQuizInsightItem(items: any[] = [], type: 'best' | 'worst') {
   return type === 'worst' ? sorted[sorted.length - 1] : sorted[0];
 }
 
-function cardWidth(columns: number) {
+function getResponsiveColumns(windowWidth: number, preferredColumns: number) {
+  if (preferredColumns <= 1) {
+    return 1;
+  }
+
+  if (preferredColumns === 2) {
+    return windowWidth >= NARROW_SCREEN_WIDTH ? 2 : 1;
+  }
+
+  if (windowWidth >= MEDIUM_SCREEN_WIDTH) {
+    return 3;
+  }
+
+  if (windowWidth >= NARROW_SCREEN_WIDTH) {
+    return 2;
+  }
+
+  return 1;
+}
+
+function cardWidth(windowWidth: number, columns: number) {
   const horizontal = Spacing.lg * 2;
   const gaps = Spacing.sm * (columns - 1);
-  return (SCREEN_WIDTH - horizontal - gaps) / columns;
+  return Math.max(0, (windowWidth - horizontal - gaps) / columns);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function chartInnerWidth(windowWidth: number) {
+  // Match the screen's horizontal padding and the section card's inner padding.
+  return Math.max(0, windowWidth - Spacing.lg * 2 - Spacing.md * 2);
+}
+
+function DonutChart({
+  segments,
+  size = 180,
+  strokeWidth = 18,
+  trackColor,
+}: {
+  segments: Array<{label: string; value: number; color: string}>;
+  size?: number;
+  strokeWidth?: number;
+  trackColor: string;
+}) {
+  const total = segments.reduce((sum, seg) => sum + Math.max(0, Number(seg.value || 0)), 0);
+  if (total <= 0) {
+    return null;
+  }
+
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  let cumulative = 0;
+
+  return (
+    <Svg width={size} height={size} style={styles.ringSvg}>
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={trackColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+      />
+      {segments
+        .filter(seg => Number(seg.value || 0) > 0)
+        .map((seg, index) => {
+          const value = Math.max(0, Number(seg.value || 0));
+          const length = (value / total) * circumference;
+          const dasharray = `${length} ${Math.max(0, circumference - length)}`;
+          const dashoffset = -cumulative;
+          cumulative += length;
+          return (
+            <Circle
+              key={`${seg.label}:${index}`}
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              stroke={seg.color}
+              strokeWidth={strokeWidth}
+              fill="none"
+              strokeDasharray={dasharray}
+              strokeDashoffset={dashoffset}
+              strokeLinecap="butt"
+            />
+          );
+        })}
+    </Svg>
+  );
+}
+
+function DifficultyGroupedBarChart({
+  buckets,
+  isLifetime = false,
+  colors: passedColors,
+}: {
+  buckets: any[];
+  isLifetime?: boolean;
+  colors?: any;
+}) {
+  const {colors: themeColors} = useTheme();
+  const {width: windowWidth} = useWindowDimensions();
+  const colors = passedColors || themeColors;
+
+  if (!Array.isArray(buckets) || buckets.length === 0) {
+    return null;
+  }
+
+  const ordered = DIFFICULTY_ORDER.map(key =>
+    (buckets || []).find(bucket => String(bucket?.label || '').toUpperCase() === key),
+  )
+    .filter(Boolean)
+    .filter(bucket => String(bucket?.label || '').toUpperCase() !== 'UNSPECIFIED');
+
+  if (ordered.length === 0) {
+    return null;
+  }
+
+  const data = ordered.map(bucket => {
+    const correct = isLifetime
+      ? Number(bucket?.correctQuestionAttemptsInMode || 0)
+      : Number(bucket?.correctQuestionsInMode || 0);
+    const incorrect = isLifetime
+      ? Number(bucket?.incorrectQuestionAttemptsInMode || 0)
+      : Number(bucket?.incorrectQuestionsInMode || 0);
+    return {
+      label: translateDifficulty(bucket?.label),
+      correct,
+      incorrect,
+    };
+  });
+
+  const width = chartInnerWidth(windowWidth);
+  const height = 210;
+  const margin = {top: 14, right: 10, bottom: 34, left: 28};
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const maxValue = Math.max(
+    1,
+    ...data.flatMap(item => [Number(item.correct || 0), Number(item.incorrect || 0)]),
+  );
+
+  const band = plotWidth / data.length;
+  const gap = Math.max(4, band * 0.08);
+  const barWidth = Math.max(10, (band - gap) / 2.2);
+
+  const gridLines = 4;
+  const axisColor = colors.textSecondary;
+  const gridColor = colors.borderLight || colors.border;
+
+  return (
+    <View style={{width: '100%'}}>
+      <Svg width={width} height={height}>
+        <G>
+          {Array.from({length: gridLines}).map((_, index) => {
+            const y =
+              margin.top +
+              (plotHeight * index) / (gridLines - 1);
+            return (
+              <Line
+                key={`grid-${index}`}
+                x1={margin.left}
+                x2={width - margin.right}
+                y1={y}
+                y2={y}
+                stroke={gridColor}
+                strokeWidth={1}
+              />
+            );
+          })}
+
+          {data.map((item, index) => {
+            const baseX = margin.left + index * band + (band - (barWidth * 2 + gap)) / 2;
+            const correctHeight = (Number(item.correct || 0) / maxValue) * plotHeight;
+            const incorrectHeight = (Number(item.incorrect || 0) / maxValue) * plotHeight;
+            const correctY = margin.top + (plotHeight - correctHeight);
+            const incorrectY = margin.top + (plotHeight - incorrectHeight);
+
+            return (
+              <G key={`bar-${item.label}:${index}`}>
+                <Rect
+                  x={baseX}
+                  y={correctY}
+                  width={barWidth}
+                  height={correctHeight}
+                  rx={4}
+                  fill="#22c55e"
+                />
+                <Rect
+                  x={baseX + barWidth + gap}
+                  y={incorrectY}
+                  width={barWidth}
+                  height={incorrectHeight}
+                  rx={4}
+                  fill="#ef4444"
+                />
+                <SvgText
+                  x={margin.left + index * band + band / 2}
+                  y={height - 14}
+                  fontSize={10}
+                  fontWeight="600"
+                  fill={axisColor}
+                  textAnchor="middle">
+                  {item.label}
+                </SvgText>
+              </G>
+            );
+          })}
+
+          <SvgText
+            x={margin.left}
+            y={12}
+            fontSize={10}
+            fontWeight="600"
+            fill={axisColor}>
+            Đúng
+          </SvgText>
+          <SvgText
+            x={margin.left + 32}
+            y={12}
+            fontSize={10}
+            fontWeight="600"
+            fill={axisColor}>
+            / Sai
+          </SvgText>
+        </G>
+      </Svg>
+    </View>
+  );
+}
+
+function HorizontalPercentBarChart({
+  rows,
+  colors: passedColors,
+}: {
+  rows: Array<{label: string; value: number; fill: string}>;
+  colors?: any;
+}) {
+  const {colors: themeColors} = useTheme();
+  const {width: windowWidth} = useWindowDimensions();
+  const colors = passedColors || themeColors;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return null;
+  }
+
+  const width = chartInnerWidth(windowWidth);
+  const rowHeight = 52;
+  const height = Math.max(200, rows.length * rowHeight + 52);
+  const outerPadding = 14;
+  const margin = {
+    top: 14,
+    bottom: 30,
+  };
+  const plotLeft = outerPadding;
+  const plotWidth = Math.max(0, width - outerPadding * 2);
+  const plotHeight = height - margin.top - margin.bottom;
+  const barHeight = 14;
+  const ticks = [0, 25, 50, 75, 100];
+  const axisColor = colors.textSecondary;
+  const gridColor = colors.borderLight || colors.border;
+
+  return (
+    <Svg
+      width="100%"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMinYMin meet">
+      <G>
+        {ticks.map(tick => {
+          const x = plotLeft + (tick / 100) * plotWidth;
+          const tickAnchor = tick === 0 ? 'start' : tick === 100 ? 'end' : 'middle';
+          return (
+            <G key={`tick-${tick}`}>
+              <Line
+                x1={x}
+                x2={x}
+                y1={margin.top}
+                y2={margin.top + plotHeight}
+                stroke={gridColor}
+                strokeWidth={1}
+              />
+              <SvgText
+                x={x}
+                y={height - 8}
+                fontSize={10}
+                fontWeight="600"
+                fill={axisColor}
+                textAnchor={tickAnchor}>
+                {tick}
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {rows.map((row, index) => {
+          const value = clamp(Number(row.value || 0), 0, 100);
+          const y = margin.top + index * rowHeight;
+          const headerY = y + 14;
+          const barY = y + 22;
+          const barWidth = (value / 100) * plotWidth;
+          return (
+            <G key={`row-${row.label}:${index}`}>
+              <SvgText
+                x={outerPadding}
+                y={headerY}
+                fontSize={11}
+                fontWeight="700"
+                fill={axisColor}
+                textAnchor="start">
+                {row.label}
+              </SvgText>
+
+              <SvgText
+                x={width - outerPadding}
+                y={headerY}
+                fontSize={11}
+                fontWeight="700"
+                fill={axisColor}
+                textAnchor="end">
+                {value}%
+              </SvgText>
+
+              <Rect
+                x={plotLeft}
+                y={barY}
+                width={plotWidth}
+                height={barHeight}
+                rx={6}
+                fill={colors.borderLight || colors.border}
+              />
+              <Rect
+                x={plotLeft}
+                y={barY}
+                width={Math.max(4, barWidth)}
+                height={barHeight}
+                rx={6}
+                fill={row.fill}
+              />
+            </G>
+          );
+        })}
+      </G>
+    </Svg>
+  );
+}
+
+function BloomAccuracyBarChart({
+  buckets,
+  colors: passedColors,
+}: {
+  buckets: any[];
+  colors?: any;
+}) {
+  const rows = getRenderableBloomBuckets(buckets).map((bucket: any) => {
+    const key = String(bucket?.label || '').toUpperCase();
+    return {
+      label: translateBloom(bucket?.label),
+      value: clamp(Math.round(Number(bucket?.accuracyInMode || 0) * 100), 0, 100),
+      fill: BLOOM_COLORS[key]?.main || Colors.primary,
+    };
+  });
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <HorizontalPercentBarChart
+      rows={rows}
+      colors={passedColors}
+    />
+  );
+}
+
+function BloomRadarCard({
+  buckets,
+  colors: passedColors,
+}: {
+  buckets: any[];
+  colors?: any;
+}) {
+  const {colors: themeColors} = useTheme();
+  const {width: windowWidth} = useWindowDimensions();
+  const colors = passedColors || themeColors;
+  const rows = getRenderableBloomBuckets(buckets);
+
+  if (rows.length < 3) {
+    return null;
+  }
+
+  const width = chartInnerWidth(windowWidth);
+  const height = 300;
+  const cx = width / 2;
+  const cy = height / 2 + 6;
+  const radius = Math.min(width, height) * 0.33;
+  const levels = 4;
+  const angleStep = (2 * Math.PI) / rows.length;
+
+  const points = rows.map((bucket: any, index: number) => {
+    const value = clamp(Math.round(Number(bucket?.accuracyInMode || 0) * 100), 0, 100);
+    const angle = -Math.PI / 2 + index * angleStep;
+    const r = (value / 100) * radius;
+    return {
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+      label: translateBloom(bucket?.label),
+      value,
+      angle,
+    };
+  });
+
+  const polygonPoints = points.map(p => `${p.x},${p.y}`).join(' ');
+  const axisColor = colors.textSecondary;
+  const gridColor = colors.borderLight || colors.border;
+
+  return (
+    <SectionCard
+      title="Ma trận kỹ năng"
+      subtitle="Tổng hợp độ chính xác theo cấp Bloom"
+      colors={colors}>
+      <Svg width={width} height={height}>
+        <G>
+          {Array.from({length: levels}).map((_, levelIndex) => {
+            const ratio = (levelIndex + 1) / levels;
+            const ringPoints = points
+              .map(p => {
+                const r = radius * ratio;
+                const x = cx + r * Math.cos(p.angle);
+                const y = cy + r * Math.sin(p.angle);
+                return `${x},${y}`;
+              })
+              .join(' ');
+            return (
+              <Polygon
+                key={`ring-${levelIndex}`}
+                points={ringPoints}
+                fill="none"
+                stroke={gridColor}
+                strokeWidth={1}
+              />
+            );
+          })}
+
+          {points.map((p, index) => (
+            <Line
+              key={`axis-${index}`}
+              x1={cx}
+              y1={cy}
+              x2={cx + radius * Math.cos(p.angle)}
+              y2={cy + radius * Math.sin(p.angle)}
+              stroke={gridColor}
+              strokeWidth={1}
+            />
+          ))}
+
+          <Polygon
+            points={polygonPoints}
+            fill="#3b82f6"
+            fillOpacity={0.22}
+            stroke="#3b82f6"
+            strokeWidth={2}
+          />
+
+          {points.map((p, index) => (
+            <Circle
+              key={`dot-${index}`}
+              cx={p.x}
+              cy={p.y}
+              r={3}
+              fill="#3b82f6"
+            />
+          ))}
+
+          {points.map((p, index) => {
+            const labelRadius = radius + 18;
+            const lx = cx + labelRadius * Math.cos(p.angle);
+            const ly = cy + labelRadius * Math.sin(p.angle);
+            const anchor = Math.abs(Math.cos(p.angle)) < 0.2
+              ? 'middle'
+              : Math.cos(p.angle) > 0
+              ? 'start'
+              : 'end';
+            return (
+              <SvgText
+                key={`label-${index}`}
+                x={lx}
+                y={ly}
+                fontSize={10}
+                fontWeight="600"
+                fill={axisColor}
+                textAnchor={anchor}>
+                {p.label}
+              </SvgText>
+            );
+          })}
+        </G>
+      </Svg>
+    </SectionCard>
+  );
+}
+
+function MetricAverageBarList({
+  buckets,
+  title,
+  bucketType,
+  colors: passedColors,
+}: {
+  buckets: any[];
+  title: string;
+  bucketType: 'difficulty' | 'default';
+  colors?: any;
+}) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+  if (!Array.isArray(buckets) || buckets.length === 0) {
+    return null;
+  }
+
+  const rows = buckets
+    .filter(bucket => Number(bucket?.distinctQuizCount || bucket?.totalQuizAttempts || 0) > 0)
+    .map(bucket => ({
+      label:
+        bucketType === 'difficulty'
+          ? translateDifficulty(bucket?.label)
+          : String(bucket?.label || 'Không rõ'),
+      accuracy: clamp(Math.round(Number(bucket?.averageAccuracy || 0) * 100), 0, 100),
+    }))
+    .filter(row => row.accuracy > 0);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <SectionCard title={title} colors={colors}>
+      <HorizontalPercentBarChart
+        rows={rows.map(row => ({
+          label: row.label,
+          value: row.accuracy,
+          fill: Colors.primary,
+        }))}
+        colors={colors}
+        labelWidth={130}
+      />
+    </SectionCard>
+  );
 }
 
 function AccuracyRing({
@@ -430,7 +991,7 @@ function StatCard({
   value: string;
   subValue?: string;
   accentColor: string;
-  width: number;
+  width?: number | string;
   colors?: any;
 }) {
   const {colors: themeColors} = useTheme();
@@ -441,10 +1002,10 @@ function StatCard({
       style={[
         styles.statCard,
         {
-          width,
           backgroundColor: colors.surface,
           borderColor: colors.border,
         },
+        width == null ? null : {width},
       ]}>
       <View style={[styles.statTopBar, {backgroundColor: accentColor}]} />
       <View style={[styles.statIconWrap, {backgroundColor: `${accentColor}15`}]}>
@@ -505,6 +1066,63 @@ function InsightCard({
   );
 }
 
+function WelcomeCard({
+  colors: passedColors,
+  onDismiss,
+}: {
+  colors?: any;
+  onDismiss: () => void;
+}) {
+  const {colors: themeColors} = useTheme();
+  const colors = passedColors || themeColors;
+  const isDarkTheme =
+    colors.background === Colors.dark.background ||
+    colors.surface === Colors.dark.surface;
+
+  return (
+    <View
+      style={[
+        styles.welcomeCard,
+        {
+          backgroundColor: isDarkTheme
+            ? 'rgba(37, 99, 235, 0.10)'
+            : 'rgba(219, 234, 254, 0.55)',
+          borderColor: isDarkTheme
+            ? 'rgba(30, 64, 175, 0.55)'
+            : '#BFDBFE',
+        },
+      ]}>
+      <View style={styles.welcomeHeader}>
+        <View
+          style={[
+            styles.welcomeIcon,
+            {
+              backgroundColor: isDarkTheme
+                ? 'rgba(30, 64, 175, 0.45)'
+                : '#DBEAFE',
+            },
+          ]}>
+          <Icon name="information-outline" size={18} color={Colors.primary} />
+        </View>
+        <View style={styles.welcomeContent}>
+          <Text style={[styles.welcomeTitle, {color: colors.heading}]}>
+            Mẹo: làm thêm quiz để dashboard chính xác hơn
+          </Text>
+          <Text style={[styles.welcomeDesc, {color: colors.textSecondary}]}>
+            Khi bạn có nhiều lượt làm hơn, hệ thống sẽ xác định điểm mạnh/yếu và biểu đồ Bloom rõ ràng hơn.
+          </Text>
+        </View>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={onDismiss}
+          style={styles.welcomeClose}>
+          <Icon name="close" size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 function SectionCard({
   title,
   subtitle,
@@ -532,131 +1150,6 @@ function SectionCard({
         </Text>
       ) : null}
       <View style={styles.sectionBody}>{children}</View>
-    </View>
-  );
-}
-
-function SimpleBarList({
-  title,
-  buckets,
-  bucketType,
-  getValue,
-  showPercent = false,
-  colors: passedColors,
-}: {
-  title: string;
-  buckets: any[];
-  bucketType: 'difficulty' | 'bloom' | 'default';
-  getValue: (bucket: any) => number;
-  showPercent?: boolean;
-  colors?: any;
-}) {
-  const {colors: themeColors} = useTheme();
-  const colors = passedColors || themeColors;
-  const sanitized = buckets.filter(Boolean);
-  if (sanitized.length === 0) {
-    return null;
-  }
-
-  const maxValue = Math.max(...sanitized.map(bucket => getValue(bucket)), 1);
-
-  return (
-    <SectionCard title={title} colors={colors}>
-      <View style={styles.metricList}>
-        {sanitized.map((bucket, index) => {
-          const value = getValue(bucket);
-          const label =
-            bucketType === 'difficulty'
-              ? translateDifficulty(bucket?.label)
-              : bucketType === 'bloom'
-              ? translateBloom(bucket?.label)
-              : String(bucket?.label || 'Không rõ');
-
-          return (
-            <View key={`${label}:${index}`} style={styles.metricRow}>
-              <View style={styles.metricHeader}>
-                <Text style={[styles.metricLabel, {color: colors.heading}]}>
-                  {label}
-                </Text>
-                <Text style={[styles.metricValue, {color: colors.textSecondary}]}>
-                  {showPercent ? `${Math.round(value)}%` : fmtNumber(value)}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.metricTrack,
-                  {backgroundColor: colors.borderLight || colors.border},
-                ]}>
-                <View
-                  style={[
-                    styles.metricFill,
-                    {width: `${Math.max(4, (value / maxValue) * 100)}%`},
-                  ]}
-                />
-              </View>
-            </View>
-          );
-        })}
-      </View>
-    </SectionCard>
-  );
-}
-
-function StackedProgress({
-  correct,
-  incorrect,
-  pending,
-  colors: passedColors,
-}: {
-  correct: number;
-  incorrect: number;
-  pending: number;
-  colors?: any;
-}) {
-  const {colors: themeColors} = useTheme();
-  const colors = passedColors || themeColors;
-  const total = Math.max(1, correct + incorrect + pending);
-  return (
-    <View>
-      <View
-        style={[
-          styles.stackedBar,
-          {backgroundColor: colors.borderLight || colors.border},
-        ]}>
-        <View
-          style={[
-            styles.stackedGreen,
-            {width: `${(correct / total) * 100}%`},
-          ]}
-        />
-        <View
-          style={[
-            styles.stackedRed,
-            {width: `${(incorrect / total) * 100}%`},
-          ]}
-        />
-        {pending > 0 ? (
-          <View
-            style={[
-              styles.stackedAmber,
-              {width: `${(pending / total) * 100}%`},
-            ]}
-          />
-        ) : null}
-      </View>
-      <View style={styles.legendRow}>
-        <Text style={[styles.legendText, {color: colors.textSecondary}]}>
-          Đúng ({fmtNumber(correct)})
-        </Text>
-        <Text style={[styles.legendText, {color: colors.textSecondary}]}>
-          Sai ({fmtNumber(incorrect)})
-        </Text>
-        {pending > 0 ? (
-          <Text style={[styles.legendText, {color: colors.textSecondary}]}>
-            Chưa chấm ({fmtNumber(pending)})
-          </Text>
-        ) : null}
-      </View>
     </View>
   );
 }
@@ -722,8 +1215,13 @@ function QuestionSurface({
   stats: any;
 }) {
   const {colors} = useTheme();
+  const {width: windowWidth} = useWindowDimensions();
   const current = stats?.currentQuestionStats;
   const lifetime = stats?.lifetimeQuestionAttemptStats;
+  const summaryColumns = getResponsiveColumns(windowWidth, 2);
+  const lifetimeColumns = getResponsiveColumns(windowWidth, 3);
+  const summaryCardWidth = cardWidth(windowWidth, summaryColumns);
+  const lifetimeCardWidth = cardWidth(windowWidth, lifetimeColumns);
   const totalQuestions = Number(current?.totalWorkspaceQuestions || 0);
   const attemptedQuestions = Number(current?.attemptedQuestionsInMode || 0);
   const gradedQuestions = Number(current?.gradedQuestionsInMode || 0);
@@ -740,8 +1238,6 @@ function QuestionSurface({
     current?.byDifficulty || [],
     'worst',
   );
-  const currentBloomBuckets = getRenderableBloomBuckets(current?.byBloom || []);
-  const lifetimeBloomBuckets = getRenderableBloomBuckets(lifetime?.byBloom || []);
 
   return (
     <View style={styles.contentStack}>
@@ -751,7 +1247,7 @@ function QuestionSurface({
           label="Tổng số câu hỏi"
           value={fmtNumber(totalQuestions)}
           accentColor="#2563EB"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="check-circle-outline"
@@ -759,35 +1255,35 @@ function QuestionSurface({
           value={fmtNumber(attemptedQuestions)}
           subValue={`${attemptedPercent}%`}
           accentColor="#10B981"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="chart-line"
           label="Độ chính xác"
           value={fmtPercentFromRatio(current?.accuracyInMode)}
           accentColor="#8B5CF6"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="book-open-outline"
           label="Đã chấm"
           value={fmtNumber(gradedQuestions)}
           accentColor="#4F46E5"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="scale-balance"
           label="Đúng"
           value={fmtNumber(correctQuestions)}
           accentColor="#0F766E"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="clock-outline"
           label="Chưa làm"
           value={fmtNumber(untouchedQuestions)}
           accentColor="#64748B"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
       </View>
 
@@ -855,12 +1351,58 @@ function QuestionSurface({
                 ]}
               />
             </View>
-            <StackedProgress
-              correct={correctQuestions}
-              incorrect={incorrectQuestions}
-              pending={pendingQuestions}
-              colors={colors}
-            />
+            <View style={{alignItems: 'center'}}>
+              <DonutChart
+                segments={[
+                  {label: 'Đúng', value: correctQuestions, color: '#22c55e'},
+                  {label: 'Sai', value: incorrectQuestions, color: '#ef4444'},
+                  ...(pendingQuestions > 0
+                    ? [{label: 'Chưa chấm', value: pendingQuestions, color: '#f59e0b'}]
+                    : []),
+                ]}
+                size={180}
+                strokeWidth={18}
+                trackColor={colors.borderLight || colors.border}
+              />
+            </View>
+            <View style={styles.legendRow}>
+              <View style={styles.legendItem}>
+                <View
+                  style={[
+                    styles.legendDot,
+                    {backgroundColor: Colors.success},
+                  ]}
+                />
+                <Text style={[styles.legendText, {color: colors.textSecondary}]}>
+                  Đúng ({fmtNumber(correctQuestions)})
+                </Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View
+                  style={[
+                    styles.legendDot,
+                    {backgroundColor: Colors.error},
+                  ]}
+                />
+                <Text style={[styles.legendText, {color: colors.textSecondary}]}>
+                  Sai ({fmtNumber(incorrectQuestions)})
+                </Text>
+              </View>
+              {pendingQuestions > 0 ? (
+                <View style={styles.legendItem}>
+                  <View
+                    style={[
+                      styles.legendDot,
+                      {backgroundColor: Colors.warning},
+                    ]}
+                  />
+                  <Text
+                    style={[styles.legendText, {color: colors.textSecondary}]}>
+                    Chưa chấm ({fmtNumber(pendingQuestions)})
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
         </View>
       </SectionCard>
@@ -869,120 +1411,69 @@ function QuestionSurface({
         title="Thống kê câu hỏi hiện tại"
         subtitle="Dựa trên lần làm gần nhất của mỗi câu hỏi">
         <View style={styles.chartGrid}>
-          <SimpleBarList
-            title="Hiệu suất theo độ khó"
-            buckets={(current?.byDifficulty || []).filter((bucket: any) =>
-              DIFFICULTY_ORDER.includes(String(bucket?.label || '').toUpperCase()),
-            )}
-            bucketType="difficulty"
-            getValue={bucket =>
-              Number(
-                bucket?.correctQuestionsInMode ??
-                  bucket?.attemptedQuestionsInMode ??
-                  0,
-              )
-            }
-          />
-          <SimpleBarList
-            title="Hiệu suất theo cấp Bloom"
-            buckets={currentBloomBuckets}
-            bucketType="bloom"
-            getValue={bucket => Math.round(Number(bucket?.accuracyInMode || 0) * 100)}
-            showPercent
-          />
+          <SectionCard title="Hiệu suất theo độ khó" colors={colors}>
+            <DifficultyGroupedBarChart
+              buckets={current?.byDifficulty || []}
+              colors={colors}
+            />
+          </SectionCard>
+          <SectionCard title="Hiệu suất theo cấp Bloom" colors={colors}>
+            <BloomAccuracyBarChart buckets={current?.byBloom || []} colors={colors} />
+          </SectionCard>
         </View>
       </SectionCard>
 
-      <SectionCard
-        title="Ma trận kỹ năng"
-        subtitle="Điểm mạnh và các phần cần cải thiện">
-        <View style={styles.metricList}>
-          {currentBloomBuckets.length > 0 ? (
-            currentBloomBuckets.map((bucket: any, index: number) => {
-              const value = Math.round(Number(bucket?.accuracyInMode || 0) * 100);
-              return (
-                <View key={`${bucket?.label || index}`} style={styles.metricRow}>
-                  <View style={styles.metricHeader}>
-                    <Text style={[styles.metricLabel, {color: colors.heading}]}>
-                      {translateBloom(bucket?.label)}
-                    </Text>
-                    <Text style={[styles.metricValue, {color: colors.textSecondary}]}>
-                      {value}%
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.metricTrack,
-                      {backgroundColor: colors.borderLight || colors.border},
-                    ]}>
-                    <View
-                      style={[
-                        styles.metricFill,
-                        {width: `${Math.max(4, value)}%`},
-                      ]}
-                    />
-                  </View>
-                </View>
-              );
-            })
-          ) : (
-            <Text style={[styles.emptyHint, {color: colors.textSecondary}]}>
-              Chưa đủ dữ liệu Bloom.
-            </Text>
-          )}
-        </View>
-      </SectionCard>
+      <BloomRadarCard buckets={current?.byBloom || []} colors={colors} />
 
       {lifetime ? (
         <SectionCard
           title="Thống kê tích lũy"
           subtitle="Tổng hợp trên toàn bộ các lần làm câu hỏi">
-          <View style={styles.summaryGrid}>
-            <StatCard
-              icon="counter"
-              label="Tổng lượt làm"
-              value={fmtNumber(lifetime?.totalQuestionAttempts ?? lifetime?.totalAttempts)}
-              accentColor="#4F46E5"
-              width={cardWidth(3)}
-            />
-            <StatCard
-              icon="chart-arc"
-              label="Độ chính xác tổng thể"
-              value={fmtPercentFromRatio(
-                lifetime?.accuracy ?? lifetime?.overallAccuracy,
-              )}
-              accentColor="#10B981"
-              width={cardWidth(3)}
-            />
-            <StatCard
-              icon="progress-question"
-              label="Chưa chấm"
-              value={fmtNumber(lifetime?.pendingQuestionAttempts)}
-              accentColor="#F59E0B"
-              width={cardWidth(3)}
-            />
+          <View style={styles.forcedTwoColGrid}>
+            <View style={styles.forcedTwoColItem}>
+              <StatCard
+                icon="counter"
+                label="Tổng lượt làm"
+                value={fmtNumber(
+                  lifetime?.totalQuestionAttempts ?? lifetime?.totalAttempts,
+                )}
+                accentColor="#4F46E5"
+              />
+            </View>
+            <View style={styles.forcedTwoColItem}>
+              <StatCard
+                icon="chart-arc"
+                label="Độ chính xác tổng thể"
+                value={fmtPercentFromRatio(
+                  lifetime?.accuracy ?? lifetime?.overallAccuracy,
+                )}
+                accentColor="#10B981"
+              />
+            </View>
+
+            <View style={styles.forcedTwoColCenterRow}>
+              <View style={styles.forcedTwoColItem}>
+                <StatCard
+                  icon="progress-question"
+                  label="Chưa chấm"
+                  value={fmtNumber(lifetime?.pendingQuestionAttempts)}
+                  accentColor="#F59E0B"
+                />
+              </View>
+            </View>
           </View>
 
           <View style={styles.chartGrid}>
-            <SimpleBarList
-              title="Hiệu suất theo độ khó"
-              buckets={lifetime?.byDifficulty || []}
-              bucketType="difficulty"
-              getValue={bucket =>
-                Number(
-                  bucket?.correctQuestionAttemptsInMode ??
-                    bucket?.attemptedQuestionsInMode ??
-                    0,
-                )
-              }
-            />
-            <SimpleBarList
-              title="Hiệu suất theo cấp Bloom"
-              buckets={lifetimeBloomBuckets}
-              bucketType="bloom"
-              getValue={bucket => Math.round(Number(bucket?.accuracyInMode || 0) * 100)}
-              showPercent
-            />
+            <SectionCard title="Hiệu suất theo độ khó" colors={colors}>
+              <DifficultyGroupedBarChart
+                buckets={lifetime?.byDifficulty || []}
+                isLifetime
+                colors={colors}
+              />
+            </SectionCard>
+            <SectionCard title="Hiệu suất theo cấp Bloom" colors={colors}>
+              <BloomAccuracyBarChart buckets={lifetime?.byBloom || []} colors={colors} />
+            </SectionCard>
           </View>
         </SectionCard>
       ) : null}
@@ -996,8 +1487,13 @@ function QuizSurface({
   stats: any;
 }) {
   const {colors} = useTheme();
+  const {width: windowWidth} = useWindowDimensions();
   const current = stats?.currentQuizStats;
   const lifetime = stats?.lifetimeQuizAttemptStats;
+  const summaryColumns = getResponsiveColumns(windowWidth, 2);
+  const lifetimeColumns = getResponsiveColumns(windowWidth, 3);
+  const summaryCardWidth = cardWidth(windowWidth, summaryColumns);
+  const lifetimeCardWidth = cardWidth(windowWidth, lifetimeColumns);
   const bestQuiz = pickQuizInsightItem(lifetime?.byQuiz || [], 'best');
   const worstQuiz = pickQuizInsightItem(lifetime?.byQuiz || [], 'worst');
 
@@ -1009,35 +1505,35 @@ function QuizSurface({
           label="Quiz đã làm"
           value={fmtNumber(current?.attemptedQuizzesInMode)}
           accentColor="#2563EB"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="counter"
           label="Tổng lượt làm"
           value={fmtNumber(lifetime?.totalQuizAttempts)}
           accentColor="#10B981"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="trophy-outline"
           label="Điểm trung bình"
           value={fmtScore(current?.averageScoreInMode)}
           accentColor="#8B5CF6"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="chart-line"
           label="Độ chính xác"
           value={fmtPercentFromRatio(current?.averageAccuracyInMode)}
           accentColor="#0F766E"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
         <StatCard
           icon="clock-outline"
           label="TB thời gian"
           value={fmtSeconds(current?.averageDurationSecondsInMode)}
           accentColor="#F59E0B"
-          width={cardWidth(2)}
+          width={summaryCardWidth}
         />
       </View>
 
@@ -1110,19 +1606,17 @@ function QuizSurface({
         title="Hiệu suất quiz hiện tại"
         subtitle="Tổng hợp theo loại quiz và độ khó trong chế độ đang chọn">
         <View style={styles.chartGrid}>
-          <SimpleBarList
+          <MetricAverageBarList
             title="Theo loại quiz"
             buckets={current?.byQuizType || []}
             bucketType="default"
-            getValue={bucket => Math.round(Number(bucket?.averageAccuracy || 0) * 100)}
-            showPercent
+            colors={colors}
           />
-          <SimpleBarList
+          <MetricAverageBarList
             title="Theo độ khó"
             buckets={current?.byDifficulty || []}
             bucketType="difficulty"
-            getValue={bucket => Math.round(Number(bucket?.averageAccuracy || 0) * 100)}
-            showPercent
+            colors={colors}
           />
         </View>
       </SectionCard>
@@ -1137,38 +1631,36 @@ function QuizSurface({
               label="Tổng lượt làm"
               value={fmtNumber(lifetime?.totalQuizAttempts)}
               accentColor="#4F46E5"
-              width={cardWidth(3)}
+              width={lifetimeCardWidth}
             />
             <StatCard
               icon="chart-line"
               label="Độ chính xác TB"
               value={fmtPercentFromRatio(lifetime?.averageAccuracy)}
               accentColor="#10B981"
-              width={cardWidth(3)}
+              width={lifetimeCardWidth}
             />
             <StatCard
               icon="trophy-outline"
               label="Điểm TB"
               value={fmtScore(lifetime?.averageScore)}
               accentColor="#8B5CF6"
-              width={cardWidth(3)}
+              width={lifetimeCardWidth}
             />
           </View>
 
           <View style={styles.chartGrid}>
-            <SimpleBarList
+            <MetricAverageBarList
               title="Theo loại quiz"
               buckets={lifetime?.byQuizType || []}
               bucketType="default"
-              getValue={bucket => Math.round(Number(bucket?.averageAccuracy || 0) * 100)}
-              showPercent
+              colors={colors}
             />
-            <SimpleBarList
+            <MetricAverageBarList
               title="Theo độ khó"
               buckets={lifetime?.byDifficulty || []}
               bucketType="difficulty"
-              getValue={bucket => Math.round(Number(bucket?.averageAccuracy || 0) * 100)}
-              showPercent
+              colors={colors}
             />
           </View>
 
@@ -1217,6 +1709,7 @@ export default function WorkspaceStatisticsPanel({
   const [error, setError] = useState('');
   const [attemptMode, setAttemptMode] = useState('ALL');
   const [surface, setSurface] = useState('QUESTION');
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
 
   const fetchQuestionModeStats = useCallback(async (mode: string) => {
     try {
@@ -1360,6 +1853,17 @@ export default function WorkspaceStatisticsPanel({
   const currentWorkspaceName =
     questionStats?.workspaceName || quizStats?.workspaceName || 'Workspace';
 
+  const totalAttempts = Number(
+    questionStats?.lifetimeQuestionAttemptStats?.totalQuestionAttempts ??
+      questionStats?.lifetimeQuestionAttemptStats?.totalAttempts ??
+      0,
+  );
+  const showWelcome =
+    surface === 'QUESTION' &&
+    hasCurrentSurfaceData &&
+    !welcomeDismissed &&
+    totalAttempts <= 5;
+
   if (loading) {
     return (
       <View
@@ -1424,6 +1928,17 @@ export default function WorkspaceStatisticsPanel({
             Dashboard cá nhân
           </Text>
           <Text style={styles.heroWorkspace}>{currentWorkspaceName}</Text>
+          <View style={styles.heroPillRow}>
+            <View
+              style={[
+                styles.heroPill,
+                {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
+              ]}>
+              <Text style={[styles.heroPillText, {color: colors.textSecondary}]}>
+                {ATTEMPT_MODES.find(mode => mode.value === attemptMode)?.label || 'Tất cả'}
+              </Text>
+            </View>
+          </View>
           <Text style={[styles.heroDescription, {color: colors.textSecondary}]}>
             {
               SURFACES.find(item => item.value === surface)?.description
@@ -1442,6 +1957,10 @@ export default function WorkspaceStatisticsPanel({
         onChange={setAttemptMode}
         colors={colors}
       />
+
+      {showWelcome ? (
+        <WelcomeCard colors={colors} onDismiss={() => setWelcomeDismissed(true)} />
+      ) : null}
 
       {!hasCurrentSurfaceData ? (
         <View
@@ -1483,6 +2002,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     padding: Spacing.lg,
     flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: Spacing.md,
   },
   heroIconWrap: {
@@ -1495,6 +2015,7 @@ const styles = StyleSheet.create({
   },
   heroContent: {
     flex: 1,
+    minWidth: 0,
   },
   heroTitle: {
     fontSize: 22,
@@ -1512,6 +2033,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     color: '#64748B',
+  },
+  heroPillRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  heroPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  heroPillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   surfaceGrid: {
     gap: Spacing.sm,
@@ -1544,6 +2081,7 @@ const styles = StyleSheet.create({
   },
   surfaceContent: {
     flex: 1,
+    minWidth: 0,
   },
   surfaceTitle: {
     fontSize: 15,
@@ -1558,6 +2096,7 @@ const styles = StyleSheet.create({
   },
   segmentWrap: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1566,6 +2105,7 @@ const styles = StyleSheet.create({
   },
   segmentButton: {
     flex: 1,
+    minWidth: 0,
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 8,
@@ -1585,7 +2125,25 @@ const styles = StyleSheet.create({
   summaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
     gap: Spacing.sm,
+  },
+  forcedTwoColGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  forcedTwoColItem: {
+    width: '47%',
+    marginBottom: Spacing.sm,
+  },
+  forcedTwoColCenterRow: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  summaryCenteredRow: {
+    width: '100%',
+    alignItems: 'center',
   },
   statCard: {
     borderRadius: 24,
@@ -1654,6 +2212,43 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: '#475569',
+  },
+  welcomeCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: Spacing.md,
+  },
+  welcomeHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  welcomeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  welcomeTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  welcomeDesc: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  welcomeClose: {
+    width: 30,
+    height: 30,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionCard: {
     borderRadius: 28,
@@ -1756,6 +2351,17 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
     marginTop: 10,
+    alignItems: 'center',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
   },
   legendText: {
     fontSize: 11,
@@ -1841,6 +2447,7 @@ const styles = StyleSheet.create({
   },
   quizName: {
     flex: 1,
+    minWidth: 0,
     fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
