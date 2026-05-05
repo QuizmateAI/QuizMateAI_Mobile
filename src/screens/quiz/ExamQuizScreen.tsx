@@ -14,6 +14,7 @@ import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Button from '../../components/ui/Button';
+import Dialog from '../../components/ui/Dialog';
 import QuestionCard from '../../components/features/QuestionCard';
 import QuizAPI from '../../api/QuizAPI';
 import ChallengeAPI from '../../api/ChallengeAPI';
@@ -49,6 +50,13 @@ export default function ExamQuizScreen({navigation, route}: any) {
   >({});
   const [attemptId, setAttemptId] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [assessmentWarning, setAssessmentWarning] = useState<{
+    shouldWarnNotAssessed?: boolean;
+    minAnsweredPercent?: number;
+    currentAnsweredPercent?: number;
+  } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
   const attemptIdRef = useRef<number | null>(null);
   const currentIndexRef = useRef(0);
@@ -590,6 +598,39 @@ export default function ExamQuizScreen({navigation, route}: any) {
     }
   };
 
+  const openSubmitConfirm = async () => {
+    if (!attemptId) {
+      showToast('Thiếu lượt làm bài thi', 'error');
+      return;
+    }
+    setAssessmentWarning(null);
+    setConfirmSubmitOpen(true);
+    try {
+      const res = await QuizAPI.getAttemptAssessmentWarning(attemptId);
+      // eslint-disable-next-line no-console
+      console.log('[assessment-warning] payload:', res?.data);
+      setAssessmentWarning(res?.data || null);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[assessment-warning] failed:', err);
+      // BE lỗi → không hiện cảnh báo, không chặn submit.
+      setAssessmentWarning(null);
+    }
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (submitting) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await handleSubmit();
+    } finally {
+      setSubmitting(false);
+      setConfirmSubmitOpen(false);
+    }
+  };
+
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -613,9 +654,9 @@ export default function ExamQuizScreen({navigation, route}: any) {
             <View
               style={[
                 styles.startIcon,
-                {backgroundColor: isDark ? 'rgba(234,88,12,0.15)' : '#FFF7ED'},
+                {backgroundColor: isDark ? 'rgba(37,99,235,0.15)' : '#EFF6FF'},
               ]}>
-              <Icon name="timer-outline" size={40} color="#EA580C" />
+              <Icon name="timer-outline" size={40} color={Colors.primary} />
             </View>
             <Text style={[styles.startTitle, {color: colors.heading}]}>
               {title || quiz?.name}
@@ -637,9 +678,9 @@ export default function ExamQuizScreen({navigation, route}: any) {
               </View>
             </View>
             <Button
-              title="Bắt đầu thi"
+              title="Bắt đầu bài kiểm tra"
               onPress={handleStart}
-              style={{...styles.startBtn, backgroundColor: '#EA580C'}}
+              style={styles.startBtn}
             />
             <Button
               title="Quay lại"
@@ -671,7 +712,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
           <Icon name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, {color: colors.heading}]} numberOfLines={1}>
-          Thi thử
+          Kiểm tra
         </Text>
         <View
           style={[
@@ -824,9 +865,9 @@ export default function ExamQuizScreen({navigation, route}: any) {
         )}
         {currentIndex === questions.length - 1 ? (
           <Button
-            title="Nộp bài thi"
+            title="Nộp bài kiểm tra"
             size="md"
-            onPress={handleSubmit}
+            onPress={openSubmitConfirm}
             fullWidth={false}
             style={{
               flex: 1,
@@ -853,12 +894,94 @@ export default function ExamQuizScreen({navigation, route}: any) {
           />
         )}
       </View>
+      <Dialog
+        visible={confirmSubmitOpen}
+        onClose={() => (submitting ? undefined : setConfirmSubmitOpen(false))}
+        title="Dừng và nộp bài?">
+        <Text style={[styles.confirmDescription, {color: colors.textSecondary}]}>
+          Bài làm của bạn sẽ được nộp ngay lập tức.
+        </Text>
+        {assessmentWarning?.shouldWarnNotAssessed && (
+          <View
+            style={[
+              styles.warningBox,
+              {
+                backgroundColor: isDark ? '#3f1d1d' : '#fef2f2',
+                borderColor: Colors.error,
+              },
+            ]}>
+            <View style={styles.warningHeader}>
+              <Icon name="alert" size={18} color={Colors.error} />
+              <Text style={[styles.warningTitle, {color: Colors.error}]}>
+                Nộp bây giờ sẽ không được AI đánh giá
+              </Text>
+            </View>
+            <Text
+              style={[styles.warningBody, {color: colors.textSecondary}]}>
+              {`Đây là lần làm chính thức đầu tiên của bạn. Cần trả lời tối thiểu ${
+                assessmentWarning.minAnsweredPercent ?? ''
+              }% câu hỏi để AI tạo đánh giá. Hiện tại bạn mới trả lời ${Math.round(
+                assessmentWarning.currentAnsweredPercent ?? 0,
+              )}%. Nộp ngay sẽ mất luôn cơ hội nhận đánh giá AI cho bài quiz này.`}
+            </Text>
+          </View>
+        )}
+        <View style={styles.confirmActions}>
+          <Button
+            title="Hủy"
+            variant="outline"
+            size="md"
+            disabled={submitting}
+            onPress={() => setConfirmSubmitOpen(false)}
+            fullWidth={false}
+            style={{flex: 1}}
+          />
+          <Button
+            title={submitting ? 'Đang nộp...' : 'Nộp bài'}
+            size="md"
+            disabled={submitting}
+            onPress={handleConfirmSubmit}
+            fullWidth={false}
+            style={{flex: 1, backgroundColor: Colors.success}}
+          />
+        </View>
+      </Dialog>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {flex: 1},
+  confirmDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: Spacing.base,
+  },
+  warningBox: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    padding: Spacing.base,
+    marginBottom: Spacing.base,
+  },
+  warningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  warningTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  warningBody: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: Spacing.sm,
+  },
   startScreen: {
     flex: 1,
     justifyContent: 'center',

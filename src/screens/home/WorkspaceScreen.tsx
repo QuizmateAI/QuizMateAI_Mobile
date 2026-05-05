@@ -775,50 +775,115 @@ export default function WorkspaceScreen({navigation, route}: any) {
                     size="sm"
                   />
                 </View>
-                {quizzes.map((quiz: any) => (
-                  <TouchableOpacity
-                    key={quiz.id || quiz.quizId}
-                    onPress={() => openQuizModeSelector(quiz)}
-                    style={[
-                      styles.listItem,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.border,
-                      },
-                    ]}>
-                    <View
+                {quizzes.map((quiz: any) => {
+                  const rawStatus = String(
+                    quiz.status || quiz.final_status || '',
+                  ).toUpperCase();
+                  const isProcessing =
+                    rawStatus === 'PROCESSING' || rawStatus === 'PROCECCSING';
+                  const isFailed =
+                    rawStatus === 'ERROR' ||
+                    rawStatus === 'REJECT' ||
+                    rawStatus === 'REJECTED' ||
+                    rawStatus === 'WARN' ||
+                    rawStatus === 'WARNED';
+                  const isLocked = isProcessing || isFailed;
+
+                  const handlePress = () => {
+                    if (isProcessing) {
+                      showToast('Quiz đang được tạo, vui lòng đợi...', 'info');
+                      return;
+                    }
+                    if (isFailed) {
+                      showToast('Quiz tạo lỗi, không thể mở', 'error');
+                      return;
+                    }
+                    openQuizModeSelector(quiz);
+                  };
+
+                  return (
+                    <TouchableOpacity
+                      key={quiz.id || quiz.quizId}
+                      onPress={handlePress}
+                      activeOpacity={isLocked ? 1 : 0.7}
                       style={[
-                        styles.listItemIcon,
-                        {backgroundColor: '#2563EB15'},
+                        styles.listItem,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          opacity: isLocked ? 0.65 : 1,
+                        },
                       ]}>
-                      <Icon
-                        name="head-question-outline"
-                        size={18}
-                        color="#2563EB"
-                      />
-                    </View>
-                    <View style={styles.listItemContent}>
-                      <Text
-                        style={[styles.listItemTitle, {color: colors.heading}]}
-                        numberOfLines={1}>
-                        {quiz.name || quiz.title}
-                      </Text>
-                      <Text
+                      <View
                         style={[
-                          styles.listItemSub,
-                          {color: colors.textSecondary},
+                          styles.listItemIcon,
+                          {
+                            backgroundColor: isProcessing
+                              ? '#F59E0B15'
+                              : isFailed
+                              ? '#DC262615'
+                              : '#2563EB15',
+                          },
                         ]}>
-                        {quiz.questionCount || quiz.totalQuestions || 0}{' '}
-                            câu hỏi
-                      </Text>
-                    </View>
-                    <Icon
-                      name="chevron-right"
-                      size={20}
-                      color={colors.textTertiary}
-                    />
-                  </TouchableOpacity>
-                ))}
+                        {isProcessing ? (
+                          <ActivityIndicator size="small" color="#F59E0B" />
+                        ) : (
+                          <Icon
+                            name={
+                              isFailed
+                                ? 'alert-circle-outline'
+                                : 'head-question-outline'
+                            }
+                            size={18}
+                            color={isFailed ? '#DC2626' : '#2563EB'}
+                          />
+                        )}
+                      </View>
+                      <View style={styles.listItemContent}>
+                        <Text
+                          style={[
+                            styles.listItemTitle,
+                            {color: colors.heading},
+                          ]}
+                          numberOfLines={1}>
+                          {quiz.name || quiz.title}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.listItemSub,
+                            {
+                              color: isProcessing
+                                ? '#F59E0B'
+                                : isFailed
+                                ? '#DC2626'
+                                : colors.textSecondary,
+                            },
+                          ]}>
+                          {isProcessing
+                            ? 'Đang tạo bằng AI…'
+                            : isFailed
+                            ? 'Tạo quiz thất bại'
+                            : `${
+                                quiz.questionCount || quiz.totalQuestions || 0
+                              } câu hỏi`}
+                        </Text>
+                      </View>
+                      {isLocked ? (
+                        <Icon
+                          name={isProcessing ? 'progress-clock' : 'lock-outline'}
+                          size={20}
+                          color={isProcessing ? '#F59E0B' : '#DC2626'}
+                        />
+                      ) : (
+                        <Icon
+                          name="chevron-right"
+                          size={20}
+                          color={colors.textTertiary}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </>
             )}
 
