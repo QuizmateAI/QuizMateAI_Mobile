@@ -331,6 +331,16 @@ const QuizAPI = {
       ...res,
       data: res.data?.data,
     })),
+  getAttemptAssessmentWarning: (attemptId: number) =>
+    api.get(`/api/quiz-attempts/${attemptId}/assessment-warning`).then(res => ({
+      ...res,
+      data: res.data?.data,
+    })),
+  getVoiceEligibility: (quizId: number) =>
+    api.get(`/api/quiz/${quizId}/voice-eligibility`).then(res => ({
+      ...res,
+      data: res.data?.data,
+    })),
   getResult: (attemptId: number) =>
     api.get(`/api/quiz-attempts/${attemptId}/result`).then(res => {
       const raw = res.data?.data || {};

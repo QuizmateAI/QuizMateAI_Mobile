@@ -626,13 +626,13 @@ export default function QuizResultScreen({navigation, route}: any) {
               ? 'Cố gắng thêm!'
               : 'Hoàn thành quiz'}
           </Text>
-          <Text style={[styles.scoreSubtitle, {color: c.title}]}>
-            {statusVariant === 'pass'
-              ? 'Bạn đã vượt qua bài quiz!'
-              : statusVariant === 'fail'
-              ? 'Đừng bỏ cuộc, luyện tập sẽ giúp bạn tiến bộ!'
-              : 'Quiz này không có ngưỡng đậu. Kết quả được hiển thị theo độ chính xác.'}
-          </Text>
+          {statusVariant === 'pass' || statusVariant === 'fail' ? (
+            <Text style={[styles.scoreSubtitle, {color: c.title}]}>
+              {statusVariant === 'pass'
+                ? 'Bạn đã vượt qua bài quiz!'
+                : 'Đừng bỏ cuộc, luyện tập sẽ giúp bạn tiến bộ!'}
+            </Text>
+          ) : null}
         </View>
 
         {/* Stats */}

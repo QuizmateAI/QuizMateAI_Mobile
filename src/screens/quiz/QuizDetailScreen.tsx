@@ -314,6 +314,42 @@ function isAnswerCorrect(answer: any) {
   );
 }
 
+type MatchingPairItem = {leftKey: string; rightKey: string};
+
+function extractMatchingPairs(answers: any[]): MatchingPairItem[] {
+  const correctAnswer = answers.find(isAnswerCorrect) || answers[0];
+  if (!correctAnswer) {
+    return [];
+  }
+
+  const direct = correctAnswer.matchingPairs;
+  if (Array.isArray(direct)) {
+    return direct
+      .map((p: any) => ({
+        leftKey: String(p?.leftKey ?? p?.left ?? '').trim(),
+        rightKey: String(p?.rightKey ?? p?.right ?? '').trim(),
+      }))
+      .filter(p => p.leftKey && p.rightKey);
+  }
+
+  const raw = correctAnswer.content;
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.pairs) ? parsed.pairs : [];
+    return list
+      .map((p: any) => ({
+        leftKey: String(p?.leftKey ?? p?.left ?? '').trim(),
+        rightKey: String(p?.rightKey ?? p?.right ?? '').trim(),
+      }))
+      .filter((p: MatchingPairItem) => p.leftKey && p.rightKey);
+  } catch {
+    return [];
+  }
+}
+
 function getExplanationText(question: any, answers: any[] = []) {
   const answerExplanationSource =
     answers.find(isAnswerCorrect) ||
@@ -860,14 +896,35 @@ export default function QuizDetailScreen({navigation, route}: any) {
   const learningContext = buildLearningContext(params, effectiveQuiz);
   const questionCount = getQuestionCount(effectiveQuiz, sections);
 
-  const infoItems = useMemo(
-    () => [
+  const infoItems = useMemo(() => {
+    const rawPassScore = effectiveQuiz?.passScore ?? effectiveQuiz?.passingScore;
+    const passScoreNum = Number(rawPassScore);
+    const hasPassScore = Number.isFinite(passScoreNum) && passScoreNum > 0;
+    const isMockTest = normalizedIntent === 'MOCK_TEST';
+    const maxScoreNum = Number(effectiveQuiz?.maxScore);
+    const hasMaxScore = Number.isFinite(maxScoreNum) && maxScoreNum > 0;
+
+    const passScoreItem = hasPassScore
+      ? [
+          {
+            icon: 'target',
+            label: 'Điểm đậu',
+            value: isMockTest
+              ? hasMaxScore
+                ? `${passScoreNum} / ${maxScoreNum}`
+                : `${passScoreNum} điểm`
+              : `${passScoreNum}%`,
+          },
+        ]
+      : [];
+
+    return [
       {
-        icon: 'creation-outline',
+        icon: 'creation',
         label: 'Nguồn',
         value:
           String(effectiveQuiz?.createVia || '').toUpperCase() === 'AI'
-            ? 'QUIZMATE AI'
+            ? 'AI'
             : 'Manual Quiz',
       },
       {
@@ -895,11 +952,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
         label: 'Độ khó tổng thể',
         value: getDifficultyLabel(effectiveQuiz?.overallDifficulty || effectiveQuiz?.difficulty),
       },
-      {
-        icon: 'target',
-        label: 'Điểm đậu (0-10)',
-        value: firstText(effectiveQuiz?.passScore, effectiveQuiz?.passingScore, 'Không rõ'),
-      },
+      ...passScoreItem,
       {
         icon: 'repeat',
         label: 'Số lần tối đa',
@@ -915,9 +968,8 @@ export default function QuizDetailScreen({navigation, route}: any) {
         label: 'Câu hỏi',
         value: `${questionCount}`,
       },
-    ],
-    [durationInMinutes, effectiveQuiz, history, normalizedIntent, params, questionCount],
-  );
+    ];
+  }, [durationInMinutes, effectiveQuiz, history, normalizedIntent, params, questionCount]);
   const visibleTabs = useMemo(
     () => tabs.filter(tab => tab.key !== 'discussion' || isGroupContext),
     [isGroupContext],
@@ -2049,7 +2101,48 @@ export default function QuizDetailScreen({navigation, route}: any) {
                               </View>
                               {expanded ? (
                                 <View style={styles.answerList}>
-                                {answers.length > 0 ? (
+                                {type === 'MATCHING' ? (() => {
+                                  const pairs = extractMatchingPairs(answers);
+                                  if (pairs.length === 0) {
+                                    return (
+                                      <Text style={[styles.noAnswerText, {color: colors.textSecondary}]}>
+                                        Câu hỏi chưa có dữ liệu ghép cặp.
+                                      </Text>
+                                    );
+                                  }
+                                  return pairs.map((pair, pairIndex) => (
+                                    <View
+                                      key={`${pair.leftKey}-${pairIndex}`}
+                                      style={[
+                                        styles.matchingPairRow,
+                                        {
+                                          backgroundColor: isDark ? 'rgba(16,185,129,0.16)' : '#ECFDF5',
+                                          borderColor: isDark ? 'rgba(52,211,153,0.45)' : '#A7F3D0',
+                                        },
+                                      ]}>
+                                      <View style={[styles.matchingPairBadge, {backgroundColor: isDark ? 'rgba(52,211,153,0.25)' : '#A7F3D0'}]}>
+                                        <Text style={[styles.matchingPairBadgeText, {color: isDark ? '#A7F3D0' : '#047857'}]}>
+                                          {pairIndex + 1}
+                                        </Text>
+                                      </View>
+                                      <Text
+                                        style={[styles.matchingPairLeft, {color: isDark ? '#A7F3D0' : '#047857'}]}
+                                        numberOfLines={3}>
+                                        {pair.leftKey}
+                                      </Text>
+                                      <Icon
+                                        name="arrow-right"
+                                        size={16}
+                                        color={isDark ? '#34D399' : '#059669'}
+                                      />
+                                      <Text
+                                        style={[styles.matchingPairRight, {color: isDark ? '#D1FAE5' : '#065F46'}]}
+                                        numberOfLines={3}>
+                                        {pair.rightKey}
+                                      </Text>
+                                    </View>
+                                  ));
+                                })() : answers.length > 0 ? (
                                   answers.map((answer: any, answerIndex: number) => {
                                     const correct = isAnswerCorrect(answer);
                                     return (
@@ -2752,6 +2845,25 @@ const styles = StyleSheet.create({
   answerPrefix: {width: 18, fontSize: 12, fontWeight: '800'},
   answerText: {flex: 1, fontSize: 13, lineHeight: 18},
   noAnswerText: {fontSize: 13, fontStyle: 'italic'},
+  matchingPairRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+  },
+  matchingPairBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matchingPairBadgeText: {fontSize: 11, fontWeight: '800'},
+  matchingPairLeft: {flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '700'},
+  matchingPairRight: {flex: 1, fontSize: 13, lineHeight: 18},
   correctAnswerBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',

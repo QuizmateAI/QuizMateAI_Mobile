@@ -1,7 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Client, IMessage, StompSubscription} from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
 import {API_URL, WS_URL} from '@env';
 
 type MaterialCallback = (payload: any) => void;
@@ -190,44 +189,47 @@ function isRoadmapScopedProgressPayload(payload: any, processingObject: any = {}
   );
 }
 
-type WebSocketTransport = 'sockjs' | 'native';
+const WS_LOG_PREFIX = '[WS]';
 
-function buildWebSocketConfig(): {url: string; transport: WebSocketTransport} {
+function wsLog(...args: any[]) {
+  console.log(WS_LOG_PREFIX, ...args);
+}
+function wsWarn(...args: any[]) {
+  console.warn(WS_LOG_PREFIX, ...args);
+}
+function wsError(...args: any[]) {
+  console.error(WS_LOG_PREFIX, ...args);
+}
+
+function summarizeBody(body: string | undefined | null): string {
+  if (!body) {
+    return '<empty>';
+  }
+  if (body.length <= 240) {
+    return body;
+  }
+  return `${body.slice(0, 240)}…(+${body.length - 240} chars)`;
+}
+
+function buildWebSocketUrl(): string {
   const explicitWsUrl = String(WS_URL || '').trim();
   if (explicitWsUrl) {
-    const normalizedUrl = explicitWsUrl.replace(/\/websocket$/i, '');
-    if (normalizedUrl.startsWith('ws://')) {
-      return {
-        url: normalizedUrl.replace(/^ws:\/\//i, 'http://'),
-        transport: 'sockjs',
-      };
+    let url = explicitWsUrl.replace(/\/websocket$/i, '');
+    if (url.startsWith('http://')) {
+      url = `ws://${url.slice('http://'.length)}`;
+    } else if (url.startsWith('https://')) {
+      url = `wss://${url.slice('https://'.length)}`;
     }
-    if (normalizedUrl.startsWith('wss://')) {
-      return {
-        url: normalizedUrl.replace(/^wss:\/\//i, 'https://'),
-        transport: 'sockjs',
-      };
-    }
-
-    return {
-      url: normalizedUrl,
-      transport: 'sockjs',
-    };
+    return url;
   }
 
   const baseUrl = API_URL || 'http://localhost:8080/api';
   try {
-    const normalizedUrl = new URL(baseUrl);
-    // Always resolve WS endpoint at server root to avoid API path variants (/api, /api/v1, ...).
-    return {
-      url: `${normalizedUrl.origin}/ws-quiz`,
-      transport: 'sockjs',
-    };
+    const parsed = new URL(baseUrl);
+    const wsScheme = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsScheme}//${parsed.host}/ws-quiz-native`;
   } catch {
-    return {
-      url: 'http://localhost:8080/ws-quiz',
-      transport: 'sockjs',
-    };
+    return 'ws://localhost:8080/ws-quiz-native';
   }
 }
 
@@ -314,7 +316,8 @@ export default function useWebSocket({
     }
 
     let disposed = false;
-    const wsConfig = buildWebSocketConfig();
+    const wsUrl = buildWebSocketUrl();
+    wsLog('init', {wsUrl, workspaceId, groupId, enabled});
 
     const connect = async () => {
       const token =
@@ -323,26 +326,44 @@ export default function useWebSocket({
       const connectHeaders: Record<string, string> | undefined = token
         ? {Authorization: `Bearer ${token}`}
         : undefined;
+      wsLog('connecting', {url: wsUrl, hasToken: Boolean(token)});
 
       const stompClient = new Client({
-        webSocketFactory: () =>
-          wsConfig.transport === 'native'
-            ? new WebSocket(wsConfig.url)
-            : new SockJS(wsConfig.url),
+        webSocketFactory: () => {
+          wsLog('opening WebSocket', wsUrl);
+          const socket = new WebSocket(wsUrl);
+          socket.onopen = () => wsLog('socket open');
+          socket.onclose = ev =>
+            wsLog('socket close', {code: ev?.code, reason: ev?.reason});
+          return socket as any;
+        },
         connectHeaders,
         reconnectDelay: 5000,
         heartbeatIncoming: 4000,
         heartbeatOutgoing: 4000,
-        onConnect: () => {
+        debug: msg => {
+          if (__DEV__) {
+            wsLog('stomp', msg);
+          }
+        },
+        onConnect: frame => {
           if (disposed) {
+            wsLog('onConnect ignored (disposed)');
             return;
           }
 
+          wsLog('connected', {
+            server: frame?.headers?.server,
+            version: frame?.headers?.version,
+            userId: frame?.headers?.['user-name'],
+          });
           setIsConnected(true);
 
+          wsLog('subscribe', '/user/queue/progress');
           const progressSub = stompClient.subscribe(
             '/user/queue/progress',
             message => {
+              wsLog('recv /user/queue/progress', summarizeBody(message.body));
               try {
                 const response = JSON.parse(message.body);
                 const status = extractStatusFromProgressEnvelope(response);
@@ -380,35 +401,45 @@ export default function useWebSocket({
                 ) {
                   callbackRefs.current.onMaterialUpdated?.({...payload, status});
                 }
-              } catch {
-                // Ignore malformed progress payload.
+              } catch (err) {
+                wsWarn('progress parse error', err);
               }
             },
           );
           subscriptionsRef.current.push(progressSub);
 
           if (workspaceId) {
+            const workspaceTopic = `/topic/workspace/${workspaceId}/material`;
+            wsLog('subscribe', workspaceTopic);
             const workspaceSub = stompClient.subscribe(
-              `/topic/workspace/${workspaceId}/material`,
-              parseAndDispatchTopicMessage,
+              workspaceTopic,
+              message => {
+                wsLog(`recv ${workspaceTopic}`, summarizeBody(message.body));
+                parseAndDispatchTopicMessage(message);
+              },
             );
             subscriptionsRef.current.push(workspaceSub);
           }
 
           if (groupId) {
-            const groupSub = stompClient.subscribe(
-              `/topic/group/${groupId}/material`,
-              parseAndDispatchTopicMessage,
-            );
+            const groupTopic = `/topic/group/${groupId}/material`;
+            wsLog('subscribe', groupTopic);
+            const groupSub = stompClient.subscribe(groupTopic, message => {
+              wsLog(`recv ${groupTopic}`, summarizeBody(message.body));
+              parseAndDispatchTopicMessage(message);
+            });
             subscriptionsRef.current.push(groupSub);
           }
 
           const workspaceTopicId = workspaceId || groupId;
 
           if (workspaceTopicId && callbackRefs.current.onDiscussionUpdate) {
+            const discussionTopic = `/topic/workspace/${workspaceTopicId}/discussion`;
+            wsLog('subscribe', discussionTopic);
             const discussionSub = stompClient.subscribe(
-              `/topic/workspace/${workspaceTopicId}/discussion`,
+              discussionTopic,
               message => {
+                wsLog(`recv ${discussionTopic}`, summarizeBody(message.body));
                 try {
                   const data = JSON.parse(message.body);
                   setLastMessage({
@@ -417,8 +448,8 @@ export default function useWebSocket({
                     timestamp: Date.now(),
                   });
                   callbackRefs.current.onDiscussionUpdate?.(data);
-                } catch {
-                  // Ignore malformed discussion payload.
+                } catch (err) {
+                  wsWarn('discussion parse error', err);
                 }
               },
             );
@@ -426,9 +457,12 @@ export default function useWebSocket({
           }
 
           if (workspaceTopicId && callbackRefs.current.onChallengeUpdate) {
+            const challengeTopic = `/topic/workspace/${workspaceTopicId}/challenge`;
+            wsLog('subscribe', challengeTopic);
             const challengeSub = stompClient.subscribe(
-              `/topic/workspace/${workspaceTopicId}/challenge`,
+              challengeTopic,
               message => {
+                wsLog(`recv ${challengeTopic}`, summarizeBody(message.body));
                 try {
                   const data = JSON.parse(message.body);
                   setLastMessage({
@@ -437,28 +471,37 @@ export default function useWebSocket({
                     timestamp: Date.now(),
                   });
                   callbackRefs.current.onChallengeUpdate?.(data);
-                } catch {
-                  // Ignore malformed challenge payload.
+                } catch (err) {
+                  wsWarn('challenge parse error', err);
                 }
               },
             );
             subscriptionsRef.current.push(challengeSub);
           }
         },
-        onDisconnect: () => {
+        onDisconnect: frame => {
+          wsLog('disconnected', {receipt: frame?.headers?.['receipt-id']});
           if (!disposed) {
             setIsConnected(false);
           }
         },
-        onStompError: () => {
+        onStompError: frame => {
+          wsError('STOMP error', {
+            message: frame?.headers?.message,
+            body: summarizeBody(frame?.body),
+          });
           if (!disposed) {
             setIsConnected(false);
           }
         },
-        onWebSocketError: () => {
+        onWebSocketError: ev => {
+          wsError('WebSocket error', (ev as any)?.message ?? ev);
           if (!disposed) {
             setIsConnected(false);
           }
+        },
+        onWebSocketClose: ev => {
+          wsLog('WebSocket closed', {code: ev?.code, reason: ev?.reason});
         },
       });
 
@@ -469,14 +512,15 @@ export default function useWebSocket({
     connect();
 
     return () => {
+      wsLog('cleanup', {workspaceId, groupId});
       disposed = true;
       setIsConnected(false);
 
       subscriptionsRef.current.forEach(sub => {
         try {
           sub.unsubscribe();
-        } catch {
-          // No-op
+        } catch (err) {
+          wsWarn('unsubscribe error', err);
         }
       });
       subscriptionsRef.current = [];
@@ -493,13 +537,16 @@ export default function useWebSocket({
   const send = useCallback((destination: string, body: any) => {
     const client = stompClientRef.current;
     if (!client?.connected) {
+      wsWarn('send blocked — not connected', {destination});
       return false;
     }
 
+    const finalDestination = destination.startsWith('/app')
+      ? destination
+      : `/app${destination}`;
+    wsLog('send', finalDestination, summarizeBody(JSON.stringify(body)));
     client.publish({
-      destination: destination.startsWith('/app')
-        ? destination
-        : `/app${destination}`,
+      destination: finalDestination,
       body: JSON.stringify(body),
     });
 

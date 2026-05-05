@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -166,6 +167,11 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   const [voiceConfigDraft, setVoiceConfigDraft] = useState<VoicePracticeConfig>(
     createDefaultVoicePracticeConfig(),
   );
+  const [submitting, setSubmitting] = useState(false);
+  const [voiceEligibility, setVoiceEligibility] = useState<{
+    canUseVoice: boolean;
+    reason?: string;
+  } | null>(null);
 
   const handleBack = useCallback(() => {
     if (quizDetailParams?.quizId) {
@@ -255,6 +261,27 @@ export default function PracticeQuizScreen({navigation, route}: any) {
       )
       .finally(() => setLoading(false));
   }, [quizId, showToast]);
+
+  useEffect(() => {
+    let active = true;
+    QuizAPI.getVoiceEligibility(Number(quizId))
+      .then((res: any) => {
+        if (!active) {
+          return;
+        }
+        setVoiceEligibility(res?.data || null);
+      })
+      .catch(() => {
+        // Lỗi BE → mặc định cho phép, không chặn user.
+        if (!active) {
+          return;
+        }
+        setVoiceEligibility({canUseVoice: true});
+      });
+    return () => {
+      active = false;
+    };
+  }, [quizId]);
 
   const handleStart = async () => {
     try {
@@ -500,6 +527,22 @@ export default function PracticeQuizScreen({navigation, route}: any) {
     }
   };
 
+  const handleSubmitGuarded = async () => {
+    if (submitting) {
+      return;
+    }
+    if (!attemptId) {
+      showToast('Không tìm thấy lượt làm bài', 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await handleSubmit();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleNext = () => {
     const currentQuestion = questions[currentIndex];
     if (currentQuestion && !submittedQuestionIds[currentQuestion.id]) {
@@ -517,6 +560,15 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   };
 
   const openVoiceConfigDialog = () => {
+    if (voiceEligibility && voiceEligibility.canUseVoice === false) {
+      Alert.alert(
+        'Không thể luyện tập bằng giọng nói',
+        voiceEligibility.reason ||
+          'Quiz có dạng câu hỏi không hỗ trợ làm bằng giọng nói (ghép cặp hoặc dựa trên hình ảnh). Vui lòng chọn "Luyện tập thường".',
+        [{text: 'Đã hiểu'}],
+      );
+      return;
+    }
     setVoiceConfigDraft(voiceConfig);
     setVoiceConfigDialogVisible(true);
   };
@@ -1005,9 +1057,10 @@ export default function PracticeQuizScreen({navigation, route}: any) {
         {currentIndex === questions.length - 1 ? (
           isCurrentSubmitted ? (
             <Button
-              title="Nộp bài"
+              title={submitting ? 'Đang nộp...' : 'Nộp bài'}
               size="md"
-              onPress={handleSubmit}
+              disabled={submitting}
+              onPress={handleSubmitGuarded}
               fullWidth={false}
               style={{flex: 1, backgroundColor: Colors.success}}
             />
