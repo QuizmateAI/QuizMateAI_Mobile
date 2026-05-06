@@ -244,6 +244,18 @@ export const isTextAnswerQuestion = (question: any) => {
   );
 };
 
+export const isShortAnswerQuestion = (question: any) => {
+  const type = normalizeQuestionType(question);
+  return (
+    type === 'SHORT_ANSWER' ||
+    type === 'SHORTANSWER' ||
+    type === 'SHORT_ANSWERS' ||
+    type === 'TRA_LOI_NGAN' ||
+    type === 'CAU_TRA_LOI_NGAN' ||
+    question?.questionTypeId === QUESTION_TYPE_IDS.SHORT_ANSWER
+  );
+};
+
 export const isMatchingQuestion = (question: any) =>
   normalizeQuestionType(question) === 'MATCHING' || hasMatchingPayload(question);
 
@@ -335,11 +347,14 @@ export const buildVoiceFeedbackPrompt = (response: any) => {
         .filter(Boolean)
         .join('. ')
     : '';
+  const answerLabel = response?.questionTypeId === QUESTION_TYPE_IDS.SHORT_ANSWER
+    ? 'Đáp án mong đợi là'
+    : 'Đáp án đúng là';
 
   return joinSpeechParts([
     response?.feedback || correctness,
     !response?.correct && correctAnswerContent
-      ? `Đáp án đúng là ${correctAnswerContent}.`
+      ? `${answerLabel} ${correctAnswerContent}.`
       : null,
     response?.explanation ? `Giải thích. ${response.explanation}` : null,
   ]);

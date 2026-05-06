@@ -28,8 +28,13 @@ import QuizAPI from '../../api/QuizAPI';
 import FlashcardAPI from '../../api/FlashcardAPI';
 import RoadmapAPI from '../../api/RoadmapAPI';
 import ChallengeAPI from '../../api/ChallengeAPI';
+import GroupWorkspaceProfileAPI from '../../api/GroupWorkspaceProfileAPI';
 import useWebSocket from '../../hooks/useWebSocket';
 import {isDeletedMaterial} from '../../api/MaterialAPI';
+import {
+  deriveWorkspaceSetupState,
+  getSetupLockMessage,
+} from '../../utils/workspaceSetup';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -133,6 +138,9 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const [rankingDetailLoading, setRankingDetailLoading] = useState(false);
   const [groupLogs, setGroupLogs] = useState<any[]>([]);
   const [challenges, setChallenges] = useState<any[]>([]);
+  const [profileStatusLoading, setProfileStatusLoading] = useState(true);
+  const [groupProfileCompleted, setGroupProfileCompleted] = useState<boolean | null>(null);
+  const [groupSetupSummary, setGroupSetupSummary] = useState('');
   const [challengeStatus, setChallengeStatus] = useState('SCHEDULED');
   const [challengeMode, setChallengeMode] = useState('ALL');
   const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
@@ -151,6 +159,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
   const [reviewingMaterialId, setReviewingMaterialId] = useState<number | null>(null);
   const latestFetchRequestIdRef = useRef(0);
+  const hasAutoOpenedWizardRef = useRef(false);
   const refreshRetryTimer1Ref = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -274,6 +283,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     if (!Number.isInteger(normalizedGroupId) || normalizedGroupId <= 0) {
       setLoading(false);
       setMembers([]);
+      setProfileStatusLoading(false);
       return;
     }
 
@@ -284,6 +294,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         GroupAPI.getDashboardSummary(normalizedGroupId),
         GroupAPI.getMembers(normalizedGroupId),
         MaterialAPI.getByWorkspace(normalizedGroupId),
+        GroupWorkspaceProfileAPI.getProfile(normalizedGroupId),
         GroupAPI.getMyPermissions(normalizedGroupId),
         QuizAPI.getByContext('GROUP', normalizedGroupId),
         FlashcardAPI.getByContext('GROUP', normalizedGroupId),
@@ -302,13 +313,27 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       const summaryRes = results[1].status === 'fulfilled' ? results[1].value : {data: null};
       const memRes = results[2].status === 'fulfilled' ? results[2].value : {data: []};
       const materialRes = results[3].status === 'fulfilled' ? results[3].value : {data: []};
-      const permissionRes = results[4].status === 'fulfilled' ? results[4].value : {data: null};
-      const quizRes = results[5].status === 'fulfilled' ? results[5].value : {data: []};
-      const fcRes = results[6].status === 'fulfilled' ? results[6].value : {data: []};
-      const rmRes = results[7].status === 'fulfilled' ? results[7].value : {data: []};
-      const rankingRes = results[8].status === 'fulfilled' ? results[8].value : {data: null};
-      const logsRes = results[9].status === 'fulfilled' ? results[9].value : {data: []};
-      const challengeRes = results[10].status === 'fulfilled' ? results[10].value : {data: []};
+      const profileRes = results[4].status === 'fulfilled' ? results[4].value : {data: null};
+      const permissionRes = results[5].status === 'fulfilled' ? results[5].value : {data: null};
+      const quizRes = results[6].status === 'fulfilled' ? results[6].value : {data: []};
+      const fcRes = results[7].status === 'fulfilled' ? results[7].value : {data: []};
+      const rmRes = results[8].status === 'fulfilled' ? results[8].value : {data: []};
+      const rankingRes = results[9].status === 'fulfilled' ? results[9].value : {data: null};
+      const logsRes = results[10].status === 'fulfilled' ? results[10].value : {data: []};
+      const challengeRes = results[11].status === 'fulfilled' ? results[11].value : {data: []};
+
+      if (results[4].status === 'fulfilled') {
+        const setupState = deriveWorkspaceSetupState(
+          profileRes?.data?.data || profileRes?.data || {},
+          'GROUP',
+        );
+        setGroupProfileCompleted(setupState.completed);
+        setGroupSetupSummary(setupState.summary);
+      } else {
+        setGroupProfileCompleted(null);
+        setGroupSetupSummary('');
+      }
+      setProfileStatusLoading(false);
 
       const permissionPayload = permissionRes?.data?.data || permissionRes?.data || {};
       const role = String(
@@ -378,6 +403,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       showToast('Không thể tải dữ liệu nhóm', 'error');
     } finally {
       if (requestId === latestFetchRequestIdRef.current) {
+        setProfileStatusLoading(false);
         setLoading(false);
       }
     }
@@ -459,6 +485,31 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   ).toUpperCase();
 
   const isLeader = canReviewMaterials || currentRoleLabel === 'LEADER';
+
+  useEffect(() => {
+    if (loading || profileStatusLoading) {
+      return;
+    }
+    if (hasAutoOpenedWizardRef.current) {
+      return;
+    }
+    if (groupProfileCompleted === false && isLeader) {
+      hasAutoOpenedWizardRef.current = true;
+      navigation.navigate('WorkspaceProfileWizard', {
+        workspaceId: normalizedGroupId,
+        title,
+        contextType: 'GROUP',
+      });
+    }
+  }, [
+    groupProfileCompleted,
+    isLeader,
+    loading,
+    navigation,
+    normalizedGroupId,
+    profileStatusLoading,
+    title,
+  ]);
 
   const rankingRows = useMemo(() => {
     if (Array.isArray(rankingData?.members)) {
@@ -762,6 +813,10 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   ]);
 
   const handleInvite = async () => {
+    if (groupProfileCompleted === false) {
+      showToast(getSetupLockMessage('GROUP', isLeader), 'info');
+      return;
+    }
     if (!inviteEmail.trim()) {return;}
     setInviting(true);
     try {
@@ -777,6 +832,10 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   };
 
   const handleUploadMaterial = async () => {
+    if (groupProfileCompleted === false) {
+      showToast(getSetupLockMessage('GROUP', isLeader), 'info');
+      return;
+    }
     try {
       const picked = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.allFiles],
@@ -810,6 +869,10 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   };
 
   const handleReviewMaterial = async (material: any, isApproved: boolean) => {
+    if (groupProfileCompleted === false) {
+      showToast(getSetupLockMessage('GROUP', isLeader), 'info');
+      return;
+    }
     const materialId = Number(material?.materialId || material?.id || 0);
     if (!materialId) {
       return;
@@ -834,6 +897,18 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   };
 
   const handleQuickAction = (key: string) => {
+    if (groupProfileCompleted === false) {
+      showToast(getSetupLockMessage('GROUP', isLeader), 'info');
+      if (isLeader) {
+        navigation.navigate('WorkspaceProfileWizard', {
+          workspaceId: normalizedGroupId,
+          title,
+          contextType: 'GROUP',
+        });
+      }
+      return;
+    }
+
     if (key === 'roadmap') {
       navigation.navigate('RoadmapJourney', {
         contextType: 'GROUP',
@@ -938,9 +1013,16 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         </View>
         {canReviewMaterials && (
           <TouchableOpacity
-            onPress={() => setInviteVisible(true)}
+            onPress={() => {
+              if (groupProfileCompleted === false) {
+                showToast(getSetupLockMessage('GROUP', isLeader), 'info');
+                return;
+              }
+              setInviteVisible(true);
+            }}
             style={[
               styles.inviteBtn,
+              groupProfileCompleted === false && styles.actionLocked,
               {
                 backgroundColor: isDark
                   ? 'rgba(37, 99, 235, 0.18)'
@@ -964,6 +1046,39 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         style={styles.mainContent}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
+        {groupProfileCompleted === false && (
+          <View
+            style={[
+              styles.setupGate,
+              {
+                backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+                borderColor: isDark ? '#334155' : '#BFDBFE',
+              },
+            ]}>
+            <View style={styles.setupGateHead}>
+              <Icon name="account-group-outline" size={18} color={Colors.primary} />
+              <Text style={[styles.setupGateTitle, {color: colors.heading}]}>
+                Cần thiết lập hồ sơ nhóm
+              </Text>
+            </View>
+            <Text style={[styles.setupGateText, {color: colors.textSecondary}]}>
+              {groupSetupSummary || getSetupLockMessage('GROUP', isLeader)}
+            </Text>
+            {isLeader ? (
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate('WorkspaceProfileWizard', {
+                    workspaceId: normalizedGroupId,
+                    title,
+                    contextType: 'GROUP',
+                  })
+                }
+                style={styles.setupGateAction}>
+                <Text style={styles.setupGateActionText}>Tiếp tục thiết lập</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
         {/* ───── CHAT TAB ───── */}
         {activeBottomTab === 'chat' && (
           <View>
@@ -975,17 +1090,29 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
               {QUICK_ACTIONS.map(action => (
                 <TouchableOpacity
                   key={action.key}
-                  activeOpacity={0.7}
+                  activeOpacity={groupProfileCompleted === false ? 1 : 0.7}
                   onPress={() => handleQuickAction(action.key)}
                   style={[
                     styles.quickAction,
+                    groupProfileCompleted === false && styles.actionLocked,
                     {
                       backgroundColor: isDark
                         ? `${action.color}15`
                         : `${action.color}10`,
                     },
                   ]}>
-                  <Icon name={action.icon} size={22} color={action.color} />
+                  <View style={styles.quickActionIconWrap}>
+                    <Icon name={action.icon} size={22} color={action.color} />
+                    {groupProfileCompleted === false ? (
+                      <View
+                        style={[
+                          styles.quickActionLockBadge,
+                          {backgroundColor: colors.surface},
+                        ]}>
+                        <Icon name="lock" size={10} color={colors.textSecondary} />
+                      </View>
+                    ) : null}
+                  </View>
                   <Text
                     style={[styles.quickActionLabel, {color: action.color}]}>
                     {action.label}
@@ -1027,7 +1154,12 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 <Text style={[styles.sectionTitle, {color: colors.heading}]}>
                   Quản trị nhóm
                 </Text>
-                <View style={styles.adminQuickGrid}>
+                <View
+                  pointerEvents={groupProfileCompleted === false ? 'none' : 'auto'}
+                  style={[
+                    styles.adminQuickGrid,
+                    groupProfileCompleted === false && styles.actionLocked,
+                  ]}>
                   <TouchableOpacity
                     onPress={() => setActiveBottomTab('sources')}
                     style={[styles.adminQuickBtn, {backgroundColor: colors.surface, borderColor: colors.border}]}>
@@ -2263,6 +2395,26 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   headerAction: {padding: Spacing.sm},
+  actionLocked: {opacity: 0.58},
+  setupGate: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.xs,
+  },
+  setupGateHead: {flexDirection: 'row', alignItems: 'center', gap: Spacing.xs},
+  setupGateTitle: {fontSize: 13, fontWeight: '700'},
+  setupGateText: {fontSize: 12, lineHeight: 17},
+  setupGateAction: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary,
+  },
+  setupGateActionText: {color: '#FFFFFF', fontSize: 12, fontWeight: '700'},
 
   mainContent: {flex: 1},
   scrollContent: {padding: Spacing.lg, paddingBottom: 160},
@@ -2279,6 +2431,17 @@ const styles = StyleSheet.create({
     flex: 1, minWidth: '45%',
     paddingVertical: Spacing.base, paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md, alignItems: 'center', gap: 6,
+  },
+  quickActionIconWrap: {position: 'relative'},
+  quickActionLockBadge: {
+    position: 'absolute',
+    right: -8,
+    top: -6,
+    width: 16,
+    height: 16,
+    borderRadius: 99,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   quickActionLabel: {fontSize: 12, fontWeight: '600'},
 

@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useTranslation} from 'react-i18next';
 import {
   ActivityIndicator,
   ScrollView,
@@ -29,6 +30,7 @@ import {
   getQuestionId,
   isMatchingQuestion,
   isMultipleChoiceQuestion,
+  isShortAnswerQuestion,
   isTextAnswerQuestion,
   resolveVoicePracticeConfig,
 } from '../../utils/voicePractice';
@@ -69,6 +71,7 @@ const getVoiceStateLabel = (voiceState: VoiceState) => {
 };
 
 export default function VoicePracticeQuizScreen({navigation, route}: any) {
+  const {t} = useTranslation();
   const {quizId, title, backContext, autoStart, voiceConfig: routeVoiceConfig} =
     route.params || {};
   const {isDark, colors} = useTheme();
@@ -595,7 +598,11 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
             questionId,
             audioFile,
           });
-          const response = res.data || {};
+          const response = {
+            ...(res.data || {}),
+            questionTypeId: question?.questionTypeId,
+            questionType: question?.questionType,
+          };
           if (token !== flowTokenRef.current || !isMountedRef.current) {
             return;
           }
@@ -770,6 +777,8 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
       if (isMatchingQuestion(question)) {
         const skipResponse = {
           questionId,
+          questionTypeId: question?.questionTypeId,
+          questionType: question?.questionType,
           skipped: true,
           submitted: false,
           skipReason: 'MATCHING_NOT_SUPPORTED',
@@ -1298,7 +1307,12 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
               {currentCorrectAnswerSummary &&
               (currentFeedback?.correct === false || currentFeedback?.skipped) ? (
                 <Text style={[styles.feedbackMeta, {color: currentFeedbackState.text}]}>
-                  Đáp án đúng: {currentCorrectAnswerSummary}
+                  {t(
+                    isShortAnswerQuestion(currentQuestion)
+                      ? 'quiz.expectedAnswerLabel'
+                      : 'quiz.correctAnswerLabel',
+                    isShortAnswerQuestion(currentQuestion) ? 'Expected answer' : 'Correct answer',
+                  )}: {currentCorrectAnswerSummary}
                 </Text>
               ) : null}
 

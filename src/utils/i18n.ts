@@ -72,6 +72,8 @@ const resources = {
         score: 'Score',
         correct: 'Correct',
         time: 'Time',
+        correctAnswerLabel: 'Correct answer',
+        expectedAnswerLabel: 'Expected answer',
       },
       quizResult: {
         aiAssessment: 'AI Assessment',
@@ -205,6 +207,8 @@ const resources = {
         score: 'Điểm',
         correct: 'Đúng',
         time: 'Thời gian',
+        correctAnswerLabel: 'Đáp án đúng',
+        expectedAnswerLabel: 'Đáp án mong đợi',
       },
       quizResult: {
         aiAssessment: 'Đánh giá AI',

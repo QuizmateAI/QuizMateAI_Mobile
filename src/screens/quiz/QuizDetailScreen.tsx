@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useTranslation} from 'react-i18next';
 import {
   Alert,
   findNodeHandle,
@@ -388,6 +389,11 @@ function getFallbackCorrectAnswers(question: any, answers: any[] = []) {
   return answers.filter(isAnswerCorrect).map(getAnswerText).filter(Boolean);
 }
 
+function isShortAnswerType(question: any) {
+  const type = firstText(question?.questionType, question?.type).trim().toUpperCase();
+  return type === 'TEXT' || type === 'SHORT_ANSWER' || type === 'SHORTANSWER';
+}
+
 function getQuestionKey(question: any, fallbackIndex: number) {
   return String(question?.id || question?.questionId || fallbackIndex);
 }
@@ -715,6 +721,7 @@ function buildLearningContext(params: QuizDetailParams, quiz: any) {
 
 export default function QuizDetailScreen({navigation, route}: any) {
   const params = useMemo<QuizDetailParams>(() => route.params || {}, [route.params]);
+  const {t} = useTranslation();
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
   const {user} = useAuth();
@@ -2201,7 +2208,12 @@ export default function QuizDetailScreen({navigation, route}: any) {
                                     <Icon name="check-circle-outline" size={18} color={isDark ? '#34D399' : '#059669'} />
                                     <View style={styles.correctAnswerContent}>
                                       <Text style={[styles.correctAnswerLabel, {color: isDark ? '#A7F3D0' : '#047857'}]}>
-                                        Đáp án đúng
+                                        {t(
+                                          isShortAnswerType(question)
+                                            ? 'quiz.expectedAnswerLabel'
+                                            : 'quiz.correctAnswerLabel',
+                                          isShortAnswerType(question) ? 'Expected answer' : 'Correct answer',
+                                        )}
                                       </Text>
                                       <Text style={[styles.correctAnswerText, {color: isDark ? '#D1FAE5' : '#065F46'}]}>
                                         {fallbackCorrectAnswers.join(' / ')}

@@ -28,6 +28,10 @@ import RoadmapAPI from '../../api/RoadmapAPI';
 import useWebSocket from '../../hooks/useWebSocket';
 import WorkspaceProfileAPI from '../../api/WorkspaceProfileAPI';
 import {isDeletedMaterial} from '../../api/MaterialAPI';
+import {
+  deriveWorkspaceSetupState,
+  getSetupLockMessage,
+} from '../../utils/workspaceSetup';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -67,6 +71,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
   const [roadmaps, setRoadmaps] = useState<any[]>([]);
   const [profileStatusLoading, setProfileStatusLoading] = useState(true);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
+  const [workspaceSetupSummary, setWorkspaceSetupSummary] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('chat');
   const [, setAccessHistory] = useState<WorkspaceActivity[]>([]);
@@ -241,15 +246,15 @@ export default function WorkspaceScreen({navigation, route}: any) {
           return;
         }
         const profile = profileRes.data?.data || profileRes.data || {};
-        const done =
-          profile?.onboardingCompleted === true ||
-          String(profile?.workspaceSetupStatus || '').toUpperCase() === 'DONE';
-        setOnboardingCompleted(Boolean(done));
+        const setupState = deriveWorkspaceSetupState(profile, 'WORKSPACE');
+        setOnboardingCompleted(setupState.completed);
+        setWorkspaceSetupSummary(setupState.summary);
       } catch {
         if (requestId !== latestFetchRequestIdRef.current) {
           return;
         }
         setOnboardingCompleted(null);
+        setWorkspaceSetupSummary('');
       } finally {
         if (requestId === latestFetchRequestIdRef.current) {
           setProfileStatusLoading(false);
@@ -557,6 +562,15 @@ export default function WorkspaceScreen({navigation, route}: any) {
   };
 
   const handleQuickAction = (key: string) => {
+    if (onboardingCompleted === false) {
+      showToast(getSetupLockMessage('WORKSPACE'), 'info');
+      navigation.navigate('WorkspaceProfileWizard', {
+        workspaceId,
+        title,
+      });
+      return;
+    }
+
     const labelMap: Record<string, string> = {
       roadmap: 'Lộ trình',
       quiz: 'Quiz',
@@ -688,9 +702,14 @@ export default function WorkspaceScreen({navigation, route}: any) {
             ]}>
             <View style={styles.onboardingBannerHead}>
               <Icon name="account-cog-outline" size={18} color={Colors.primary} />
-              <Text style={[styles.onboardingBannerTitle, {color: colors.heading}]}>Workspace Profile Setup Required</Text>
+              <Text style={[styles.onboardingBannerTitle, {color: colors.heading}]}>Cần thiết lập hồ sơ học tập</Text>
             </View>
-            <Text style={[styles.onboardingBannerText, {color: colors.textSecondary}]}>Complete onboarding profile so roadmap, AI quiz, and mock-test flows can run correctly.</Text>
+            <Text style={[styles.onboardingBannerText, {color: colors.textSecondary}]}>Hoàn tất hồ sơ để AI tạo lộ trình, quiz, flashcard và thi thử đúng ngữ cảnh.</Text>
+            {workspaceSetupSummary ? (
+              <Text style={[styles.onboardingBannerHint, {color: colors.textSecondary}]}>
+                {workspaceSetupSummary}
+              </Text>
+            ) : null}
             <TouchableOpacity
               onPress={() =>
                 navigation.navigate('WorkspaceProfileWizard', {
@@ -699,7 +718,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 })
               }
               style={styles.onboardingBannerAction}>
-              <Text style={styles.onboardingBannerActionText}>Open Setup</Text>
+              <Text style={styles.onboardingBannerActionText}>Mở thiết lập</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -715,17 +734,29 @@ export default function WorkspaceScreen({navigation, route}: any) {
               {QUICK_ACTIONS.map(action => (
                 <TouchableOpacity
                   key={action.key}
-                  activeOpacity={0.7}
+                  activeOpacity={onboardingCompleted === false ? 1 : 0.7}
                   onPress={() => handleQuickAction(action.key)}
                   style={[
                     styles.quickAction,
+                    onboardingCompleted === false && styles.quickActionLocked,
                     {
                       backgroundColor: isDark
                         ? `${action.color}15`
                         : `${action.color}10`,
                     },
                   ]}>
-                  <Icon name={action.icon} size={22} color={action.color} />
+                  <View style={styles.quickActionIconWrap}>
+                    <Icon name={action.icon} size={22} color={action.color} />
+                    {onboardingCompleted === false ? (
+                      <View
+                        style={[
+                          styles.quickActionLockBadge,
+                          {backgroundColor: colors.surface},
+                        ]}>
+                        <Icon name="lock" size={10} color={colors.textSecondary} />
+                      </View>
+                    ) : null}
+                  </View>
                   <Text
                     style={[styles.quickActionLabel, {color: action.color}]}>
                     {action.label}
@@ -1403,6 +1434,7 @@ const styles = StyleSheet.create({
   onboardingBannerHead: {flexDirection: 'row', alignItems: 'center', gap: Spacing.xs},
   onboardingBannerTitle: {fontSize: 13, fontWeight: '700'},
   onboardingBannerText: {fontSize: 12, lineHeight: 17},
+  onboardingBannerHint: {fontSize: 12, lineHeight: 17},
   onboardingBannerAction: {
     alignSelf: 'flex-start',
     marginTop: Spacing.xs,
@@ -1444,6 +1476,22 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     alignItems: 'center',
     gap: 6,
+  },
+  quickActionLocked: {
+    opacity: 0.58,
+  },
+  quickActionIconWrap: {
+    position: 'relative',
+  },
+  quickActionLockBadge: {
+    position: 'absolute',
+    right: -8,
+    top: -6,
+    width: 16,
+    height: 16,
+    borderRadius: 99,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   quickActionLabel: {
     fontSize: 12,
