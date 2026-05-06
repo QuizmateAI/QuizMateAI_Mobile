@@ -1,6 +1,9 @@
 import api from './api';
 
-const AI_TIMEOUT = 30000;
+// Aligned with BE (60s) + small buffer, same as FE.
+// Some reasoning prompts (field-suggestion / consistency-validation) can take 30-60s.
+// A 30s timeout causes false "AI failed" errors while the BE keeps running.
+const AI_TIMEOUT = 65000;
 
 type SuggestProfileInput = {
   knowledge?: string;

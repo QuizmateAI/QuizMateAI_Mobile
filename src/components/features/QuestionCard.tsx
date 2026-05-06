@@ -1,4 +1,5 @@
 import React from 'react';
+import {useTranslation} from 'react-i18next';
 import {View, Text, StyleSheet, TouchableOpacity, TextInput} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useTheme} from '../../context/ThemeContext';
@@ -9,6 +10,7 @@ import MatchingQuestion, {MatchingPair} from './MatchingQuestion';
 import {
   isMatchingQuestion,
   isMultipleChoiceQuestion,
+  isShortAnswerQuestion,
   isTextAnswerQuestion,
 } from '../../utils/voicePractice';
 import ContentRenderer from '../ui/ContentRenderer';
@@ -69,9 +71,11 @@ export default function QuestionCard({
   matchingLeftItems = [],
   matchingRightItems = [],
 }: QuestionCardProps) {
+  const {t} = useTranslation();
   const {isDark, colors} = useTheme();
   const questionMeta = {questionType, questionTypeId, answers};
   const isTextType = isTextAnswerQuestion(questionMeta);
+  const isShortAnswerType = isShortAnswerQuestion(questionMeta);
   const isMatchingType = isMatchingQuestion(questionMeta);
 
   const correctTextAnswer =
@@ -233,7 +237,10 @@ export default function QuestionCard({
                 },
               ]}>
               <Text style={[styles.correctAnswerLabel, {color: isDark ? '#34D399' : '#059669'}]}>
-                Đáp án tham chiếu
+                {t(
+                  isShortAnswerType ? 'quiz.expectedAnswerLabel' : 'quiz.correctAnswerLabel',
+                  isShortAnswerType ? 'Expected answer' : 'Correct answer',
+                )}
               </Text>
               <Text style={[styles.correctAnswerText, {color: isDark ? '#34D399' : '#047857'}]}>
                 {correctTextAnswer || 'Không có đáp án tham chiếu'}

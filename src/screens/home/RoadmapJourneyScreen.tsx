@@ -1430,7 +1430,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   ).toUpperCase();
   const isStudyNewRoadmap = learningMode === 'STUDY_NEW';
   const isFlexibleRoadmap = adaptationMode === 'FLEXIBLE';
-  const isStrictRoadmap = adaptationMode === 'STRICT';
+  const isStrictRoadmap = adaptationMode === 'STRICT' || adaptationMode === 'BALANCED';
 
   const activePhase = useMemo(() => {
     const normalizedSelected = Number(selectedPhaseId);
