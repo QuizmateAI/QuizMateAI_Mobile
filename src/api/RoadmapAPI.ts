@@ -8,6 +8,39 @@ const mapRoadmap = (item: any) => ({
 
 const unwrapData = (res: any) => res?.data?.data ?? res?.data;
 
+const normalizeRoadmapSpeedMode = (value: any) => {
+  if (value === 'SLOW' || value === 'FAST') {
+    return value;
+  }
+  if (value === 'STANDARD' || value === 'MEDIUM') {
+    return 'MEDIUM';
+  }
+  return null;
+};
+
+const normalizeAdaptationMode = (value: any) => {
+  if (value === 'FLEXIBLE') {
+    return 'FLEXIBLE';
+  }
+  if (value === 'STRICT' || value === 'BALANCED') {
+    return 'STRICT';
+  }
+  return null;
+};
+
+const buildRoadmapConfigPayload = (data: any = {}) => ({
+  knowledgeLoad: data.knowledgeLoad || null,
+  adaptationMode: normalizeAdaptationMode(data.adaptationMode),
+  speedMode: normalizeRoadmapSpeedMode(data.roadmapSpeedMode || data.speedMode),
+  estimatedTotalDays: Number(data.estimatedTotalDays) || null,
+  estimatedMinutesPerDay:
+    Number(data.recommendedMinutesPerDay || data.estimatedMinutesPerDay) || null,
+  preLearningRequired:
+    data.preLearningRequired === undefined || data.preLearningRequired === null
+      ? null
+      : Boolean(data.preLearningRequired),
+});
+
 const getWorkspaceRoadmapId = async (workspaceId: number) => {
   const workspaceRes = await api.get(`/api/workspace/${workspaceId}`);
   const workspace = unwrapData(workspaceRes) || {};
@@ -139,8 +172,12 @@ const RoadmapAPI = {
     api.post('/api/ai/roadmap:generated', data),
   createPhase: (roadmapId: number, data: any) =>
     api.post(`/api/roadmap-phases?roadmapId=${roadmapId}`, data),
+  updateConfig: (roadmapId: number, data: any) =>
+    api.put(`/api/roadmaps/${roadmapId}/config`, buildRoadmapConfigPayload(data)),
   deletePhase: (roadmapId: number, phaseId: number) =>
     api.delete(`/api/roadmap-phases/${phaseId}?roadmapId=${roadmapId}`),
+  deleteKnowledge: (knowledgeId: number, phaseId: number) =>
+    api.delete(`/api/roadmap-knowledges/${knowledgeId}?phaseId=${phaseId}`),
 };
 
 export default RoadmapAPI;

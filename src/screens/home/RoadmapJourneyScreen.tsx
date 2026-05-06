@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   UIManager,
   View,
@@ -39,12 +40,80 @@ import {
 
 type ProgressMap = Record<number, number>;
 type StageSelectedType = 'roadmap' | 'phase' | 'knowledge';
+type RoadmapConfigValues = {
+  knowledgeLoad: 'BASIC' | 'INTERMEDIATE' | 'ADVANCED';
+  adaptationMode: 'FLEXIBLE' | 'STRICT';
+  roadmapSpeedMode: 'SLOW' | 'MEDIUM' | 'FAST';
+  estimatedTotalDays: string;
+  recommendedMinutesPerDay: string;
+};
 
 const STAGE_ROADMAP_CARD_WIDTH = 218;
 const STAGE_PHASE_CARD_WIDTH = 196;
 const STAGE_PHASE_CONNECTOR_WIDTH = 30;
 const STAGE_KNOWLEDGE_CARD_WIDTH = 176;
 const STAGE_KNOWLEDGE_GAP = 12;
+
+const KNOWLEDGE_LOAD_OPTIONS = [
+  {
+    key: 'BASIC',
+    label: 'Cơ bản',
+    description: 'Tập trung vào nền tảng cốt lõi, thuật ngữ chính và các phần bắt buộc phải nắm.',
+  },
+  {
+    key: 'INTERMEDIATE',
+    label: 'Trung cấp',
+    description: 'Học đầy đủ phần nền tảng và các ứng dụng phổ biến ở mức sử dụng thực tế.',
+  },
+  {
+    key: 'ADVANCED',
+    label: 'Nâng cao',
+    description: 'Đi sâu vào các tình huống khó, ngoại lệ và phần kiến thức có độ phức tạp cao.',
+  },
+] as const;
+
+const ADAPTATION_MODE_OPTIONS = [
+  {
+    key: 'FLEXIBLE',
+    label: 'Linh hoạt',
+    description: 'Ưu tiên điều chỉnh nhịp học theo quỹ thời gian và mức năng lượng thực tế.',
+  },
+  {
+    key: 'STRICT',
+    label: 'Cố định',
+    description: 'Giữ kế hoạch học ổn định, bám theo lộ trình đã đặt ra và hạn chế thay đổi nhịp học.',
+  },
+] as const;
+
+const ROADMAP_SPEED_OPTIONS = [
+  {
+    key: 'SLOW',
+    label: 'Chậm mà chắc',
+    description: 'Phù hợp khi bạn cần hiểu sâu và chỉ có ít thời gian học mỗi ngày.',
+  },
+  {
+    key: 'MEDIUM',
+    label: 'Tiêu chuẩn',
+    description: 'Nhịp học cân bằng, phù hợp với phần lớn người học.',
+  },
+  {
+    key: 'FAST',
+    label: 'Nhanh',
+    description: 'Tăng tốc để bám sát thời hạn hoặc kỳ thi đang đến gần.',
+  },
+] as const;
+
+const ROADMAP_DAY_RECOMMENDATIONS = {
+  BASIC: {FAST: 20, MEDIUM: 30, SLOW: 45},
+  INTERMEDIATE: {FAST: 30, MEDIUM: 60, SLOW: 90},
+  ADVANCED: {FAST: 45, MEDIUM: 90, SLOW: 135},
+} as const;
+
+const ROADMAP_TOTAL_MINUTES = {
+  BASIC: 1800,
+  INTERMEDIATE: 4200,
+  ADVANCED: 7200,
+} as const;
 
 const clampPercent = (value: any) => {
   const normalized = Number(value);
@@ -57,6 +126,76 @@ const clampPercent = (value: any) => {
 const normalizePositiveId = (value: any) => {
   const normalized = Number(value);
   return Number.isInteger(normalized) && normalized > 0 ? normalized : 0;
+};
+
+const normalizeKnowledgeLoad = (value: any): RoadmapConfigValues['knowledgeLoad'] => {
+  if (value === 'BASIC' || value === 'ADVANCED') {
+    return value;
+  }
+  return 'INTERMEDIATE';
+};
+
+const normalizeAdaptationModeValue = (value: any): RoadmapConfigValues['adaptationMode'] => {
+  if (value === 'FLEXIBLE') {
+    return 'FLEXIBLE';
+  }
+  return 'STRICT';
+};
+
+const normalizeSpeedModeValue = (value: any): RoadmapConfigValues['roadmapSpeedMode'] => {
+  if (value === 'SLOW' || value === 'FAST') {
+    return value;
+  }
+  return 'MEDIUM';
+};
+
+const getRecommendedRoadmapDays = (
+  knowledgeLoad: RoadmapConfigValues['knowledgeLoad'],
+  speedMode: RoadmapConfigValues['roadmapSpeedMode'],
+) => ROADMAP_DAY_RECOMMENDATIONS[knowledgeLoad]?.[speedMode] || 30;
+
+const getRecommendedRoadmapMinutesPerDay = (
+  knowledgeLoad: RoadmapConfigValues['knowledgeLoad'],
+  totalDays: number,
+) => {
+  const safeDays = Number.isFinite(totalDays) && totalDays > 0 ? totalDays : 30;
+  const raw = ROADMAP_TOTAL_MINUTES[knowledgeLoad] / safeDays;
+  return Math.max(15, Math.round(raw / 5) * 5);
+};
+
+const formatMaterialDate = (material: any) => {
+  const rawDate =
+    material?.createdAt ||
+    material?.created_at ||
+    material?.uploadedAt ||
+    material?.uploadDate ||
+    material?.updatedAt;
+  if (!rawDate) {
+    return '';
+  }
+  const parsed = new Date(rawDate);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+  return `${String(parsed.getDate()).padStart(2, '0')}/${String(parsed.getMonth() + 1).padStart(2, '0')}/${parsed.getFullYear()}`;
+};
+
+const getMaterialTypeLabel = (material: any) => {
+  const name = String(material?.title || material?.fileName || material?.name || '').toLowerCase();
+  const type = String(material?.type || material?.mimeType || material?.contentType || '').toLowerCase();
+  if (type.includes('pdf') || name.endsWith('.pdf')) {
+    return 'PDF';
+  }
+  if (type.includes('image')) {
+    return 'Ảnh';
+  }
+  if (type.includes('video')) {
+    return 'Video';
+  }
+  if (type.includes('audio')) {
+    return 'Audio';
+  }
+  return 'Tài liệu';
 };
 
 const resolveProgressPercent = (payload: any) =>
@@ -192,6 +331,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   const [selectedRoadmapId, setSelectedRoadmapId] = useState<number | null>(null);
   const [structure, setStructure] = useState<any>(null);
   const [profileLearningMode, setProfileLearningMode] = useState<string | null>(null);
+  const [profileRoadmapConfig, setProfileRoadmapConfig] = useState<any>(null);
   const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(
     Number.isInteger(Number(routePhaseId)) && Number(routePhaseId) > 0 ? Number(routePhaseId) : null,
   );
@@ -224,6 +364,19 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   });
   const reviewCreationAttemptedRef = useRef<Set<string>>(new Set());
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<number[]>([]);
+  const [roadmapConfigModalVisible, setRoadmapConfigModalVisible] = useState(false);
+  const [roadmapConfigConfirmVisible, setRoadmapConfigConfirmVisible] = useState(false);
+  const [roadmapConfigValues, setRoadmapConfigValues] = useState<RoadmapConfigValues>({
+    knowledgeLoad: 'INTERMEDIATE',
+    adaptationMode: 'FLEXIBLE',
+    roadmapSpeedMode: 'MEDIUM',
+    estimatedTotalDays: '60',
+    recommendedMinutesPerDay: '70',
+  });
+  const [savingRoadmapConfig, setSavingRoadmapConfig] = useState(false);
+  const [suggestingRoadmapConfig, setSuggestingRoadmapConfig] = useState(false);
+  const [roadmapConfigError, setRoadmapConfigError] = useState('');
+  const [roadmapSuggestionMeta, setRoadmapSuggestionMeta] = useState<any>(null);
   const [selectedKnowledgeId, setSelectedKnowledgeId] = useState<number | null>(null);
   const [knowledgeQuizMap, setKnowledgeQuizMap] = useState<Record<number, any[]>>({});
   const [viewMode] = useState<'overview' | 'detail'>('detail');
@@ -491,6 +644,29 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   const wsGroupId = contextType === 'GROUP' && Number.isInteger(normalizedContextId) && normalizedContextId > 0
     ? normalizedContextId
     : null;
+  const selectableMaterials = useMemo(
+    () =>
+      toArray(materials).filter((material: any) => {
+        const materialId = normalizePositiveId(material?.materialId ?? material?.id);
+        const status = String(material?.final_status || material?.status || '').toUpperCase();
+        return materialId > 0 && !isBlockedMaterial(material) && (!status || status === 'ACTIVE');
+      }),
+    [isBlockedMaterial, materials],
+  );
+  const selectableMaterialIds = useMemo(
+    () =>
+      selectableMaterials
+        .map((material: any) => normalizePositiveId(material?.materialId ?? material?.id))
+        .filter(Boolean),
+    [selectableMaterials],
+  );
+  const selectedSelectableMaterialCount = selectedMaterialIds.filter(id =>
+    selectableMaterialIds.includes(id),
+  ).length;
+  const canGenerateRoadmapPhases = selectedSelectableMaterialCount > 0;
+  const allSelectableMaterialsSelected =
+    selectableMaterialIds.length > 0 &&
+    selectableMaterialIds.every(id => selectedMaterialIds.includes(id));
 
   const fetchRoadmaps = useCallback(async () => {
     try {
@@ -504,13 +680,16 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
           ).toUpperCase();
           setProfileLearningMode(learningMode || null);
           setProfileAdaptationMode(adaptation || null);
+          setProfileRoadmapConfig(profile || null);
         } catch {
           setProfileLearningMode(null);
           setProfileAdaptationMode(null);
+          setProfileRoadmapConfig(null);
         }
       } else {
         setProfileLearningMode(null);
         setProfileAdaptationMode(null);
+        setProfileRoadmapConfig(null);
       }
 
       const res =
@@ -587,6 +766,248 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       return null;
     }
   }, []);
+
+  const buildCurrentRoadmapConfigValues = useCallback((): RoadmapConfigValues => {
+    const totalDays =
+      structure?.estimatedTotalDays ??
+      profileRoadmapConfig?.estimatedTotalDays ??
+      selectedRoadmap?.estimatedTotalDays ??
+      60;
+    const minutesPerDay =
+      structure?.estimatedMinutesPerDay ??
+      profileRoadmapConfig?.estimatedMinutesPerDay ??
+      profileRoadmapConfig?.recommendedMinutesPerDay ??
+      selectedRoadmap?.estimatedMinutesPerDay ??
+      70;
+
+    return {
+      knowledgeLoad: normalizeKnowledgeLoad(
+        structure?.knowledgeLoad ?? profileRoadmapConfig?.knowledgeLoad,
+      ),
+      adaptationMode: normalizeAdaptationModeValue(
+        structure?.adaptationMode ?? profileRoadmapConfig?.adaptationMode,
+      ),
+      roadmapSpeedMode: normalizeSpeedModeValue(
+        structure?.speedMode ??
+          profileRoadmapConfig?.speedMode ??
+          profileRoadmapConfig?.roadmapSpeedMode,
+      ),
+      estimatedTotalDays: String(Number(totalDays) > 0 ? Number(totalDays) : 60),
+      recommendedMinutesPerDay: String(
+        Number(minutesPerDay) > 0 ? Number(minutesPerDay) : 70,
+      ),
+    };
+  }, [profileRoadmapConfig, selectedRoadmap, structure]);
+
+  const openRoadmapConfigEditor = useCallback(() => {
+    if (!activeRoadmapId) {
+      showToast('Không tìm thấy lộ trình để chỉnh sửa', 'error');
+      return;
+    }
+    setRoadmapConfigValues(buildCurrentRoadmapConfigValues());
+    setRoadmapConfigError('');
+    setRoadmapSuggestionMeta(null);
+    setRoadmapConfigConfirmVisible(false);
+    setRoadmapConfigModalVisible(true);
+  }, [activeRoadmapId, buildCurrentRoadmapConfigValues, showToast]);
+
+  const updateRoadmapConfigField = useCallback(
+    (field: keyof RoadmapConfigValues, value: string) => {
+      setRoadmapConfigValues(current => {
+        const next = {...current, [field]: value};
+        if (field === 'knowledgeLoad' || field === 'roadmapSpeedMode') {
+          const recommendedDays = getRecommendedRoadmapDays(
+            next.knowledgeLoad,
+            next.roadmapSpeedMode,
+          );
+          const recommendedMinutes = getRecommendedRoadmapMinutesPerDay(
+            next.knowledgeLoad,
+            Number(next.estimatedTotalDays) || recommendedDays,
+          );
+          return {
+            ...next,
+            estimatedTotalDays: String(recommendedDays),
+            recommendedMinutesPerDay: String(recommendedMinutes),
+          };
+        }
+        if (field === 'estimatedTotalDays') {
+          return {
+            ...next,
+            recommendedMinutesPerDay: String(
+              getRecommendedRoadmapMinutesPerDay(
+                next.knowledgeLoad,
+                Number(value) || getRecommendedRoadmapDays(next.knowledgeLoad, next.roadmapSpeedMode),
+              ),
+            ),
+          };
+        }
+        return next;
+      });
+      setRoadmapConfigError('');
+    },
+    [],
+  );
+
+  const validateRoadmapConfigValues = useCallback(() => {
+    const totalDays = Number(roadmapConfigValues.estimatedTotalDays);
+    const minutesPerDay = Number(roadmapConfigValues.recommendedMinutesPerDay);
+    if (!Number.isFinite(totalDays) || totalDays <= 0) {
+      return 'Vui lòng nhập số ngày dự kiến lớn hơn 0.';
+    }
+    if (!Number.isFinite(minutesPerDay) || minutesPerDay <= 0) {
+      return 'Vui lòng nhập số phút học mỗi ngày lớn hơn 0.';
+    }
+    return '';
+  }, [roadmapConfigValues]);
+
+  const handleSuggestRoadmapConfig = useCallback(async () => {
+    const workspaceId = Number(contextId || 0);
+    if (contextType !== 'WORKSPACE' || !Number.isInteger(workspaceId) || workspaceId <= 0) {
+      showToast('AI gợi ý hiện chỉ hỗ trợ workspace cá nhân', 'info');
+      return;
+    }
+
+    setSuggestingRoadmapConfig(true);
+    setRoadmapConfigError('');
+    try {
+      const response = await WorkspaceProfileAPI.suggestRoadmapConfig(workspaceId);
+      const suggestion = response?.data?.data || response?.data || response || null;
+      if (!suggestion || typeof suggestion !== 'object') {
+        throw new Error('AI không trả về cấu hình hợp lệ.');
+      }
+      const nextValues: RoadmapConfigValues = {
+        knowledgeLoad: normalizeKnowledgeLoad(
+          suggestion?.knowledgeLoad ?? roadmapConfigValues.knowledgeLoad,
+        ),
+        adaptationMode: normalizeAdaptationModeValue(
+          suggestion?.adaptationMode ?? roadmapConfigValues.adaptationMode,
+        ),
+        roadmapSpeedMode: normalizeSpeedModeValue(
+          suggestion?.speedMode ?? suggestion?.roadmapSpeedMode ?? roadmapConfigValues.roadmapSpeedMode,
+        ),
+        estimatedTotalDays: String(
+          Number(suggestion?.estimatedTotalDays) ||
+            Number(roadmapConfigValues.estimatedTotalDays) ||
+            30,
+        ),
+        recommendedMinutesPerDay: String(
+          Number(suggestion?.estimatedMinutesPerDay ?? suggestion?.recommendedMinutesPerDay) ||
+            Number(roadmapConfigValues.recommendedMinutesPerDay) ||
+            60,
+        ),
+      };
+      setRoadmapConfigValues(nextValues);
+      setRoadmapSuggestionMeta({
+        rationale: String(suggestion?.rationale || '').trim(),
+        recommendations: toArray(suggestion?.recommendations).filter(Boolean),
+      });
+    } catch (error: any) {
+      setRoadmapConfigError(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Không thể tạo gợi ý AI lúc này.',
+      );
+    } finally {
+      setSuggestingRoadmapConfig(false);
+    }
+  }, [contextId, contextType, roadmapConfigValues, showToast]);
+
+  const resetRoadmapStructureAfterConfigUpdate = useCallback(async (roadmapId: number) => {
+    const normalizedRoadmapId = normalizePositiveId(roadmapId);
+    if (!normalizedRoadmapId) {
+      return;
+    }
+
+    const latestStructure = (await fetchStructure(normalizedRoadmapId)) || structure || {};
+    const phasesToDelete = toArray(latestStructure?.phases);
+
+    for (const phase of phasesToDelete) {
+      const phaseId = normalizePositiveId(phase?.phaseId ?? phase?.id);
+      if (!phaseId) {
+        continue;
+      }
+      for (const knowledge of toArray(phase?.knowledges)) {
+        const knowledgeId = normalizePositiveId(knowledge?.knowledgeId ?? knowledge?.id);
+        if (!knowledgeId) {
+          continue;
+        }
+        try {
+          await RoadmapAPI.deleteKnowledge(knowledgeId, phaseId);
+        } catch (error: any) {
+          if (Number(error?.response?.status) !== 404) {
+            throw error;
+          }
+        }
+      }
+      try {
+        await RoadmapAPI.deletePhase(normalizedRoadmapId, phaseId);
+      } catch (error: any) {
+        if (Number(error?.response?.status) !== 404) {
+          throw error;
+        }
+      }
+    }
+
+    setStructure((current: any) => ({
+      ...(current || latestStructure || {}),
+      phases: [],
+    }));
+    setCurrentPhaseProgress(null);
+    setCurrentKnowledgePayload(null);
+    setSelectedPhaseId(null);
+    setSelectedKnowledgeId(null);
+    setGeneratingPreLearningPhaseIds([]);
+    setGeneratingKnowledgePhaseIds([]);
+    setGeneratingKnowledgeQuizPhaseIds([]);
+    setGeneratingKnowledgeQuizKnowledgeKeys([]);
+    setPreLearningProgressByPhaseId({});
+    setKnowledgeProgressByPhaseId({});
+    setSkipPreLearningPhaseIds([]);
+    setOptimisticUnlockedPhaseIds([]);
+    setUnlockingPhaseIds([]);
+  }, [fetchStructure, structure]);
+
+  const handleRequestSaveRoadmapConfig = useCallback(() => {
+    const error = validateRoadmapConfigValues();
+    if (error) {
+      setRoadmapConfigError(error);
+      return;
+    }
+    setRoadmapConfigConfirmVisible(true);
+  }, [validateRoadmapConfigValues]);
+
+  const handleConfirmSaveRoadmapConfig = useCallback(async () => {
+    const normalizedRoadmapId = normalizePositiveId(activeRoadmapId);
+    if (!normalizedRoadmapId || savingRoadmapConfig) {
+      return;
+    }
+
+    setSavingRoadmapConfig(true);
+    setRoadmapConfigError('');
+    try {
+      await RoadmapAPI.updateConfig(normalizedRoadmapId, roadmapConfigValues);
+      await resetRoadmapStructureAfterConfigUpdate(normalizedRoadmapId);
+      await fetchRoadmaps();
+      setRoadmapConfigConfirmVisible(false);
+      setRoadmapConfigModalVisible(false);
+      showToast('Đã cập nhật thông tin lộ trình', 'success');
+    } catch (error: any) {
+      setRoadmapConfigError(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Không thể cập nhật lộ trình.',
+      );
+    } finally {
+      setSavingRoadmapConfig(false);
+    }
+  }, [
+    activeRoadmapId,
+    fetchRoadmaps,
+    resetRoadmapStructureAfterConfigUpdate,
+    roadmapConfigValues,
+    savingRoadmapConfig,
+    showToast,
+  ]);
 
   const fetchStructureUntilPhaseReady = useCallback(
     async (
@@ -1238,12 +1659,27 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
 
     setRunningAction('phases');
     setGeneratingRoadmapPhases(true);
-    setRoadmapPhaseGenerationProgress(3);
+    setRoadmapPhaseGenerationProgress(0);
     try {
+      const validSelectedMaterialIds = selectedMaterialIds.filter(id =>
+        selectableMaterialIds.includes(id),
+      );
+      if (selectableMaterialIds.length === 0) {
+        showToast('Vui lòng tải tài liệu ACTIVE trước khi tạo giai đoạn', 'error');
+        setGeneratingRoadmapPhases(false);
+        setRoadmapPhaseGenerationProgress(0);
+        return;
+      }
+      if (validSelectedMaterialIds.length === 0) {
+        showToast('Vui lòng chọn ít nhất 1 tài liệu để tạo giai đoạn', 'error');
+        setGeneratingRoadmapPhases(false);
+        setRoadmapPhaseGenerationProgress(0);
+        return;
+      }
       await AIAPI.generateRoadmapPhases({
         roadmapId: normalizedRoadmapId,
         userId,
-        materialIds: selectedMaterialIds,
+        materialIds: validSelectedMaterialIds,
       });
       showToast('Đã bắt đầu tạo các giai đoạn lộ trình', 'success');
       if (!roadmapWsConnected) {
@@ -1371,6 +1807,15 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id],
     );
   };
+
+  const toggleSelectAllMaterials = useCallback(() => {
+    setSelectedMaterialIds(current => {
+      if (allSelectableMaterialsSelected) {
+        return current.filter(id => !selectableMaterialIds.includes(id));
+      }
+      return Array.from(new Set([...current, ...selectableMaterialIds]));
+    });
+  }, [allSelectableMaterialsSelected, selectableMaterialIds]);
 
   const phases = useMemo(() => {
     const list = Array.isArray(structure?.phases) ? structure.phases : [];
@@ -1813,9 +2258,10 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   const hasRoadmapPhases = useMemo(() => {
     const fromStructure = Array.isArray(structure?.phases) && structure.phases.length > 0;
     const fromSortedPhases = Array.isArray(phases) && phases.length > 0;
-    const fromCurrentProgress = Number.isInteger(Number(currentPhaseProgress?.phaseId)) && Number(currentPhaseProgress?.phaseId) > 0;
-    return fromStructure || fromSortedPhases || fromCurrentProgress;
-  }, [currentPhaseProgress?.phaseId, phases, structure?.phases]);
+    return fromStructure || fromSortedPhases;
+  }, [phases, structure?.phases]);
+  const shouldShowRoadmapSetupScreen =
+    contextType === 'WORKSPACE' && activeRoadmapId > 0 && !hasRoadmapPhases;
 
   const isKnowledgeFinishedStatus = useCallback((knowledgeStatus: any) => {
     const normalizedStatus = String(knowledgeStatus || '').toUpperCase();
@@ -2544,83 +2990,29 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
         ))}
       </View>
 
-      {!hasRoadmapPhases && contextType === 'WORKSPACE' && materials.length > 0 ? (
-        <View style={styles.stageSectionBlock}>
-          <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>
-            Tài liệu dùng để tạo giai đoạn
-          </Text>
-          <View style={styles.materialWrap}>
-            {materials.map((material: any) => {
-              const materialId = material.materialId || material.id;
-              const selected = selectedMaterialIds.includes(materialId);
-              const disabled = isBlockedMaterial(material);
-              return (
-                <TouchableOpacity
-                  key={materialId}
-                  onPress={() => toggleMaterial(materialId, disabled)}
-                  disabled={disabled}
-                  style={[
-                    styles.materialChip,
-                    {
-                      borderColor: disabled ? colors.border : selected ? Colors.primary : colors.border,
-                      backgroundColor: selected
-                        ? isDark
-                          ? '#1E3A8A30'
-                          : '#EFF6FF'
-                        : disabled
-                        ? isDark
-                          ? '#33415555'
-                          : '#F1F5F9'
-                        : colors.surface,
-                      opacity: disabled ? 0.72 : 1,
-                    },
-                  ]}>
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      color: disabled
-                        ? Colors.error
-                        : selected
-                        ? Colors.primary
-                        : colors.textSecondary,
-                      fontSize: 12,
-                    }}>
-                    {material.title || material.fileName || material.name}
-                    {disabled ? ' (Bị cảnh báo/từ chối)' : ''}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      ) : null}
-
       {!hasRoadmapPhases ? (
         <View
           style={[
             styles.stageSectionCard,
             {borderColor: colors.border, backgroundColor: colors.surface},
           ]}>
-          <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>Chưa có phase</Text>
+          <Text style={[styles.stageSectionTitle, {color: colors.heading}]}>
+            Chào mừng đến với lộ trình
+          </Text>
           <Text style={[styles.stageDetailText, {color: colors.textSecondary}]}>
-            Tạo giai đoạn để bắt đầu roadmap từ tài liệu đã chọn.
+            Tạo giai đoạn bằng AI để bắt đầu lộ trình học từ các tài liệu đã chọn.
           </Text>
           <Button
             title="Tạo giai đoạn"
             onPress={() => handleGenerateRoadmapPhases(activeRoadmapId)}
             loading={runningAction === 'phases' || generatingRoadmapPhases}
+            disabled={!canGenerateRoadmapPhases}
             icon="timeline-plus-outline"
             size="sm"
             fullWidth={false}
             style={styles.stagePrimaryAction}
           />
-          {generatingRoadmapPhases
-            ? renderStageLoadingCard(
-                'Đang tạo giai đoạn',
-                'AI đang dựng các phase cho roadmap này.',
-                roadmapPhaseGenerationProgress,
-              )
-            : null}
+          {generatingRoadmapPhases ? renderPhaseGenerationLoader() : null}
         </View>
       ) : (
         <Button
@@ -3610,6 +4002,424 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
     );
   };
 
+  const renderPhaseGenerationLoader = () => (
+    <View
+      style={[
+        styles.phaseGenerationLoader,
+        {borderColor: colors.border, backgroundColor: colors.surface},
+      ]}>
+      <ActivityIndicator size="small" color={Colors.primary} />
+      <Text style={[styles.phaseGenerationTitle, {color: colors.heading}]}>
+        Vui lòng chờ AI tạo các giai đoạn
+      </Text>
+      <Text style={[styles.phaseGenerationText, {color: colors.textSecondary}]}>
+        Hệ thống đang tạo danh sách giai đoạn từ các tài liệu đã chọn.
+      </Text>
+      {renderGenerationProgress(roadmapPhaseGenerationProgress)}
+    </View>
+  );
+
+  const renderMaterialPickerSection = () => (
+    <View
+      style={[
+        styles.materialPickerCard,
+        {borderColor: colors.border, backgroundColor: colors.surface},
+      ]}>
+      <View style={styles.materialPickerHeader}>
+        <View style={{flex: 1}}>
+          <Text style={[styles.materialPickerTitle, {color: colors.heading}]}>
+            Tài liệu dùng để tạo giai đoạn
+          </Text>
+          <Text style={[styles.materialPickerSubtitle, {color: colors.textSecondary}]}>
+            Chọn các tài liệu AI sẽ dùng khi soạn các giai đoạn lộ trình cho workspace này.
+          </Text>
+        </View>
+        <View style={styles.materialPickerCounter}>
+          <Text style={styles.materialPickerCounterText}>
+            {selectedSelectableMaterialCount}/{selectableMaterialIds.length} đã chọn
+          </Text>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        onPress={toggleSelectAllMaterials}
+        disabled={selectableMaterialIds.length === 0}
+        style={[
+          styles.selectAllButton,
+          {
+            borderColor: colors.border,
+            opacity: selectableMaterialIds.length === 0 ? 0.45 : 1,
+          },
+        ]}>
+        <Icon
+          name={allSelectableMaterialsSelected ? 'checkbox-marked-outline' : 'checkbox-blank-outline'}
+          size={18}
+          color={Colors.primary}
+        />
+        <Text style={styles.selectAllText}>
+          {allSelectableMaterialsSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+        </Text>
+      </TouchableOpacity>
+
+      {selectableMaterials.length === 0 ? (
+        <View style={[styles.materialEmptyState, {backgroundColor: isDark ? '#0f172a' : '#f8fafc'}]}>
+          <Text style={[styles.materialEmptyText, {color: colors.textSecondary}]}>
+            Chưa có tài liệu để tạo giai đoạn.
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.materialList}>
+          {selectableMaterials.map((material: any) => {
+            const materialId = normalizePositiveId(material?.materialId ?? material?.id);
+            const selected = selectedMaterialIds.includes(materialId);
+            const dateLabel = formatMaterialDate(material);
+            return (
+              <TouchableOpacity
+                key={materialId || material?.title || material?.name}
+                onPress={() => toggleMaterial(materialId, false)}
+                style={[
+                  styles.materialListItem,
+                  {
+                    borderColor: selected ? Colors.primary : colors.border,
+                    backgroundColor: selected
+                      ? isDark
+                        ? 'rgba(37,99,235,0.18)'
+                        : '#eff6ff'
+                      : isDark
+                      ? '#0f172a'
+                      : '#ffffff',
+                  },
+                ]}>
+                <Icon
+                  name={selected ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'}
+                  size={22}
+                  color={selected ? Colors.primary : colors.textTertiary}
+                />
+                <View style={{flex: 1}}>
+                  <Text style={[styles.materialListName, {color: colors.heading}]} numberOfLines={2}>
+                    {material?.title || material?.fileName || material?.name || `Tài liệu #${materialId}`}
+                  </Text>
+                  <View style={styles.materialMetaRow}>
+                    <Text style={[styles.materialMetaText, {color: colors.textSecondary}]}>
+                      {getMaterialTypeLabel(material)}
+                    </Text>
+                    {dateLabel ? (
+                      <Text style={[styles.materialMetaText, {color: colors.textSecondary}]}>
+                        {dateLabel}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+
+  const renderRoadmapConfigOption = (
+    group: keyof RoadmapConfigValues,
+    option: {key: string; label: string; description: string},
+  ) => {
+    const selected = roadmapConfigValues[group] === option.key;
+    return (
+      <TouchableOpacity
+        key={option.key}
+        onPress={() => updateRoadmapConfigField(group, option.key)}
+        style={[
+          styles.configOption,
+          {
+            borderColor: selected ? Colors.primary : colors.border,
+            backgroundColor: selected
+              ? isDark
+                ? 'rgba(37,99,235,0.18)'
+                : '#eff6ff'
+              : colors.surface,
+          },
+        ]}>
+        <View style={[styles.configRadio, {borderColor: selected ? Colors.primary : colors.border}]}>
+          {selected ? <View style={styles.configRadioDot} /> : null}
+        </View>
+        <View style={{flex: 1}}>
+          <Text style={[styles.configOptionTitle, {color: colors.heading}]}>{option.label}</Text>
+          <Text style={[styles.configOptionText, {color: colors.textSecondary}]}>
+            {option.description}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderRoadmapSetupScreen = () => (
+    <View
+      style={[
+        styles.roadmapSetupScreen,
+        {
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+        },
+      ]}>
+      <View style={styles.roadmapSetupWelcome}>
+        <View
+          style={[
+            styles.roadmapSetupIcon,
+            {backgroundColor: isDark ? 'rgba(37,99,235,0.22)' : '#dbeafe'},
+          ]}>
+          <Icon name="book-open-page-variant-outline" size={34} color={Colors.primary} />
+        </View>
+        <Text style={[styles.roadmapSetupTitle, {color: colors.heading}]}>
+          Chào mừng đến với lộ trình
+        </Text>
+        <Text style={[styles.roadmapSetupText, {color: colors.textSecondary}]}>
+          Tạo giai đoạn bằng AI để bắt đầu lộ trình học từ các tài liệu đã chọn.
+        </Text>
+        <Button
+          title="Tạo giai đoạn"
+          onPress={() => handleGenerateRoadmapPhases(activeRoadmapId)}
+          loading={runningAction === 'phases' || generatingRoadmapPhases}
+          disabled={!canGenerateRoadmapPhases}
+          icon="timeline-plus-outline"
+          size="md"
+          fullWidth={false}
+          style={styles.roadmapSetupButton}
+        />
+        {generatingRoadmapPhases ? renderPhaseGenerationLoader() : null}
+      </View>
+
+      {renderMaterialPickerSection()}
+    </View>
+  );
+
+  const totalDaysNumber = Number(roadmapConfigValues.estimatedTotalDays) || 0;
+  const minutesPerDayNumber = Number(roadmapConfigValues.recommendedMinutesPerDay) || 0;
+  const recommendedDays = getRecommendedRoadmapDays(
+    roadmapConfigValues.knowledgeLoad,
+    roadmapConfigValues.roadmapSpeedMode,
+  );
+  const recommendedMinutes = getRecommendedRoadmapMinutesPerDay(
+    roadmapConfigValues.knowledgeLoad,
+    totalDaysNumber || recommendedDays,
+  );
+  const selectedSpeedLabel =
+    ROADMAP_SPEED_OPTIONS.find(option => option.key === roadmapConfigValues.roadmapSpeedMode)
+      ?.label || 'Tiêu chuẩn';
+
+  const renderRoadmapConfigModal = () => (
+    <Modal
+      visible={roadmapConfigModalVisible}
+      animationType="slide"
+      transparent
+      onRequestClose={() => setRoadmapConfigModalVisible(false)}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.configModal, {backgroundColor: colors.surface}]}>
+          <View style={[styles.configModalHeader, {borderBottomColor: colors.border}]}>
+            <View style={{flex: 1}}>
+              <Text style={[styles.configModalTitle, {color: colors.heading}]}>
+                Chỉnh sửa lộ trình
+              </Text>
+              <Text style={[styles.configModalDescription, {color: colors.textSecondary}]}>
+                Cập nhật lượng kiến thức, nhịp học, số ngày dự kiến và số phút mỗi ngày cho lộ trình hiện tại.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setRoadmapConfigModalVisible(false)}
+              disabled={savingRoadmapConfig}
+              style={[styles.stageIconButton, {borderColor: colors.border}]}>
+              <Icon name="close" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.configModalBody}>
+            <View
+              style={[
+                styles.aiSuggestCard,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                },
+              ]}>
+              <View style={styles.aiSuggestTop}>
+                <View style={styles.aiSuggestIcon}>
+                  <Icon name="sparkles" size={20} color="#0891b2" />
+                </View>
+                <View style={{flex: 1}}>
+                  <Text style={[styles.aiSuggestTitle, {color: colors.heading}]}>
+                    Use AI to prefill this roadmap
+                  </Text>
+                  <Text style={[styles.aiSuggestText, {color: colors.textSecondary}]}>
+                    The suggestion uses the saved workspace profile to estimate depth, pacing, study days, and daily workload.
+                  </Text>
+                </View>
+              </View>
+              <Button
+                title={suggestingRoadmapConfig ? 'Đang gợi ý...' : 'Suggest with AI'}
+                onPress={handleSuggestRoadmapConfig}
+                loading={suggestingRoadmapConfig}
+                disabled={savingRoadmapConfig || suggestingRoadmapConfig}
+                icon="brain"
+                size="sm"
+                fullWidth={false}
+                variant="outline"
+              />
+              {roadmapSuggestionMeta ? (
+                <View style={[styles.suggestionResult, {borderColor: colors.border}]}>
+                  <Icon name="check-circle-outline" size={18} color="#10b981" />
+                  <View style={{flex: 1}}>
+                    {roadmapSuggestionMeta.rationale ? (
+                      <Text style={[styles.suggestionText, {color: colors.textSecondary}]}>
+                        {roadmapSuggestionMeta.rationale}
+                      </Text>
+                    ) : null}
+                    {toArray(roadmapSuggestionMeta.recommendations).map((item: any, index: number) => (
+                      <Text key={`${item}-${index}`} style={[styles.suggestionText, {color: colors.textSecondary}]}>
+                        • {String(item)}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+            </View>
+
+            <Text style={[styles.configFieldLabel, {color: colors.heading}]}>
+              Lượng kiến thức cần học*
+            </Text>
+            <Text style={[styles.configHint, {color: colors.textSecondary}]}>
+              Lượng kiến thức quyết định bạn học bao nhiêu. Tốc độ học quyết định nhịp thời gian, còn hệ thống sẽ chia đều theo số ngày và phút mỗi ngày.
+            </Text>
+            {KNOWLEDGE_LOAD_OPTIONS.map(option =>
+              renderRoadmapConfigOption('knowledgeLoad', option),
+            )}
+
+            <Text style={[styles.configFieldLabel, {color: colors.heading}]}>Loại Lộ trình*</Text>
+            {ADAPTATION_MODE_OPTIONS.map(option =>
+              renderRoadmapConfigOption('adaptationMode', option),
+            )}
+
+            <Text style={[styles.configFieldLabel, {color: colors.heading}]}>Tốc độ Lộ trình*</Text>
+            {ROADMAP_SPEED_OPTIONS.map(option =>
+              renderRoadmapConfigOption('roadmapSpeedMode', option),
+            )}
+
+            <Text style={[styles.configFieldLabel, {color: colors.heading}]}>Số ngày dự kiến*</Text>
+            <TextInput
+              value={roadmapConfigValues.estimatedTotalDays}
+              onChangeText={value => updateRoadmapConfigField('estimatedTotalDays', value.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad"
+              style={[
+                styles.configInput,
+                {
+                  color: colors.heading,
+                  borderColor: colors.border,
+                  backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                },
+              ]}
+              placeholder="30"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <View style={[styles.analysisCard, {backgroundColor: isDark ? '#1e293b' : '#f8fafc'}]}>
+              <Text style={[styles.analysisTitle, {color: colors.heading}]}>Phân tích nhịp học</Text>
+              <Text style={[styles.analysisText, {color: colors.textSecondary}]}>
+                Bạn đang nhập {totalDaysNumber || 0} ngày nên hệ thống tự quy đổi về tốc độ {selectedSpeedLabel}. Mốc gợi ý gần nhất là {recommendedDays} ngày.
+              </Text>
+            </View>
+
+            <Text style={[styles.configFieldLabel, {color: colors.heading}]}>
+              Số phút học gợi ý mỗi ngày*
+            </Text>
+            <TextInput
+              value={roadmapConfigValues.recommendedMinutesPerDay}
+              onChangeText={value => updateRoadmapConfigField('recommendedMinutesPerDay', value.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad"
+              style={[
+                styles.configInput,
+                {
+                  color: colors.heading,
+                  borderColor: colors.border,
+                  backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                },
+              ]}
+              placeholder="60"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <View style={[styles.analysisCard, {backgroundColor: isDark ? '#1e293b' : '#f8fafc'}]}>
+              <Text style={[styles.analysisTitle, {color: colors.heading}]}>Phân bổ thời lượng mỗi ngày</Text>
+              <Text style={[styles.analysisText, {color: colors.textSecondary}]}>
+                Bạn đang đặt {minutesPerDayNumber || 0} phút/ngày. Với cấu hình hiện tại, mốc gợi ý để giãn đều khối lượng học là khoảng {recommendedMinutes} phút/ngày.
+              </Text>
+            </View>
+
+            {roadmapConfigError ? (
+              <Text style={styles.configErrorText}>{roadmapConfigError}</Text>
+            ) : null}
+          </ScrollView>
+
+          <View style={[styles.configModalFooter, {borderTopColor: colors.border}]}>
+            <Button
+              title="Đóng"
+              onPress={() => setRoadmapConfigModalVisible(false)}
+              disabled={savingRoadmapConfig || suggestingRoadmapConfig}
+              variant="outline"
+              size="sm"
+              fullWidth={false}
+              style={styles.configFooterButton}
+            />
+            <Button
+              title="Lưu thay đổi"
+              onPress={handleRequestSaveRoadmapConfig}
+              loading={savingRoadmapConfig}
+              disabled={savingRoadmapConfig || suggestingRoadmapConfig}
+              icon="content-save-outline"
+              size="sm"
+              fullWidth={false}
+              style={styles.configFooterButton}
+            />
+          </View>
+        </View>
+      </View>
+
+      {roadmapConfigConfirmVisible ? (
+        <View style={styles.confirmOverlay}>
+          <View style={[styles.confirmDialog, {backgroundColor: colors.surface}]}>
+            <View style={styles.confirmIcon}>
+              <Icon name="alert-outline" size={24} color="#f59e0b" />
+            </View>
+            <Text style={[styles.confirmTitle, {color: colors.heading}]}>
+              Bạn đang có lộ trình đang sử dụng
+            </Text>
+            <Text style={[styles.confirmText, {color: colors.textSecondary}]}>
+              Nếu cập nhật, lộ trình đang sử dụng sẽ bị mất đi. Bạn chắc chắn với quyết định cập nhật thông tin lộ trình không?
+            </Text>
+            {roadmapConfigError ? (
+              <Text style={styles.configErrorText}>{roadmapConfigError}</Text>
+            ) : null}
+            <View style={styles.confirmActions}>
+              <Button
+                title="Quay lại"
+                onPress={() => setRoadmapConfigConfirmVisible(false)}
+                disabled={savingRoadmapConfig}
+                variant="outline"
+                size="sm"
+                fullWidth={false}
+                style={styles.confirmButton}
+              />
+              <Button
+                title="Xác nhận cập nhật"
+                onPress={handleConfirmSaveRoadmapConfig}
+                loading={savingRoadmapConfig}
+                disabled={savingRoadmapConfig}
+                variant="destructive"
+                size="sm"
+                fullWidth={false}
+                style={styles.confirmButton}
+              />
+            </View>
+          </View>
+        </View>
+      ) : null}
+    </Modal>
+  );
+
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -3626,52 +4436,67 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
             {title || (contextType === 'GROUP' ? 'Nhóm' : 'Workspace')}
           </Text>
         </View>
-        <View style={styles.backBtn} />
+        {contextType === 'WORKSPACE' && activeRoadmapId > 0 ? (
+          <TouchableOpacity
+            onPress={openRoadmapConfigEditor}
+            style={[styles.headerEditButton, {borderColor: colors.border}]}>
+            <Icon name="pencil-outline" size={16} color={Colors.primary} />
+            <Text style={styles.headerEditText}>Chỉnh sửa</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.backBtn} />
+        )}
       </View>
 
+      {renderRoadmapConfigModal()}
+
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        <Text style={[styles.sectionTitle, {color: colors.heading}]}>Lộ trình</Text>
-        {roadmaps.length === 0 ? (
-          <View style={[styles.emptyBox, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-            <Icon name="map-outline" size={28} color={colors.textTertiary} />
-            <Text style={[styles.emptyText, {color: colors.textSecondary}]}>Chưa có lộ trình nào</Text>
-          </View>
-        ) : (
-          <View style={styles.chipsWrap}>
-            {roadmaps.map(item => {
-              const roadmapId = Number(item.roadmapId || item.id || 0);
-              const selected = roadmapId > 0 && roadmapId === Number(selectedRoadmapId || 0);
-              return (
-                <TouchableOpacity
-                  key={roadmapId}
-                  onPress={() => setSelectedRoadmapId(roadmapId)}
-                  style={[
-                    styles.chip,
-                    {
-                      borderColor: selected ? Colors.primary : colors.border,
-                      backgroundColor: selected
-                        ? isDark
-                          ? '#1E3A8A30'
-                          : '#DBEAFE'
-                        : colors.surface,
-                    },
-                  ]}>
-                  <Text
-                    style={{
-                      color: selected ? Colors.primary : colors.textSecondary,
-                      fontWeight: '600',
-                    }}>
-                    {item.title || item.name || `Lộ trình #${roadmapId}`}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
+        {!shouldShowRoadmapSetupScreen ? (
+          <>
+            <Text style={[styles.sectionTitle, {color: colors.heading}]}>Lộ trình</Text>
+            {roadmaps.length === 0 ? (
+              <View style={[styles.emptyBox, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+                <Icon name="map-outline" size={28} color={colors.textTertiary} />
+                <Text style={[styles.emptyText, {color: colors.textSecondary}]}>Chưa có lộ trình nào</Text>
+              </View>
+            ) : (
+              <View style={styles.chipsWrap}>
+                {roadmaps.map(item => {
+                  const roadmapId = Number(item.roadmapId || item.id || 0);
+                  const selected = roadmapId > 0 && roadmapId === Number(selectedRoadmapId || 0);
+                  return (
+                    <TouchableOpacity
+                      key={roadmapId}
+                      onPress={() => setSelectedRoadmapId(roadmapId)}
+                      style={[
+                        styles.chip,
+                        {
+                          borderColor: selected ? Colors.primary : colors.border,
+                          backgroundColor: selected
+                            ? isDark
+                              ? '#1E3A8A30'
+                              : '#DBEAFE'
+                            : colors.surface,
+                        },
+                      ]}>
+                      <Text
+                        style={{
+                          color: selected ? Colors.primary : colors.textSecondary,
+                          fontWeight: '600',
+                        }}>
+                        {item.title || item.name || `Lộ trình #${roadmapId}`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </>
+        ) : null}
 
         {!!activeRoadmapId && (
           <View style={styles.phaseWrap}>
-            {renderRoadmapStage()}
+            {shouldShowRoadmapSetupScreen ? renderRoadmapSetupScreen() : renderRoadmapStage()}
 
             <View
               style={[
@@ -4238,12 +5063,13 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                       title="Tạo giai đoạn"
                       onPress={() => handleGenerateRoadmapPhases(activeRoadmapId)}
                       loading={runningAction === 'phases' || generatingRoadmapPhases}
+                      disabled={!canGenerateRoadmapPhases}
                       icon="timeline-plus-outline"
                       size="sm"
                       fullWidth={false}
                       style={styles.generatePhasesBtn}
                     />
-                    {generatingRoadmapPhases ? renderGenerationProgress(roadmapPhaseGenerationProgress) : null}
+                    {generatingRoadmapPhases ? renderPhaseGenerationLoader() : null}
                   </View>
                 ) : null}
               </View>
@@ -4373,6 +5199,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
                   title="Tạo giai đoạn"
                   onPress={() => handleGenerateRoadmapPhases(activeRoadmapId)}
                   loading={runningAction === 'phases' || generatingRoadmapPhases}
+                  disabled={!canGenerateRoadmapPhases}
                   icon="timeline-plus-outline"
                   size="sm"
                   fullWidth={false}
@@ -5346,6 +6173,18 @@ const styles = StyleSheet.create({
   headerCenter: {flex: 1, marginHorizontal: Spacing.sm},
   headerTitle: {fontSize: 17, fontWeight: '600'},
   headerSub: {fontSize: 12, marginTop: 2},
+  headerEditButton: {
+    minWidth: 94,
+    minHeight: 36,
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  headerEditText: {fontSize: 12, fontWeight: '700', color: Colors.primary},
   content: {flex: 1},
   contentContainer: {padding: Spacing.lg, paddingBottom: Spacing['3xl']},
   sectionTitle: {
@@ -5372,6 +6211,51 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     maxWidth: '100%',
   },
+  materialPickerCard: {
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: Spacing.lg,
+    gap: Spacing.md,
+  },
+  materialPickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  materialPickerTitle: {fontSize: 14, fontWeight: '700'},
+  materialPickerSubtitle: {fontSize: 12, lineHeight: 18, marginTop: 3},
+  materialPickerCounter: {
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#eff6ff',
+  },
+  materialPickerCounterText: {fontSize: 11, fontWeight: '800', color: Colors.primary},
+  selectAllButton: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  selectAllText: {fontSize: 12, fontWeight: '700', color: Colors.primary},
+  materialList: {gap: Spacing.xs},
+  materialListItem: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  materialListName: {fontSize: 13, fontWeight: '700', lineHeight: 18},
+  materialMetaRow: {flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: 3},
+  materialMetaText: {fontSize: 11, fontWeight: '700', textTransform: 'uppercase'},
+  materialEmptyState: {borderRadius: BorderRadius.md, padding: Spacing.md},
+  materialEmptyText: {fontSize: 12, lineHeight: 18},
   chip: {
     borderWidth: 1,
     borderRadius: BorderRadius.full,
@@ -6400,6 +7284,174 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  phaseGenerationLoader: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
+  },
+  phaseGenerationTitle: {fontSize: 14, fontWeight: '800', textAlign: 'center'},
+  phaseGenerationText: {fontSize: 12, lineHeight: 18, textAlign: 'center'},
+  roadmapSetupScreen: {
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: Spacing.lg,
+    gap: Spacing.lg,
+  },
+  roadmapSetupWelcome: {
+    alignItems: 'center',
+    paddingVertical: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  roadmapSetupIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  roadmapSetupTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  roadmapSetupText: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  roadmapSetupButton: {
+    minWidth: 170,
+    marginTop: Spacing.md,
+    borderRadius: BorderRadius.full,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+    justifyContent: 'flex-end',
+  },
+  configModal: {
+    maxHeight: '92%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  configModalHeader: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  configModalTitle: {fontSize: 20, fontWeight: '800'},
+  configModalDescription: {fontSize: 13, lineHeight: 19, marginTop: 5},
+  configModalBody: {padding: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.xl},
+  aiSuggestCard: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  aiSuggestTop: {flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm},
+  aiSuggestIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ecfeff',
+  },
+  aiSuggestTitle: {fontSize: 14, fontWeight: '800'},
+  aiSuggestText: {fontSize: 12, lineHeight: 18, marginTop: 3},
+  suggestionResult: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  suggestionText: {fontSize: 12, lineHeight: 18},
+  configFieldLabel: {fontSize: 14, fontWeight: '800', marginTop: Spacing.sm},
+  configHint: {fontSize: 12, lineHeight: 18},
+  configOption: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  configRadio: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  configRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.primary,
+  },
+  configOptionTitle: {fontSize: 13, fontWeight: '800'},
+  configOptionText: {fontSize: 12, lineHeight: 18, marginTop: 3},
+  configInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  analysisCard: {borderRadius: BorderRadius.md, padding: Spacing.sm, gap: 3},
+  analysisTitle: {fontSize: 12, fontWeight: '800'},
+  analysisText: {fontSize: 12, lineHeight: 18},
+  configErrorText: {fontSize: 12, lineHeight: 18, fontWeight: '700', color: Colors.error},
+  configModalFooter: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: Spacing.sm,
+  },
+  configFooterButton: {minWidth: 122},
+  confirmOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15,23,42,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  confirmDialog: {
+    width: '100%',
+    borderRadius: 22,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  confirmIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fffbeb',
+  },
+  confirmTitle: {fontSize: 18, fontWeight: '800'},
+  confirmText: {fontSize: 13, lineHeight: 20},
+  confirmActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  confirmButton: {minWidth: 118},
   quickActionCard: {
     borderWidth: 1,
     borderRadius: BorderRadius.md,

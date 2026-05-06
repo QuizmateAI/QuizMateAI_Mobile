@@ -25,6 +25,7 @@ import MaterialAPI from '../../api/MaterialAPI';
 import QuizAPI from '../../api/QuizAPI';
 import FlashcardAPI from '../../api/FlashcardAPI';
 import RoadmapAPI from '../../api/RoadmapAPI';
+import QuizCollectionAPI from '../../api/QuizCollectionAPI';
 import useWebSocket from '../../hooks/useWebSocket';
 import WorkspaceProfileAPI from '../../api/WorkspaceProfileAPI';
 import {isDeletedMaterial} from '../../api/MaterialAPI';
@@ -49,6 +50,7 @@ const QUICK_ACTIONS = [
   {icon: 'head-question-outline', label: 'Quiz', key: 'quiz', color: '#2563EB'},
   {icon: 'cards-outline', label: 'Flashcard', key: 'flashcard', color: '#EA580C'},
   {icon: 'clipboard-text-outline', label: 'Thi thử', key: 'mockTest', color: '#7C3AED'},
+  {icon: 'folder-multiple-outline', label: 'Bộ sưu tập', key: 'quizCollection', color: '#0891B2'},
 ];
 
 /* ──── Studio item data ──── */
@@ -69,6 +71,8 @@ export default function WorkspaceScreen({navigation, route}: any) {
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [flashcards, setFlashcards] = useState<any[]>([]);
   const [roadmaps, setRoadmaps] = useState<any[]>([]);
+  const [mockTests, setMockTests] = useState<any[]>([]);
+  const [quizCollections, setQuizCollections] = useState<any[]>([]);
   const [profileStatusLoading, setProfileStatusLoading] = useState(true);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [workspaceSetupSummary, setWorkspaceSetupSummary] = useState('');
@@ -210,6 +214,8 @@ export default function WorkspaceScreen({navigation, route}: any) {
         setQuizzes([]);
         setFlashcards([]);
         setRoadmaps([]);
+        setMockTests([]);
+        setQuizCollections([]);
         setOnboardingCompleted(null);
         setProfileStatusLoading(false);
         setLoading(false);
@@ -261,9 +267,14 @@ export default function WorkspaceScreen({navigation, route}: any) {
         }
       }
 
-      const [quizRes, fcRes] = await Promise.allSettled([
+      const [quizRes, fcRes, mockTestRes, collectionRes] = await Promise.allSettled([
         QuizAPI.getByContext('WORKSPACE', normalizedWorkspaceId),
         FlashcardAPI.getByContext('WORKSPACE', normalizedWorkspaceId),
+        QuizAPI.getByContext('WORKSPACE', normalizedWorkspaceId, {
+          quizIntent: 'MOCK_TEST',
+          includeMockTest: true,
+        }),
+        QuizCollectionAPI.getByWorkspace(normalizedWorkspaceId),
       ]);
 
       if (requestId !== latestFetchRequestIdRef.current) {
@@ -272,6 +283,12 @@ export default function WorkspaceScreen({navigation, route}: any) {
 
       setQuizzes(quizRes.status === 'fulfilled' ? quizRes.value.data || [] : []);
       setFlashcards(fcRes.status === 'fulfilled' ? fcRes.value.data || [] : []);
+      setMockTests(
+        mockTestRes.status === 'fulfilled' ? mockTestRes.value.data || [] : [],
+      );
+      setQuizCollections(
+        collectionRes.status === 'fulfilled' ? collectionRes.value.data || [] : [],
+      );
 
       // Roadmaps – separate try/catch so it doesn't block others
       try {
@@ -561,6 +578,29 @@ export default function WorkspaceScreen({navigation, route}: any) {
     }
   };
 
+  const visibleMaterials = materials.filter(material => !isDeletedMaterial(material));
+  const activeMaterials = visibleMaterials.filter(material => {
+    const status = String(
+      material?.final_status || material?.status || material?.processingStatus || '',
+    ).toUpperCase();
+    return status === 'ACTIVE';
+  });
+  const hasActiveMaterial = activeMaterials.length > 0;
+  const hasExistingRoadmap = roadmaps.length > 0;
+  const hasExistingQuiz = quizzes.length > 0;
+  const hasExistingFlashcard = flashcards.length > 0;
+  const hasExistingMockTest = mockTests.length > 0;
+  const hasExistingQuizCollection = quizCollections.length > 0;
+  const quickActionDisabledMap: Record<string, boolean> = {
+    roadmap: !hasActiveMaterial && !hasExistingRoadmap,
+    quiz: !hasActiveMaterial && !hasExistingQuiz,
+    flashcard: !hasActiveMaterial && !hasExistingFlashcard,
+    mockTest: !hasActiveMaterial && !hasExistingMockTest,
+    quizCollection: !hasActiveMaterial && !hasExistingQuizCollection,
+  };
+  const activeMaterialLockMessage =
+    'Cần ít nhất 1 tài liệu ACTIVE để sử dụng chức năng này.';
+
   const handleQuickAction = (key: string) => {
     if (onboardingCompleted === false) {
       showToast(getSetupLockMessage('WORKSPACE'), 'info');
@@ -571,13 +611,28 @@ export default function WorkspaceScreen({navigation, route}: any) {
       return;
     }
 
+    if (quickActionDisabledMap[key]) {
+      showToast(activeMaterialLockMessage, 'info');
+      handleChangeBottomTab('sources');
+      return;
+    }
+
     const labelMap: Record<string, string> = {
       roadmap: 'Lộ trình',
       quiz: 'Quiz',
       flashcard: 'Flashcard',
       mockTest: 'Thi thử',
+      quizCollection: 'Bộ sưu tập',
     };
     addAccessHistory(labelMap[key] || 'Tác vụ nhanh', 'quick-action', `quick:${key}`);
+    if (key === 'quizCollection') {
+      navigation.navigate('QuizCollection', {
+        workspaceId: Number(workspaceId),
+        title,
+        canCreateCollection: hasActiveMaterial,
+      });
+      return;
+    }
     if (key === 'quiz' || key === 'mockTest') {
       navigation.navigate('CreateAIQuiz', {
         workspaceId,
@@ -628,8 +683,6 @@ export default function WorkspaceScreen({navigation, route}: any) {
         return {variant: 'default' as const, label: status || 'Không xác định'};
     }
   };
-
-  const visibleMaterials = materials.filter(material => !isDeletedMaterial(material));
 
   if (loading) {
     return <LoadingSpinner />;
@@ -731,38 +784,42 @@ export default function WorkspaceScreen({navigation, route}: any) {
               Tác vụ nhanh
             </Text>
             <View style={styles.quickActions}>
-              {QUICK_ACTIONS.map(action => (
-                <TouchableOpacity
-                  key={action.key}
-                  activeOpacity={onboardingCompleted === false ? 1 : 0.7}
-                  onPress={() => handleQuickAction(action.key)}
-                  style={[
-                    styles.quickAction,
-                    onboardingCompleted === false && styles.quickActionLocked,
-                    {
-                      backgroundColor: isDark
-                        ? `${action.color}15`
-                        : `${action.color}10`,
-                    },
-                  ]}>
-                  <View style={styles.quickActionIconWrap}>
-                    <Icon name={action.icon} size={22} color={action.color} />
-                    {onboardingCompleted === false ? (
-                      <View
-                        style={[
-                          styles.quickActionLockBadge,
-                          {backgroundColor: colors.surface},
-                        ]}>
-                        <Icon name="lock" size={10} color={colors.textSecondary} />
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text
-                    style={[styles.quickActionLabel, {color: action.color}]}>
-                    {action.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {QUICK_ACTIONS.map(action => {
+                const locked =
+                  onboardingCompleted === false || quickActionDisabledMap[action.key];
+                return (
+                  <TouchableOpacity
+                    key={action.key}
+                    activeOpacity={locked ? 1 : 0.7}
+                    onPress={() => handleQuickAction(action.key)}
+                    style={[
+                      styles.quickAction,
+                      locked && styles.quickActionLocked,
+                      {
+                        backgroundColor: isDark
+                          ? `${action.color}15`
+                          : `${action.color}10`,
+                      },
+                    ]}>
+                    <View style={styles.quickActionIconWrap}>
+                      <Icon name={action.icon} size={22} color={action.color} />
+                      {locked ? (
+                        <View
+                          style={[
+                            styles.quickActionLockBadge,
+                            {backgroundColor: colors.surface},
+                          ]}>
+                          <Icon name="lock" size={10} color={colors.textSecondary} />
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text
+                      style={[styles.quickActionLabel, {color: action.color}]}>
+                      {action.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {/* Overview cards */}
@@ -789,6 +846,13 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 label="Thẻ"
                 value={flashcards.length}
                 color="#EA580C"
+                colors={colors}
+              />
+              <OverviewCard
+                icon="folder-multiple-outline"
+                label="Bộ sưu tập"
+                value={quizCollections.length}
+                color="#0891B2"
                 colors={colors}
               />
             </View>

@@ -37,7 +37,15 @@ export default function MainTabNavigator() {
 
   const getHomeTabBarStyle = (route: RouteProp<MainTabParamList, 'Home'>) => {
     const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'HomeMain';
-    if (focusedRoute === 'Workspace' || focusedRoute === 'GroupWorkspace' || focusedRoute === 'RoadmapJourney') {
+    if (
+      focusedRoute === 'Workspace' ||
+      focusedRoute === 'GroupWorkspace' ||
+      focusedRoute === 'RoadmapJourney' ||
+      focusedRoute === 'QuizCollection' ||
+      focusedRoute === 'PracticeQuiz' ||
+      focusedRoute === 'VoicePracticeQuiz' ||
+      focusedRoute === 'QuizResult'
+    ) {
       return hiddenTabBarStyle;
     }
     return baseTabBarStyle;

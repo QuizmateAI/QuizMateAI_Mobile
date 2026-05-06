@@ -162,6 +162,9 @@ const WorkspaceProfileAPI = {
       buildRoadmapConfigStepRequest(payload),
     ),
 
+  suggestRoadmapConfig: (workspaceId: number) =>
+    api.post(`/api/workspace-profile/individual/${workspaceId}/roadmap-config/suggest`),
+
   confirm: (workspaceId: number) =>
     api.post(`/api/workspace-profile/individual/${workspaceId}/steps/confirm`),
 
