@@ -1009,7 +1009,7 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
   }, [cancelVoiceFlow]);
 
   useEffect(() => {
-    QuizAPI.getFull(quizId)
+    QuizAPI.getFull(quizId, attemptId ? {attemptId} : undefined)
       .then(res => {
         const quizData = res.data;
         setQuiz(quizData);
@@ -1032,7 +1032,7 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
       .finally(() => {
         setLoading(false);
       });
-  }, [quizId, showToast]);
+  }, [quizId, attemptId, showToast]);
 
   useEffect(() => {
     if (

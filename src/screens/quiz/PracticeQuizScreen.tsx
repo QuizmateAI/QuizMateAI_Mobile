@@ -268,7 +268,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
   };
 
   useEffect(() => {
-    QuizAPI.getFull(quizId)
+    QuizAPI.getFull(quizId, attemptId ? {attemptId} : undefined)
       .then(res => {
         setQuiz(res.data);
         const allQuestions =
@@ -284,7 +284,7 @@ export default function PracticeQuizScreen({navigation, route}: any) {
         ),
       )
       .finally(() => setLoading(false));
-  }, [quizId, showToast]);
+  }, [quizId, attemptId, showToast]);
 
   useEffect(() => {
     let active = true;

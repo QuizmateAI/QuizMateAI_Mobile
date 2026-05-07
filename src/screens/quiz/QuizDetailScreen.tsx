@@ -6,6 +6,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -737,6 +738,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
   const [loadError, setLoadError] = useState('');
   const [shareLoading, setShareLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [shuffleSaving, setShuffleSaving] = useState(false);
   const [discussionMessages, setDiscussionMessages] = useState<any[]>([]);
   const [discussionLoading, setDiscussionLoading] = useState(false);
   const [discussionPosting, setDiscussionPosting] = useState(false);
@@ -764,6 +766,27 @@ export default function QuizDetailScreen({navigation, route}: any) {
     [initialQuiz, quiz],
   );
   const quizId = initialQuizId || getQuizIdFrom(effectiveQuiz);
+  const currentUserId = Number(user?.id || 0);
+  const isCreator = currentUserId > 0
+    && Number(effectiveQuiz?.creatorId || 0) === currentUserId;
+  const shuffleEnabled = Boolean(effectiveQuiz?.shuffleEnabled);
+
+  const handleToggleShuffle = useCallback(async (next: boolean) => {
+    if (!quizId || shuffleSaving) return;
+    setShuffleSaving(true);
+    setQuiz((prev: any) => ({...(prev || {}), shuffleEnabled: next}));
+    try {
+      await QuizAPI.updateShuffleEnabled(quizId, next);
+    } catch (err: any) {
+      setQuiz((prev: any) => ({...(prev || {}), shuffleEnabled: !next}));
+      showToast(
+        err?.response?.data?.message || err?.message || 'Không thể cập nhật chế độ shuffle',
+        'error',
+      );
+    } finally {
+      setShuffleSaving(false);
+    }
+  }, [quizId, shuffleSaving, showToast]);
   const sections = useMemo(() => buildSections(effectiveQuiz), [effectiveQuiz]);
   const allQuestions = useMemo(
     () => sections.flatMap(section => section.questions),
@@ -1674,6 +1697,31 @@ export default function QuizDetailScreen({navigation, route}: any) {
 
             {activeTab === 'overview' ? (
               <View style={styles.section}>
+                {isCreator ? (
+                  <View
+                    style={[
+                      styles.shufflePanel,
+                      {backgroundColor: colors.surface, borderColor: colors.border},
+                    ]}>
+                    <View style={styles.shufflePanelHeader}>
+                      <Icon name="shuffle-variant" size={20} color={Colors.primary} />
+                      <View style={styles.shufflePanelText}>
+                        <Text style={[styles.shufflePanelTitle, {color: colors.heading}]}>
+                          Trộn thứ tự câu hỏi & đáp án
+                        </Text>
+                        <Text style={[styles.shufflePanelSubtitle, {color: colors.textSecondary}]}>
+                          Khi bật, mỗi lần làm bài câu hỏi và đáp án sẽ hiển thị theo thứ tự ngẫu nhiên khác nhau.
+                        </Text>
+                      </View>
+                    </View>
+                    <Switch
+                      value={shuffleEnabled}
+                      onValueChange={handleToggleShuffle}
+                      disabled={shuffleSaving}
+                      trackColor={{false: colors.border, true: Colors.primary}}
+                    />
+                  </View>
+                ) : null}
                 <View style={styles.infoGrid}>
                   {infoItems.map(item => (
                     <InfoTile
@@ -2555,6 +2603,24 @@ const styles = StyleSheet.create({
   },
   tabLabel: {fontSize: 11, fontWeight: '700'},
   section: {gap: Spacing.base},
+  shufflePanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.md,
+  },
+  shufflePanelHeader: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  shufflePanelText: {flex: 1, gap: 2},
+  shufflePanelTitle: {fontSize: 14, fontWeight: '700'},
+  shufflePanelSubtitle: {fontSize: 12, lineHeight: 17},
   infoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
