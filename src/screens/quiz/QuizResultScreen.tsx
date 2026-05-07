@@ -85,7 +85,7 @@ export default function QuizResultScreen({navigation, route}: any) {
         }
 
         try {
-          const fullRes = await QuizAPI.getFull(quizId);
+          const fullRes = await QuizAPI.getFull(quizId, {attemptId});
           const fullQuestions =
             fullRes.data?.sections?.flatMap((section: any) => section?.questions || []) || [];
           const questionMap = new Map(
