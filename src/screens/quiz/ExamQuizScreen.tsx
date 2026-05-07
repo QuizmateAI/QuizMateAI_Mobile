@@ -252,7 +252,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
   }, [attemptId]);
 
   useEffect(() => {
-    QuizAPI.getFull(quizId)
+    QuizAPI.getFull(quizId, attemptId ? {attemptId} : undefined)
       .then(res => {
         const quizData = res.data;
         setQuiz(quizData);
@@ -280,7 +280,7 @@ export default function ExamQuizScreen({navigation, route}: any) {
     return () => {
       if (timerRef.current) {clearInterval(timerRef.current);}
     };
-  }, [quizId, showToast]);
+  }, [quizId, attemptId, showToast]);
 
   const stopTimer = () => {
     if (timerRef.current) {

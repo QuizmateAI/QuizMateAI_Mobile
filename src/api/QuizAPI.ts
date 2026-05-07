@@ -178,10 +178,22 @@ const QuizAPI = {
       data: filterQuizListForContext(getQuizList(res.data), contextType, options).map(mapQuiz),
     }));
   },
-  getFull: (quizId: number) =>
-    api.get(`/api/quiz/${quizId}/full`).then(res => ({
+  getFull: (quizId: number, options?: {attemptId?: number; attemptView?: boolean}) => {
+    const params: Record<string, any> = {};
+    if (options?.attemptId != null) params.attemptId = options.attemptId;
+    if (options?.attemptView) params.attemptView = true;
+    const hasParams = Object.keys(params).length > 0;
+    return api
+      .get(`/api/quiz/${quizId}/full`, hasParams ? {params} : undefined)
+      .then(res => ({
+        ...res,
+        data: mapQuizFull(res.data?.data ?? res.data),
+      }));
+  },
+  updateShuffleEnabled: (quizId: number, enabled: boolean) =>
+    api.patch(`/api/quiz/${quizId}/shuffle`, {enabled}).then(res => ({
       ...res,
-      data: mapQuizFull(res.data?.data ?? res.data),
+      data: res.data?.data ?? res.data,
     })),
   getAttemptHistory: (quizId: number) =>
     api
