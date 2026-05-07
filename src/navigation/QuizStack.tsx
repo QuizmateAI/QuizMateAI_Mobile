@@ -21,6 +21,14 @@ import {type VoicePracticeConfig} from '../utils/voicePractice';
 export type QuizBackContext =
   | {type: 'quiz-list'}
   | {type: 'workspace'; workspaceId: number; title?: string}
+  | {
+      type: 'collection';
+      workspaceId: number;
+      collectionId: number;
+      title?: string;
+      collectionTitle?: string;
+      canCreateCollection?: boolean;
+    }
   | {type: 'group'; groupId: number; title?: string}
   | {
       type: 'roadmap';

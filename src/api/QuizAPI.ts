@@ -333,6 +333,22 @@ const QuizAPI = {
     api.post(`/api/quiz-attempts/${attemptId}/submit`),
   createManualQuizBulk: (data: any) =>
     api.post('/api/quiz/manual:create-bulk', data),
+  getWorkspaceQuestionsCatalog: (
+    workspaceId: number,
+    params?: {
+      excludeQuizId?: number;
+      quizId?: number;
+      search?: string;
+      questionType?: string;
+      difficulty?: string;
+    },
+  ) =>
+    api
+      .get(`/api/quiz/workspace/${workspaceId}/questions-catalog`, {params})
+      .then(res => ({
+        ...res,
+        data: getQuizList(res.data),
+      })),
   getAttemptAssessment: (attemptId: number) =>
     api.get(`/api/quiz-attempts/${attemptId}/assessment`).then(res => ({
       ...res,

@@ -178,8 +178,32 @@ export default function PracticeQuizScreen({navigation, route}: any) {
       navigation.navigate('QuizDetail', quizDetailParams);
       return;
     }
+    if (
+      backContext?.type === 'collection' &&
+      Number.isInteger(backContext.workspaceId) &&
+      backContext.workspaceId > 0 &&
+      Number.isInteger(backContext.collectionId) &&
+      backContext.collectionId > 0
+    ) {
+      const collectionParams = {
+        workspaceId: backContext.workspaceId,
+        title: backContext.title,
+        initialCollectionId: backContext.collectionId,
+        canCreateCollection: backContext.canCreateCollection,
+      };
+      const routeNames = navigation.getState?.()?.routeNames || [];
+      if (routeNames.includes('QuizCollection')) {
+        navigation.navigate('QuizCollection', collectionParams);
+      } else {
+        navigation.navigate('Home', {
+          screen: 'QuizCollection',
+          params: collectionParams,
+        });
+      }
+      return;
+    }
     navigation.goBack();
-  }, [navigation, quizDetailParams]);
+  }, [backContext, navigation, quizDetailParams]);
 
   useEffect(() => {
     let active = true;

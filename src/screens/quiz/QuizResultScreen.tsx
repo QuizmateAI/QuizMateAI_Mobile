@@ -326,6 +326,8 @@ export default function QuizResultScreen({navigation, route}: any) {
   const backButtonTitle =
     backContext?.type === 'workspace'
       ? 'Về workspace'
+      : backContext?.type === 'collection'
+      ? 'Về bộ sưu tập'
       : backContext?.type === 'group'
       ? 'Về nhóm'
       : backContext?.type === 'roadmap'
@@ -390,6 +392,30 @@ export default function QuizResultScreen({navigation, route}: any) {
           title: backContext.title,
         },
       });
+      return;
+    }
+
+    if (
+      backContext?.type === 'collection' &&
+      Number.isInteger(backContext.workspaceId) &&
+      backContext.workspaceId > 0 &&
+      Number.isInteger(backContext.collectionId) &&
+      backContext.collectionId > 0
+    ) {
+      const collectionParams = {
+        workspaceId: backContext.workspaceId,
+        title: backContext.title,
+        initialCollectionId: backContext.collectionId,
+        canCreateCollection: backContext.canCreateCollection,
+      };
+      if (routeNames.includes('QuizCollection')) {
+        navigation.navigate('QuizCollection', collectionParams);
+      } else {
+        navigation.navigate('Home', {
+          screen: 'QuizCollection',
+          params: collectionParams,
+        });
+      }
       return;
     }
 
