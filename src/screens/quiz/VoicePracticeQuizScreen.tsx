@@ -305,7 +305,7 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
         activeSpeechSessionRef.current = activeSession;
 
         try {
-          QuizAPI.createCompanionSpeech(content)
+          QuizAPI.createCompanionSpeech(content, attemptId)
             .then(async res => {
               if (activeSpeechSessionRef.current !== activeSession || settled) {
                 return;

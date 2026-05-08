@@ -315,8 +315,13 @@ const QuizAPI = {
         data: res.data?.data,
       }));
   },
-  createCompanionSpeech: (text: string) =>
-    api.post('/api/quiz-attempts/companion-speech', {text}).then(res => ({
+  createCompanionSpeech: (text: string, attemptId?: number | null) =>
+    api
+      .post('/api/quiz-attempts/companion-speech', {
+        text,
+        attemptId: attemptId ?? undefined,
+      })
+      .then(res => ({
       ...res,
       data: res.data?.data,
     })),
