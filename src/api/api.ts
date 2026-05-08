@@ -1,8 +1,12 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {API_URL} from '@env';
-
-const TOKEN_KEY = '@quizmate_token';
+import {
+  ACCESS_TOKEN_KEY,
+  LEGACY_ACCESS_TOKEN_KEY,
+  clearStoredSession,
+  readStoredSession,
+  updateStoredTokens,
+} from '../utils/authStorage';
 
 function classifyApiUrl(url?: string) {
   const normalized = String(url || '').trim().toLowerCase();
@@ -41,11 +45,81 @@ const api = axios.create({
   },
 });
 
-api.interceptors.request.use(async config => {
-  const token = await AsyncStorage.getItem(TOKEN_KEY);
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+let refreshPromise: Promise<string> | null = null;
+
+function isRefreshRequest(url?: string) {
+  return String(url || '').includes('/api/auth/refresh');
+}
+
+function isAuthRequest(url?: string) {
+  return String(url || '').includes('/api/auth/');
+}
+
+function buildAbsoluteApiUrl(path: string) {
+  return `${String(API_URL || '').replace(/\/+$/, '')}${path}`;
+}
+
+async function readAccessToken() {
+  const {accessToken} = await readStoredSession();
+  return accessToken;
+}
+
+async function refreshAccessToken() {
+  const {refreshToken} = await readStoredSession();
+
+  if (!refreshToken) {
+    throw new Error('MISSING_REFRESH_TOKEN');
   }
+
+  const response = await axios.post(
+    buildAbsoluteApiUrl('/api/auth/refresh'),
+    {refreshToken},
+    {
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+    },
+  );
+
+  const payload = response?.data?.data ?? response?.data;
+  const newAccessToken = payload?.accessToken;
+  const newRefreshToken = payload?.refreshToken;
+
+  if (!newAccessToken) {
+    throw new Error('INVALID_REFRESH_RESPONSE');
+  }
+
+  await updateStoredTokens({
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
+  });
+
+  return newAccessToken;
+}
+
+function getOrStartRefresh() {
+  if (!refreshPromise) {
+    refreshPromise = refreshAccessToken().finally(() => {
+      refreshPromise = null;
+    });
+  }
+
+  return refreshPromise;
+}
+
+api.interceptors.request.use(async config => {
+  const token = await readAccessToken();
+  const headers = config.headers ?? {};
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  } else {
+    delete headers.Authorization;
+  }
+
+  config.headers = headers;
 
   const requestBaseUrl = String(config.baseURL || API_URL || '').replace(/\/+$/, '');
   const requestPath = String(config.url || '').replace(/^\/+/, '');
@@ -58,13 +132,38 @@ api.interceptors.request.use(async config => {
 
 api.interceptors.response.use(
   response => response,
-  error => {
-    if (error.response?.status === 401) {
-      AsyncStorage.removeItem(TOKEN_KEY);
-      AsyncStorage.removeItem('@quizmate_user');
+  async error => {
+    const originalRequest = error?.config ?? {};
+    const status = error?.response?.status;
+
+    if (
+      status === 401 &&
+      !originalRequest._retry &&
+      !isRefreshRequest(originalRequest.url) &&
+      !isAuthRequest(originalRequest.url)
+    ) {
+      originalRequest._retry = true;
+
+      try {
+        const nextAccessToken = await getOrStartRefresh();
+        originalRequest.headers = {
+          ...(originalRequest.headers ?? {}),
+          Authorization: `Bearer ${nextAccessToken}`,
+        };
+        return api(originalRequest);
+      } catch (refreshError) {
+        await clearStoredSession();
+        return Promise.reject(refreshError);
+      }
     }
+
+    if (status === 401 && isRefreshRequest(originalRequest.url)) {
+      await clearStoredSession();
+    }
+
     return Promise.reject(error);
   },
 );
 
+export {ACCESS_TOKEN_KEY, LEGACY_ACCESS_TOKEN_KEY};
 export default api;

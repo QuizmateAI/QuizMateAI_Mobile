@@ -1,5 +1,12 @@
 import React, {createContext, useContext, useState, useEffect, useCallback} from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {DeviceEventEmitter} from 'react-native';
+import {
+  AUTH_STORAGE_CHANGED_EVENT,
+  clearStoredSession,
+  persistSession,
+  readStoredSession,
+  updateStoredUser,
+} from '../utils/authStorage';
 
 interface User {
   id: number;
@@ -15,7 +22,11 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (token: string, user: User) => Promise<void>;
+  login: (
+    accessToken: string,
+    user: User,
+    refreshToken?: string | null,
+  ) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => Promise<void>;
 }
@@ -30,51 +41,76 @@ const AuthContext = createContext<AuthContextType>({
   updateUser: async () => {},
 });
 
-const TOKEN_KEY = '@quizmate_token';
-const USER_KEY = '@quizmate_user';
-
 export function AuthProvider({children}: {children: React.ReactNode}) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+
+    const syncFromStorage = async () => {
       try {
-        const [storedToken, storedUser] = await Promise.all([
-          AsyncStorage.getItem(TOKEN_KEY),
-          AsyncStorage.getItem(USER_KEY),
-        ]);
-        if (storedToken && storedUser) {
-          setToken(storedToken);
-          setUser(JSON.parse(storedUser));
+        const {accessToken, userJson} = await readStoredSession();
+
+        if (!mounted) {
+          return;
+        }
+
+        if (accessToken && userJson) {
+          setToken(accessToken);
+          setUser(JSON.parse(userJson));
+        } else {
+          setToken(null);
+          setUser(null);
         }
       } finally {
-        setIsLoading(false);
+        if (mounted) {
+          setIsLoading(false);
+        }
       }
-    })();
+    };
+
+    syncFromStorage().catch(() => {
+      /* sync failure leaves auth empty */
+    });
+
+    const subscription = DeviceEventEmitter.addListener(
+      AUTH_STORAGE_CHANGED_EVENT,
+      () => {
+        syncFromStorage().catch(() => {
+          /* sync failure leaves auth empty */
+        });
+      },
+    );
+
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
   }, []);
 
-  const login = useCallback(async (newToken: string, newUser: User) => {
-    await Promise.all([
-      AsyncStorage.setItem(TOKEN_KEY, newToken),
-      AsyncStorage.setItem(USER_KEY, JSON.stringify(newUser)),
-    ]);
-    setToken(newToken);
-    setUser(newUser);
-  }, []);
+  const login = useCallback(
+    async (newToken: string, newUser: User, refreshToken?: string | null) => {
+      await persistSession({
+        accessToken: newToken,
+        refreshToken,
+        user: newUser,
+      });
+      setToken(newToken);
+      setUser(newUser);
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
-    await Promise.all([
-      AsyncStorage.removeItem(TOKEN_KEY),
-      AsyncStorage.removeItem(USER_KEY),
-    ]);
+    await clearStoredSession();
     setToken(null);
     setUser(null);
   }, []);
 
   const updateUser = useCallback(async (updatedUser: User) => {
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
+    await updateStoredUser(updatedUser);
     setUser(updatedUser);
   }, []);
 

@@ -65,6 +65,7 @@ export default function LoginScreen({navigation}: any) {
       const response = await AuthAPI.login(username, password);
       const payload = response?.data?.data ?? response?.data;
       const token = payload?.accessToken ?? payload?.token;
+      const refreshToken = payload?.refreshToken;
       const profile = payload?.user ?? {};
 
       if (!token) {
@@ -88,7 +89,11 @@ export default function LoginScreen({navigation}: any) {
         throw new Error('Phản hồi đăng nhập không chứa thông tin người dùng');
       }
 
-      await login(token, authUser);
+      if (!refreshToken) {
+        throw new Error('Login response missing refresh token');
+      }
+
+      await login(token, authUser, refreshToken);
       showToast('Đăng nhập thành công!', 'success');
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || 'Đăng nhập thất bại';
@@ -129,6 +134,7 @@ export default function LoginScreen({navigation}: any) {
       const response = await AuthAPI.firebaseLogin(firebaseIdToken);
       const payload = response?.data?.data ?? response?.data;
       const token = payload?.accessToken ?? payload?.token;
+      const refreshToken = payload?.refreshToken;
       const profile = payload?.user ?? {};
 
       if (!token) {
@@ -152,7 +158,11 @@ export default function LoginScreen({navigation}: any) {
         throw new Error('Phản hồi đăng nhập Google không chứa thông tin người dùng');
       }
 
-      await login(token, authUser);
+      if (!refreshToken) {
+        throw new Error('Google login response missing refresh token');
+      }
+
+      await login(token, authUser, refreshToken);
       showToast('Đăng nhập thành công!', 'success');
     } catch (error: any) {
       if (error?.code === statusCodes.SIGN_IN_CANCELLED) {
