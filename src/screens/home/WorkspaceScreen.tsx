@@ -20,6 +20,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Badge from '../../components/ui/Badge';
 import WelcomeBackground from '../../components/ui/WelcomeBackground';
 import WorkspaceStatisticsPanel from '../../components/features/WorkspaceStatisticsPanel';
+import Dialog from '../../components/ui/Dialog';
 import WorkspaceAPI from '../../api/WorkspaceAPI';
 import MaterialAPI from '../../api/MaterialAPI';
 import QuizAPI from '../../api/QuizAPI';
@@ -36,6 +37,60 @@ import {
 import {canOpenQuizDetailAfterExam} from '../../utils/quizDetailGate';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
+const MAX_UPLOAD_SIZE_BYTES = 200 * 1024 * 1024;
+const MATERIAL_PROCESSING_STATUSES = [
+  'PROCESSING',
+  'PROCECCSING',
+  'PENDING',
+  'IN_PROGRESS',
+];
+
+function isMaterialProcessingStatus(value: any) {
+  return MATERIAL_PROCESSING_STATUSES.includes(
+    String(value || '').trim().toUpperCase(),
+  );
+}
+
+function isMaterialProcessing(material: any) {
+  return isMaterialProcessingStatus(
+    material?.final_status || material?.status || material?.processingStatus,
+  );
+}
+
+function getMaterialIconName(material: any) {
+  const materialType = String(material?.materialType || '').toUpperCase();
+  if (materialType === 'PDF') {
+    return 'file-pdf-box';
+  }
+  if (materialType === 'IMAGE' || materialType === 'PNG') {
+    return 'file-image';
+  }
+  if (materialType === 'VIDEO' || materialType === 'MP4') {
+    return 'file-video';
+  }
+  if (materialType === 'AUDIO' || materialType === 'MP3') {
+    return 'file-music';
+  }
+  return 'file-document';
+}
+
+function formatFileSize(size?: number | null) {
+  const numericSize = Number(size || 0);
+  if (!Number.isFinite(numericSize) || numericSize <= 0) {
+    return '';
+  }
+  return `${(numericSize / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function hasAttemptedQuiz(quiz: any) {
+  if (quiz?.myAttempted === true) {
+    return true;
+  }
+  const attemptCount = Number(
+    quiz?.attemptCount ?? quiz?.attemptsCount ?? quiz?.myAttemptCount ?? 0,
+  );
+  return Number.isFinite(attemptCount) && attemptCount > 0;
+}
 
 type BottomTab = 'chat' | 'sources' | 'stats' | 'studio';
 type WorkspaceActivity = {
@@ -81,6 +136,9 @@ export default function WorkspaceScreen({navigation, route}: any) {
   const [, setAccessHistory] = useState<WorkspaceActivity[]>([]);
   const [deletingMaterial, setDeletingMaterial] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadDialogVisible, setUploadDialogVisible] = useState(false);
+  const [selectedUploadFile, setSelectedUploadFile] = useState<any | null>(null);
+  const [uploadValidationError, setUploadValidationError] = useState('');
   const hasAutoOpenedWizardRef = useRef(false);
   const lastQuizProgressEventKeyRef = useRef<string | null>(null);
   const latestFetchRequestIdRef = useRef(0);
@@ -513,13 +571,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
         item?.final_status || item?.status || item?.processingStatus || '',
       ).toUpperCase();
 
-      return [
-        'PROCESSING',
-        'PROCECCSING',
-        'PENDING',
-        'IN_PROGRESS',
-        'ACTIVE',
-      ].includes(status);
+      return [...MATERIAL_PROCESSING_STATUSES, 'ACTIVE'].includes(status);
     });
 
     if (!hasProcessingMaterial) {
@@ -574,7 +626,9 @@ export default function WorkspaceScreen({navigation, route}: any) {
     );
   };
 
-  const handleUploadMaterial = async () => {
+  // Legacy direct-upload flow kept temporarily for reference during mobile popup refactor.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleDirectUploadMaterial = async () => {
     try {
       const picked = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.allFiles],
@@ -611,6 +665,105 @@ export default function WorkspaceScreen({navigation, route}: any) {
       setUploading(false);
     }
   };
+
+  const closeUploadDialog = useCallback(() => {
+    if (uploading) {
+      return;
+    }
+    setUploadDialogVisible(false);
+    setSelectedUploadFile(null);
+    setUploadValidationError('');
+  }, [uploading]);
+
+  const validateUploadFile = useCallback((file: any) => {
+    if (!file) {
+      return '';
+    }
+    return Number(file?.size || 0) > MAX_UPLOAD_SIZE_BYTES
+      ? 'Tài liệu tải lên vượt quá 200mb'
+      : '';
+  }, []);
+
+  const handlePickUploadFile = useCallback(async () => {
+    try {
+      const picked = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.allFiles],
+        presentationStyle: 'fullScreen',
+      });
+
+      if (!picked?.uri) {
+        return;
+      }
+
+      const nextFile = {
+        uri: picked.uri,
+        type: picked.type || 'application/octet-stream',
+        name: picked.name || `upload-${Date.now()}`,
+        size: Number(picked.size || 0),
+      };
+      setSelectedUploadFile(nextFile);
+      setUploadValidationError(validateUploadFile(nextFile));
+    } catch (error: any) {
+      if (DocumentPicker.isCancel(error)) {
+        return;
+      }
+      showToast('Không thể chọn tài liệu', 'error');
+    }
+  }, [showToast, validateUploadFile]);
+
+  const handleRemoveSelectedUploadFile = useCallback(() => {
+    setSelectedUploadFile(null);
+    setUploadValidationError('');
+  }, []);
+
+  const handleUploadMaterial = useCallback(async () => {
+    if (!selectedUploadFile?.uri) {
+      showToast('Vui lòng chọn tài liệu trước', 'info');
+      return;
+    }
+    if (uploadValidationError) {
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('file', {
+        uri: selectedUploadFile.uri,
+        type: selectedUploadFile.type || 'application/octet-stream',
+        name: selectedUploadFile.name || `upload-${Date.now()}`,
+      } as any);
+      formData.append('workspaceID', String(workspaceId));
+
+      await MaterialAPI.upload(formData);
+      addAccessHistory(
+        selectedUploadFile.name || 'Tài liệu mới',
+        'upload',
+        `upload:${selectedUploadFile.name || Date.now()}`,
+      );
+      showToast('Đã bắt đầu tải lên, hệ thống đang xử lý nền', 'success');
+      closeUploadDialog();
+      fetchData();
+    } catch {
+      showToast('Không thể tải tài liệu lên', 'error');
+    } finally {
+      setUploading(false);
+    }
+  }, [
+    addAccessHistory,
+    closeUploadDialog,
+    fetchData,
+    selectedUploadFile,
+    showToast,
+    uploadValidationError,
+    workspaceId,
+  ]);
+
+  const openUploadDialog = useCallback(() => {
+    setSelectedUploadFile(null);
+    setUploadValidationError('');
+    setUploadDialogVisible(true);
+  }, []);
 
   const visibleMaterials = materials.filter(material => !isDeletedMaterial(material));
   const activeMaterials = visibleMaterials.filter(material => {
@@ -915,6 +1068,8 @@ export default function WorkspaceScreen({navigation, route}: any) {
                   const rawStatus = String(
                     quiz.status || quiz.final_status || '',
                   ).toUpperCase();
+                  const showAttemptStatus = rawStatus === 'ACTIVE';
+                  const attempted = hasAttemptedQuiz(quiz);
                   const isProcessing =
                     rawStatus === 'PROCESSING' || rawStatus === 'PROCECCSING';
                   const isFailed =
@@ -1004,19 +1159,28 @@ export default function WorkspaceScreen({navigation, route}: any) {
                               } câu hỏi`}
                         </Text>
                       </View>
-                      {isLocked ? (
-                        <Icon
-                          name={isProcessing ? 'progress-clock' : 'lock-outline'}
-                          size={20}
-                          color={isProcessing ? '#F59E0B' : '#DC2626'}
-                        />
-                      ) : (
-                        <Icon
-                          name="chevron-right"
-                          size={20}
-                          color={colors.textTertiary}
-                        />
-                      )}
+                      <View style={styles.quizTrailingWrap}>
+                        {showAttemptStatus ? (
+                          <Badge
+                            label={attempted ? 'Đã làm' : 'Chưa làm'}
+                            variant={attempted ? 'success' : 'default'}
+                            size="sm"
+                          />
+                        ) : null}
+                        {isLocked ? (
+                          <Icon
+                            name={isProcessing ? 'progress-clock' : 'lock-outline'}
+                            size={20}
+                            color={isProcessing ? '#F59E0B' : '#DC2626'}
+                          />
+                        ) : (
+                          <Icon
+                            name="chevron-right"
+                            size={20}
+                            color={colors.textTertiary}
+                          />
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -1147,7 +1311,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 Tài liệu ({materials.length})
               </Text>
               <TouchableOpacity
-                onPress={handleUploadMaterial}
+                onPress={openUploadDialog}
                 disabled={uploading}
                 style={[
                   styles.addSourceBtn,
@@ -1158,7 +1322,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 ) : (
                   <>
                     <Icon name="plus" size={16} color="#FFFFFF" />
-                    <Text style={styles.addSourceText}>Thêm</Text>
+                    <Text style={styles.addSourceText}>Thêm nguồn</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -1193,7 +1357,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
                   Tải tài liệu lên để bắt đầu học cùng AI
                 </Text>
                 <TouchableOpacity
-                  onPress={handleUploadMaterial}
+                  onPress={openUploadDialog}
                   disabled={uploading}
                   style={[
                     styles.uploadBtn,
@@ -1213,6 +1377,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
               visibleMaterials.map((mat: any) => {
                 const matId = mat.materialId || mat.id;
                 const status = getStatusBadge(mat.final_status || mat.status);
+                const processing = isMaterialProcessing(mat);
                 return (
                   <TouchableOpacity
                     key={matId}
@@ -1228,22 +1393,22 @@ export default function WorkspaceScreen({navigation, route}: any) {
                       style={[
                         styles.sourceIcon,
                         {
-                          backgroundColor: isDark
+                          backgroundColor: processing
+                            ? '#F59E0B20'
+                            : isDark
                             ? `${Colors.primary}15`
                             : '#EFF6FF',
                         },
                       ]}>
-                      <Icon
-                        name={
-                          mat.materialType === 'PDF'
-                            ? 'file-pdf-box'
-                            : mat.materialType === 'IMAGE'
-                            ? 'file-image'
-                            : 'file-document'
-                        }
-                        size={20}
-                        color={Colors.primary}
-                      />
+                      {processing ? (
+                        <ActivityIndicator size="small" color="#F59E0B" />
+                      ) : (
+                        <Icon
+                          name={getMaterialIconName(mat)}
+                          size={20}
+                          color={Colors.primary}
+                        />
+                      )}
                     </View>
                     <View style={styles.sourceInfo}>
                       <Text
@@ -1648,6 +1813,129 @@ export default function WorkspaceScreen({navigation, route}: any) {
           <Text style={styles.blockingText}>Đang tải tài liệu lên...</Text>
         </View>
       )}
+
+      <Dialog
+        visible={uploadDialogVisible}
+        onClose={closeUploadDialog}
+        title="Tải tài liệu lên">
+        <ScrollView
+          style={styles.uploadDialogScroll}
+          contentContainerStyle={styles.uploadDialogContent}
+          showsVerticalScrollIndicator={false}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handlePickUploadFile}
+            style={[
+              styles.uploadDropzone,
+              {
+                backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                borderColor: uploadValidationError ? '#DC2626' : colors.border,
+              },
+            ]}>
+            <Icon name="tray-arrow-up" size={24} color={Colors.primary} />
+            <Text style={[styles.uploadDropzoneTitle, {color: colors.heading}]}>
+              Nhấn để chọn tệp
+            </Text>
+            <View style={styles.uploadDropzoneActions}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  showToast('Liên kết YouTube hiện chưa hỗ trợ trên Mobile', 'info');
+                }}
+                style={[
+                  styles.uploadDropzoneButton,
+                  {backgroundColor: colors.surface, borderColor: colors.border},
+                ]}>
+                <Icon name="youtube" size={16} color="#DC2626" />
+                <Text style={[styles.uploadDropzoneButtonText, {color: colors.heading}]}>
+                  Liên kết YouTube
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+          <Text style={[styles.uploadSupportText, {color: colors.textTertiary}]}>
+            Hỗ trợ: pdf, docx, doc, pptx, ppt, xlsx, xls, txt, png, mp3, mp4
+          </Text>
+          {selectedUploadFile ? (
+            <View
+              style={[
+                styles.uploadFileList,
+                {backgroundColor: colors.surface, borderColor: colors.border},
+              ]}>
+              <View
+                style={[
+                  styles.uploadFileListHeader,
+                  {borderBottomColor: colors.border},
+                ]}>
+                <Text style={[styles.uploadFileListHeaderText, {color: colors.textSecondary}]}>
+                  1 Tài liệu
+                </Text>
+              </View>
+              <View style={styles.uploadFileRow}>
+                <View style={styles.uploadFileInfo}>
+                  <View
+                    style={[
+                      styles.uploadFileIconWrap,
+                      {backgroundColor: isDark ? '#172036' : '#EFF6FF'},
+                    ]}>
+                    <Icon
+                      name={getMaterialIconName({materialType: selectedUploadFile?.type})}
+                      size={18}
+                      color={Colors.primary}
+                    />
+                  </View>
+                  <View style={styles.uploadFileMeta}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.uploadFileName, {color: colors.heading}]}>
+                      {selectedUploadFile.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.uploadFileSize,
+                        {color: uploadValidationError ? '#DC2626' : colors.textTertiary},
+                      ]}>
+                      {formatFileSize(selectedUploadFile.size)}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={handleRemoveSelectedUploadFile}
+                  style={styles.uploadFileRemoveBtn}>
+                  <Icon name="close" size={18} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+          {uploadValidationError ? (
+            <Text style={styles.uploadErrorText}>{uploadValidationError}</Text>
+          ) : null}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handleUploadMaterial}
+            disabled={uploading || !selectedUploadFile?.uri || Boolean(uploadValidationError)}
+            style={[
+              styles.uploadDialogPrimaryBtn,
+              {
+                backgroundColor:
+                  uploading || !selectedUploadFile?.uri || uploadValidationError
+                    ? '#CBD5E1'
+                    : Colors.primary,
+              },
+            ]}>
+            {uploading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Icon name="upload" size={18} color="#FFFFFF" />
+                <Text style={styles.uploadDialogPrimaryText}>Tải tệp lên</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      </Dialog>
     </SafeAreaView>
   );
 }
@@ -1869,6 +2157,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   listItemContent: {flex: 1},
+  quizTrailingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   listItemTitle: {fontSize: 14, fontWeight: '500'},
   listItemSub: {fontSize: 12, marginTop: 2},
 
@@ -1908,7 +2201,122 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   uploadBtnText: {fontSize: 14, fontWeight: '600'},
-
+  uploadDialogScroll: {
+    maxHeight: SCREEN_WIDTH < 400 ? 500 : 560,
+  },
+  uploadDialogContent: {
+    gap: Spacing.md,
+  },
+  uploadDropzone: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.xl,
+    paddingHorizontal: Spacing.md,
+    alignItems: 'center',
+    gap: 12,
+  },
+  uploadDropzoneTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  uploadDropzoneActions: {
+    width: '100%',
+    gap: Spacing.sm,
+  },
+  uploadDropzoneButton: {
+    minHeight: 46,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: Spacing.md,
+  },
+  uploadDropzoneButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  uploadSupportText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  uploadFileList: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+  uploadFileListHeader: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  uploadFileListHeaderText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  uploadFileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+  },
+  uploadFileInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    minWidth: 0,
+  },
+  uploadFileIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadFileMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  uploadFileName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  uploadFileSize: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  uploadFileRemoveBtn: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 15,
+  },
+  uploadErrorText: {
+    fontSize: 12,
+    color: '#DC2626',
+    fontWeight: '600',
+  },
+  uploadDialogPrimaryBtn: {
+    minHeight: 46,
+    borderRadius: BorderRadius.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: Spacing.lg,
+  },
+  uploadDialogPrimaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   sourceItem: {
     flexDirection: 'row',
     alignItems: 'center',
