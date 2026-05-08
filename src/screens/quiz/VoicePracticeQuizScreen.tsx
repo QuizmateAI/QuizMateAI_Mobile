@@ -1360,7 +1360,6 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
               selectedAnswerIds={selectedAnswerIdsByQuestion[currentQuestionId] || []}
               textAnswer={textAnswersByQuestion[currentQuestionId] || ''}
               showResult={isCurrentSubmitted}
-              difficulty={currentQuestion.difficulty}
               explanation={
                 isCurrentSubmitted
                   ? currentFeedback?.explanation || currentQuestion.explanation

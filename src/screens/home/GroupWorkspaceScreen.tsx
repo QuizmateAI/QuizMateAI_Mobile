@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -35,6 +36,7 @@ import {
   deriveWorkspaceSetupState,
   getSetupLockMessage,
 } from '../../utils/workspaceSetup';
+import {canOpenQuizDetailAfterExam} from '../../utils/quizDetailGate';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -131,6 +133,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   const [pendingReviewMaterials, setPendingReviewMaterials] = useState<any[]>([]);
   const [canReviewMaterials, setCanReviewMaterials] = useState(false);
   const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [mockTests, setMockTests] = useState<any[]>([]);
   const [flashcards, setFlashcards] = useState<any[]>([]);
   const [roadmaps, setRoadmaps] = useState<any[]>([]);
   const [rankingData, setRankingData] = useState<any>(null);
@@ -230,7 +233,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
   );
 
   const openQuizModeSelector = useCallback(
-    (quiz: any) => {
+    async (quiz: any) => {
       const quizId = Number(quiz?.id || quiz?.quizId);
       if (!quizId) {
         showToast('Thiếu Quiz ID', 'error');
@@ -243,8 +246,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         groupId: normalizedGroupId,
         title,
       };
-
-      navigateToQuizDetail({
+      const quizDetailParams = {
         quizId,
         quiz,
         title: quizTitle,
@@ -252,9 +254,41 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         contextType: 'GROUP',
         contextId: normalizedGroupId,
         groupId: normalizedGroupId,
-      });
+      };
+
+      let canOpenDetail = false;
+      try {
+        canOpenDetail = await canOpenQuizDetailAfterExam(quizId, normalizedGroupId);
+      } catch (error: any) {
+        showToast(
+          error?.response?.data?.message ||
+            error?.message ||
+            'Không thể kiểm tra lịch sử làm bài',
+          'error',
+        );
+        return;
+      }
+
+      if (canOpenDetail) {
+        navigateToQuizDetail(quizDetailParams);
+        return;
+      }
+
+      Alert.alert('Kiểm tra', 'Xác nhận bắt đầu ở chế độ kiểm tra?', [
+        {text: 'Đóng', style: 'cancel'},
+        {
+          text: 'Xác nhận',
+          onPress: () =>
+            navigateToExamQuiz({
+              quizId,
+              title: quizTitle,
+              backContext,
+              quizDetailParams,
+            }),
+        },
+      ]);
     },
-    [navigateToQuizDetail, normalizedGroupId, showToast, title],
+    [navigateToExamQuiz, navigateToQuizDetail, normalizedGroupId, showToast, title],
   );
 
   const openFlashcardDetail = useCallback(
@@ -297,6 +331,10 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         GroupWorkspaceProfileAPI.getProfile(normalizedGroupId),
         GroupAPI.getMyPermissions(normalizedGroupId),
         QuizAPI.getByContext('GROUP', normalizedGroupId),
+        QuizAPI.getByContext('GROUP', normalizedGroupId, {
+          quizIntent: 'MOCK_TEST',
+          includeMockTest: true,
+        }),
         FlashcardAPI.getByContext('GROUP', normalizedGroupId),
         RoadmapAPI.getForGroup(normalizedGroupId),
         GroupAPI.getOverallRanking(normalizedGroupId),
@@ -316,11 +354,12 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       const profileRes = results[4].status === 'fulfilled' ? results[4].value : {data: null};
       const permissionRes = results[5].status === 'fulfilled' ? results[5].value : {data: null};
       const quizRes = results[6].status === 'fulfilled' ? results[6].value : {data: []};
-      const fcRes = results[7].status === 'fulfilled' ? results[7].value : {data: []};
-      const rmRes = results[8].status === 'fulfilled' ? results[8].value : {data: []};
-      const rankingRes = results[9].status === 'fulfilled' ? results[9].value : {data: null};
-      const logsRes = results[10].status === 'fulfilled' ? results[10].value : {data: []};
-      const challengeRes = results[11].status === 'fulfilled' ? results[11].value : {data: []};
+      const mockTestRes = results[7].status === 'fulfilled' ? results[7].value : {data: []};
+      const fcRes = results[8].status === 'fulfilled' ? results[8].value : {data: []};
+      const rmRes = results[9].status === 'fulfilled' ? results[9].value : {data: []};
+      const rankingRes = results[10].status === 'fulfilled' ? results[10].value : {data: null};
+      const logsRes = results[11].status === 'fulfilled' ? results[11].value : {data: []};
+      const challengeRes = results[12].status === 'fulfilled' ? results[12].value : {data: []};
 
       if (results[4].status === 'fulfilled') {
         const setupState = deriveWorkspaceSetupState(
@@ -354,6 +393,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       setMaterials(normalizeArray(materialRes?.data));
       setCanReviewMaterials(canReview);
       setQuizzes(normalizeArray(quizRes?.data));
+      setMockTests(normalizeArray(mockTestRes?.data));
       setFlashcards(normalizeArray(fcRes?.data));
       setRoadmaps(normalizeArray(rmRes?.data));
       setRankingData(
@@ -395,6 +435,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
       setMaterials([]);
       setPendingReviewMaterials([]);
       setQuizzes([]);
+      setMockTests([]);
       setFlashcards([]);
       setRoadmaps([]);
       setRankingData(null);
@@ -1291,6 +1332,41 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                         style={[styles.listItemTitle, {color: colors.heading}]}
                         numberOfLines={1}>
                         {fc.name || fc.title}
+                      </Text>
+                    </View>
+                    <Icon name="chevron-right" size={20} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {mockTests.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+                    Thi thử
+                  </Text>
+                  <Badge label={`${mockTests.length}`} variant="secondary" size="sm" />
+                </View>
+                {mockTests.map((quiz: any) => (
+                  <TouchableOpacity
+                    key={`mock-${quiz.id || quiz.quizId}`}
+                    onPress={() => openQuizModeSelector(quiz)}
+                    style={[
+                      styles.listItem,
+                      {backgroundColor: colors.surface, borderColor: colors.border},
+                    ]}>
+                    <View style={[styles.listItemIcon, {backgroundColor: '#7C3AED15'}]}>
+                      <Icon name="clipboard-text-outline" size={18} color="#7C3AED" />
+                    </View>
+                    <View style={styles.listItemContent}>
+                      <Text
+                        style={[styles.listItemTitle, {color: colors.heading}]}
+                        numberOfLines={1}>
+                        {quiz.name || quiz.title}
+                      </Text>
+                      <Text style={[styles.listItemSub, {color: colors.textSecondary}]}>
+                        {quiz.questionCount || quiz.totalQuestion || 0} câu hỏi
                       </Text>
                     </View>
                     <Icon name="chevron-right" size={20} color={colors.textTertiary} />

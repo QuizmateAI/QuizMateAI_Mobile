@@ -37,6 +37,7 @@ import {
   normalizePhaseIndex,
   toArray,
 } from '../../utils/roadmapSync';
+import {canOpenQuizDetailAfterExam} from '../../utils/quizDetailGate';
 
 type ProgressMap = Record<number, number>;
 type StageSelectedType = 'roadmap' | 'phase' | 'knowledge';
@@ -572,7 +573,7 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
   );
 
   const openQuizModeSelector = useCallback(
-    (quiz: any, phaseId?: number) => {
+    async (quiz: any, phaseId?: number) => {
       const quizId = Number(quiz?.quizId || quiz?.id);
       if (!quizId) {
         showToast('Thiếu Quiz ID', 'error');
@@ -602,29 +603,65 @@ export default function RoadmapJourneyScreen({navigation, route}: any) {
           Number.isInteger(normalizedPhaseId) && normalizedPhaseId > 0
             ? normalizedPhaseId
             : undefined,
-        quizIntent,
+          quizIntent,
       };
-
-      navigation.navigate('Quiz', {
-        screen: 'QuizDetail',
-        params: {
-          quizId,
-          quiz: {
-            ...quiz,
-            roadmapId: backContext.roadmapId,
-            phaseId: backContext.phaseId,
-          },
-          title: quizTitle,
-          backContext,
-          contextType,
-          contextId: Number(contextId),
+      const quizDetailParams = {
+        quizId,
+        quiz: {
+          ...quiz,
           roadmapId: backContext.roadmapId,
           phaseId: backContext.phaseId,
-          quizIntent,
-          roadmapTitle: selectedRoadmap?.title || selectedRoadmap?.name || title,
-          phaseTitle: selectedPhase?.title || selectedPhase?.name,
         },
-      });
+        title: quizTitle,
+        backContext,
+        contextType,
+        contextId: Number(contextId),
+        roadmapId: backContext.roadmapId,
+        phaseId: backContext.phaseId,
+        quizIntent,
+        roadmapTitle: selectedRoadmap?.title || selectedRoadmap?.name || title,
+        phaseTitle: selectedPhase?.title || selectedPhase?.name,
+      };
+      const groupId =
+        String(contextType || '').toUpperCase() === 'GROUP' ? Number(contextId) : undefined;
+
+      let canOpenDetail = false;
+      try {
+        canOpenDetail = await canOpenQuizDetailAfterExam(quizId, groupId);
+      } catch (error: any) {
+        showToast(
+          error?.response?.data?.message ||
+            error?.message ||
+            'Không thể kiểm tra lịch sử làm bài',
+          'error',
+        );
+        return;
+      }
+
+      if (canOpenDetail) {
+        navigation.navigate('Quiz', {
+          screen: 'QuizDetail',
+          params: quizDetailParams,
+        });
+        return;
+      }
+
+      Alert.alert('Kiểm tra', 'Xác nhận bắt đầu ở chế độ kiểm tra?', [
+        {text: 'Đóng', style: 'cancel'},
+        {
+          text: 'Xác nhận',
+          onPress: () =>
+            navigation.navigate('Quiz', {
+              screen: 'ExamQuiz',
+              params: {
+                quizId,
+                title: quizTitle,
+                backContext,
+                quizDetailParams,
+              },
+            }),
+        },
+      ]);
     },
     [contextId, contextType, navigation, roadmaps, selectedRoadmapId, showToast, structure?.phases, title],
   );

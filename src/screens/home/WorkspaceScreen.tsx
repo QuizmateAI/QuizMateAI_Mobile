@@ -33,6 +33,7 @@ import {
   deriveWorkspaceSetupState,
   getSetupLockMessage,
 } from '../../utils/workspaceSetup';
+import {canOpenQuizDetailAfterExam} from '../../utils/quizDetailGate';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -53,7 +54,6 @@ const QUICK_ACTIONS = [
   {icon: 'folder-multiple-outline', label: 'Bộ sưu tập', key: 'quizCollection', color: '#0891B2'},
 ];
 
-/* ──── Studio item data ──── */
 const STUDIO_ITEMS = (counts: {q: number; f: number; s: number; r: number}) => [
   {icon: 'map-outline', label: 'Lộ trình', count: counts.r, color: '#059669', key: 'roadmap'},
   {icon: 'head-question-outline', label: 'Quiz', count: counts.q, color: '#2563EB', key: 'quiz'},
@@ -117,7 +117,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
   );
 
   const openQuizModeSelector = useCallback(
-    (quiz: any) => {
+    async (quiz: any) => {
       const quizId = Number(quiz?.id || quiz?.quizId);
       if (!quizId) {
         showToast('Thiếu Quiz ID', 'error');
@@ -131,19 +131,53 @@ export default function WorkspaceScreen({navigation, route}: any) {
         workspaceId: Number(workspaceId),
         title,
       };
+      const quizDetailParams = {
+        quizId,
+        quiz,
+        title: quizTitle,
+        backContext,
+        contextType: 'WORKSPACE',
+        contextId: Number(workspaceId),
+        workspaceId: Number(workspaceId),
+      };
 
-      navigation.navigate('Quiz', {
-        screen: 'QuizDetail',
-        params: {
-          quizId,
-          quiz,
-          title: quizTitle,
-          backContext,
-          contextType: 'WORKSPACE',
-          contextId: Number(workspaceId),
-          workspaceId: Number(workspaceId),
+      let canOpenDetail = false;
+      try {
+        canOpenDetail = await canOpenQuizDetailAfterExam(quizId);
+      } catch (error: any) {
+        showToast(
+          error?.response?.data?.message ||
+            error?.message ||
+            'Không thể kiểm tra lịch sử làm bài',
+          'error',
+        );
+        return;
+      }
+
+      if (canOpenDetail) {
+        navigation.navigate('Quiz', {
+          screen: 'QuizDetail',
+          params: quizDetailParams,
+        });
+        return;
+      }
+
+      Alert.alert('Kiểm tra', 'Xác nhận bắt đầu ở chế độ kiểm tra?', [
+        {text: 'Đóng', style: 'cancel'},
+        {
+          text: 'Xác nhận',
+          onPress: () =>
+            navigation.navigate('Quiz', {
+              screen: 'ExamQuiz',
+              params: {
+                quizId,
+                title: quizTitle,
+                backContext,
+                quizDetailParams,
+              },
+            }),
         },
-      });
+      ]);
     },
     [addAccessHistory, navigation, showToast, title, workspaceId],
   );
@@ -849,6 +883,13 @@ export default function WorkspaceScreen({navigation, route}: any) {
                 colors={colors}
               />
               <OverviewCard
+                icon="clipboard-text-outline"
+                label="Thi thử"
+                value={mockTests.length}
+                color="#7C3AED"
+                colors={colors}
+              />
+              <OverviewCard
                 icon="folder-multiple-outline"
                 label="Bộ sưu tập"
                 value={quizCollections.length}
@@ -1028,6 +1069,63 @@ export default function WorkspaceScreen({navigation, route}: any) {
                           {fc.itemCount} thẻ
                         </Text>
                       )}
+                    </View>
+                    <Icon
+                      name="chevron-right"
+                      size={20}
+                      color={colors.textTertiary}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+            {mockTests.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+                    Thi thử
+                  </Text>
+                  <Badge
+                    label={`${mockTests.length}`}
+                    variant="secondary"
+                    size="sm"
+                  />
+                </View>
+                {mockTests.map((quiz: any) => (
+                  <TouchableOpacity
+                    key={`chat-mock-${quiz.id || quiz.quizId}`}
+                    onPress={() => openQuizModeSelector(quiz)}
+                    style={[
+                      styles.listItem,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}>
+                    <View
+                      style={[
+                        styles.listItemIcon,
+                        {backgroundColor: '#7C3AED15'},
+                      ]}>
+                      <Icon
+                        name="clipboard-text-outline"
+                        size={18}
+                        color="#7C3AED"
+                      />
+                    </View>
+                    <View style={styles.listItemContent}>
+                      <Text
+                        style={[styles.listItemTitle, {color: colors.heading}]}
+                        numberOfLines={1}>
+                        {quiz.name || quiz.title}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.listItemSub,
+                          {color: colors.textSecondary},
+                        ]}>
+                        {quiz.questionCount || quiz.totalQuestion || 0} câu hỏi
+                      </Text>
                     </View>
                     <Icon
                       name="chevron-right"
@@ -1265,8 +1363,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
               ))}
             </View>
 
-            {/* Recent Activity */}
-            {(quizzes.length > 0 || flashcards.length > 0) && (
+            {(quizzes.length > 0 || flashcards.length > 0 || mockTests.length > 0) && (
               <>
                 <Text
                   style={[
@@ -1329,6 +1426,173 @@ export default function WorkspaceScreen({navigation, route}: any) {
                       {fc.name || fc.title}
                     </Text>
                     <Badge label="Flashcard" variant="warning" size="sm" />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {mockTests.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+                    Thi thử
+                  </Text>
+                  <Badge label={`${mockTests.length}`} variant="secondary" size="sm" />
+                </View>
+                {mockTests.map((quiz: any) => (
+                  <TouchableOpacity
+                    key={`mock-${quiz.id || quiz.quizId}`}
+                    onPress={() => openQuizModeSelector(quiz)}
+                    style={[
+                      styles.listItem,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}>
+                    <View
+                      style={[
+                        styles.listItemIcon,
+                        {backgroundColor: '#7C3AED15'},
+                      ]}>
+                      <Icon
+                        name="clipboard-text-outline"
+                        size={18}
+                        color="#7C3AED"
+                      />
+                    </View>
+                    <View style={styles.listItemContent}>
+                      <Text
+                        style={[styles.listItemTitle, {color: colors.heading}]}
+                        numberOfLines={1}>
+                        {quiz.name || quiz.title}
+                      </Text>
+                      <Text
+                        style={[styles.listItemSub, {color: colors.textSecondary}]}>
+                        {quiz.questionCount || quiz.totalQuestion || 0} câu hỏi
+                      </Text>
+                    </View>
+                    <Icon
+                      name="chevron-right"
+                      size={20}
+                      color={colors.textTertiary}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {mockTests.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+                    Thi thử
+                  </Text>
+                  <Badge
+                    label={`${mockTests.length}`}
+                    variant="secondary"
+                    size="sm"
+                  />
+                </View>
+                {mockTests.map((quiz: any) => (
+                  <TouchableOpacity
+                    key={`mock-${quiz.id || quiz.quizId}`}
+                    onPress={() => openQuizModeSelector(quiz)}
+                    style={[
+                      styles.listItem,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}>
+                    <View
+                      style={[
+                        styles.listItemIcon,
+                        {backgroundColor: '#7C3AED15'},
+                      ]}>
+                      <Icon
+                        name="clipboard-text-outline"
+                        size={18}
+                        color="#7C3AED"
+                      />
+                    </View>
+                    <View style={styles.listItemContent}>
+                      <Text
+                        style={[styles.listItemTitle, {color: colors.heading}]}
+                        numberOfLines={1}>
+                        {quiz.name || quiz.title}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.listItemSub,
+                          {color: colors.textSecondary},
+                        ]}>
+                        {quiz.questionCount || quiz.totalQuestion || 0} câu hỏi
+                      </Text>
+                    </View>
+                    <Icon
+                      name="chevron-right"
+                      size={20}
+                      color={colors.textTertiary}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {mockTests.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, {color: colors.heading}]}>
+                    Thi thử
+                  </Text>
+                  <Badge
+                    label={`${mockTests.length}`}
+                    variant="secondary"
+                    size="sm"
+                  />
+                </View>
+                {mockTests.map((quiz: any) => (
+                  <TouchableOpacity
+                    key={`overview-mock-${quiz.id || quiz.quizId}`}
+                    onPress={() => openQuizModeSelector(quiz)}
+                    style={[
+                      styles.listItem,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}>
+                    <View
+                      style={[
+                        styles.listItemIcon,
+                        {backgroundColor: '#7C3AED15'},
+                      ]}>
+                      <Icon
+                        name="clipboard-text-outline"
+                        size={18}
+                        color="#7C3AED"
+                      />
+                    </View>
+                    <View style={styles.listItemContent}>
+                      <Text
+                        style={[styles.listItemTitle, {color: colors.heading}]}
+                        numberOfLines={1}>
+                        {quiz.name || quiz.title}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.listItemSub,
+                          {color: colors.textSecondary},
+                        ]}>
+                        {quiz.questionCount || quiz.totalQuestion || 0} câu hỏi
+                      </Text>
+                    </View>
+                    <Icon
+                      name="chevron-right"
+                      size={20}
+                      color={colors.textTertiary}
+                    />
                   </TouchableOpacity>
                 ))}
               </>

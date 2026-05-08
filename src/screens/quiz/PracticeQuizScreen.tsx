@@ -1040,7 +1040,6 @@ export default function PracticeQuizScreen({navigation, route}: any) {
             onChangeTextAnswer={text =>
               handleChangeTextAnswer(currentQuestion.id, text)
             }
-            difficulty={currentQuestion.difficulty}
             explanation={
               isCurrentSubmitted
                 ? currentFeedback?.explanation || currentQuestion.explanation

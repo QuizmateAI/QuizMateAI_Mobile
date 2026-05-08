@@ -37,6 +37,28 @@ const GroupAPI = {
       ...res,
       data: (res.data?.data || []).map(mapGroup),
     })),
+  getPublicGroups: (search?: string) =>
+    api.get('/api/group/public', {
+      params: search?.trim() ? {search: search.trim()} : undefined,
+    }).then(res => {
+      const payload = res.data?.data ?? res.data;
+      const list = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.content)
+        ? payload.content
+        : Array.isArray(payload?.items)
+        ? payload.items
+        : [];
+      return {
+        ...res,
+        data: list.map(mapGroup),
+      };
+    }),
+  joinPublicGroup: (groupId: number) =>
+    api.post(`/api/group/${groupId}/join`).then(res => ({
+      ...res,
+      data: res.data?.data || res.data,
+    })),
   create: (data: {name: string; description?: string; fieldId?: number}) =>
     api.post('/api/workspace/create/group', {
       name: data.name,
