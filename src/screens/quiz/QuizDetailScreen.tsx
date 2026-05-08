@@ -675,29 +675,6 @@ function buildBackContext(params: QuizDetailParams, quiz: any): QuizBackContext 
   return {type: 'quiz-list'};
 }
 
-function buildLearningContext(params: QuizDetailParams, quiz: any) {
-  const intent = firstText(params.quizIntent, quiz?.quizIntent).toUpperCase();
-  const roadmapTitle = firstText(
-    params.roadmapTitle,
-    quiz?.roadmapTitle,
-    quiz?.roadmapName,
-    params.backContext?.type === 'roadmap' ? params.backContext.title : '',
-  );
-  const phaseTitle = firstText(params.phaseTitle, quiz?.phaseTitle, quiz?.phaseName);
-  const parts = [];
-
-  if (intent) {
-    parts.push(`Phase: ${intent}`);
-  }
-  if (roadmapTitle) {
-    parts.push(`Roadmap ${roadmapTitle}`);
-  }
-  if (phaseTitle) {
-    parts.push(`Giai đoạn ${phaseTitle}`);
-  }
-  return parts.join(' — ');
-}
-
 export default function QuizDetailScreen({navigation, route}: any) {
   const params = useMemo<QuizDetailParams>(() => route.params || {}, [route.params]);
   const {t} = useTranslation();
@@ -901,7 +878,6 @@ export default function QuizDetailScreen({navigation, route}: any) {
   const normalizedIntent = firstText(params.quizIntent, effectiveQuiz?.quizIntent).toUpperCase();
   const durationInMinutes = getDurationInMinutes(effectiveQuiz);
   const materialNames = getMaterialNames(effectiveQuiz);
-  const learningContext = buildLearningContext(params, effectiveQuiz);
   const questionCount = getQuestionCount(effectiveQuiz, sections);
 
   const infoItems = useMemo(() => {
@@ -1619,21 +1595,6 @@ export default function QuizDetailScreen({navigation, route}: any) {
                 <Text style={[styles.description, {color: colors.textSecondary}]}>
                   {description}
                 </Text>
-              ) : null}
-              {learningContext ? (
-                <View
-                  style={[
-                    styles.contextBox,
-                    {
-                      backgroundColor: isDark ? 'rgba(15,23,42,0.85)' : '#F8FAFC',
-                      borderColor: colors.border,
-                    },
-                  ]}>
-                  <Icon name="map-marker-path" size={16} color={Colors.primary} />
-                  <Text style={[styles.contextText, {color: colors.textSecondary}]}>
-                    {learningContext}
-                  </Text>
-                </View>
               ) : null}
             </View>
 
@@ -2554,15 +2515,6 @@ const styles = StyleSheet.create({
   },
   heroTitle: {fontSize: 20, lineHeight: 28, fontWeight: '800'},
   description: {fontSize: 14, lineHeight: 21, marginTop: Spacing.sm},
-  contextBox: {
-    marginTop: Spacing.md,
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  contextText: {flex: 1, fontSize: 13, lineHeight: 19},
   tabs: {
     flexDirection: 'row',
     borderWidth: 1,
