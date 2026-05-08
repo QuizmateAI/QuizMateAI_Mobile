@@ -5,6 +5,7 @@ import {getFocusedRouteNameFromRoute, RouteProp} from '@react-navigation/native'
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import HomeStack from './HomeStack';
 import QuizStack from './QuizStack';
+import CommunityStack from './CommunityStack';
 import ProfileStack from './ProfileStack';
 import {useTheme} from '../context/ThemeContext';
 import {Colors} from '../theme/colors';
@@ -12,6 +13,7 @@ import {Colors} from '../theme/colors';
 export type MainTabParamList = {
   Home: undefined;
   Quiz: undefined;
+  Community: undefined;
   Profile: undefined;
 };
 
@@ -42,7 +44,9 @@ export default function MainTabNavigator() {
       focusedRoute === 'GroupWorkspace' ||
       focusedRoute === 'RoadmapJourney' ||
       focusedRoute === 'QuizCollection' ||
+      focusedRoute === 'QuizDetail' ||
       focusedRoute === 'PracticeQuiz' ||
+      focusedRoute === 'ExamQuiz' ||
       focusedRoute === 'VoicePracticeQuiz' ||
       focusedRoute === 'QuizResult'
     ) {
@@ -53,7 +57,33 @@ export default function MainTabNavigator() {
 
   const getQuizTabBarStyle = (route: RouteProp<MainTabParamList, 'Quiz'>) => {
     const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'GroupList';
-    if (focusedRoute === 'GroupWorkspace' || focusedRoute === 'GroupManagement' || focusedRoute === 'RoadmapJourney') {
+    if (
+      focusedRoute === 'GroupWorkspace' ||
+      focusedRoute === 'GroupManagement' ||
+      focusedRoute === 'RoadmapJourney' ||
+      focusedRoute === 'QuizDetail' ||
+      focusedRoute === 'PracticeQuiz' ||
+      focusedRoute === 'ExamQuiz' ||
+      focusedRoute === 'VoicePracticeQuiz' ||
+      focusedRoute === 'QuizResult'
+    ) {
+      return hiddenTabBarStyle;
+    }
+    return baseTabBarStyle;
+  };
+
+  const getCommunityTabBarStyle = (route: RouteProp<MainTabParamList, 'Community'>) => {
+    const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'CommunityGroup';
+    if (
+      focusedRoute === 'GroupWorkspace' ||
+      focusedRoute === 'GroupManagement' ||
+      focusedRoute === 'RoadmapJourney' ||
+      focusedRoute === 'QuizDetail' ||
+      focusedRoute === 'PracticeQuiz' ||
+      focusedRoute === 'ExamQuiz' ||
+      focusedRoute === 'VoicePracticeQuiz' ||
+      focusedRoute === 'QuizResult'
+    ) {
       return hiddenTabBarStyle;
     }
     return baseTabBarStyle;
@@ -108,6 +138,17 @@ export default function MainTabNavigator() {
           tabBarStyle: getQuizTabBarStyle(route),
           tabBarIcon: ({color, size, focused}) => (
             <TabIcon name={focused ? 'account-group' : 'account-group-outline'} color={color} size={size} />
+          ),
+        })}
+      />
+      <Tab.Screen
+        name="Community"
+        component={CommunityStack}
+        options={({route}) => ({
+          tabBarLabel: 'Cộng đồng',
+          tabBarStyle: getCommunityTabBarStyle(route),
+          tabBarIcon: ({color, size, focused}) => (
+            <TabIcon name={focused ? 'earth' : 'web'} color={color} size={size} />
           ),
         })}
       />

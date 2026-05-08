@@ -526,28 +526,6 @@ function removeDiscussionMessage(messages: any[] = [], messageId: any) {
   return toArray(messages).filter(message => normalizeDiscussionMessageId(message?.id ?? message?.messageId) !== normalizedMessageId);
 }
 
-function matchesDiscussionRealtimeThread(event: any, quizId: number, questionId: number | null = null) {
-  const eventType = String(event?.type || '').trim().toUpperCase();
-  if (!eventType || eventType === 'SOCKET_RESTORED') {
-    return false;
-  }
-
-  const normalizedQuizId = Number(quizId);
-  const eventQuizId = Number(event?.quizId);
-  if (Number.isInteger(normalizedQuizId) && normalizedQuizId > 0 && eventQuizId !== normalizedQuizId) {
-    return false;
-  }
-
-  const normalizedQuestionId = questionId == null ? null : Number(questionId);
-  const eventQuestionId = event?.questionId == null || event?.questionId === '' ? null : Number(event.questionId);
-
-  if (normalizedQuestionId == null) {
-    return eventQuestionId == null;
-  }
-
-  return eventQuestionId === normalizedQuestionId;
-}
-
 function getMaterialNames(quiz: any) {
   const candidateArrays = [
     quiz?.materials,
@@ -1210,7 +1188,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
               setDiscussionMessages(prev =>
                 removeDiscussionMessage(prev, messageId),
               );
-              setDiscussionReplyTarget(current => (current?.id === messageId ? null : current));
+              setDiscussionReplyTarget((current: any) => (current?.id === messageId ? null : current));
             } catch {
               showToast('Không thể xóa tin nhắn', 'error');
             }

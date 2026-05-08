@@ -1,10 +1,16 @@
 import React from 'react';
 import {View, Text, StyleSheet, ViewStyle} from 'react-native';
-import {Colors} from '../../theme/colors';
 import {useTheme} from '../../context/ThemeContext';
 import {localizeUiText} from '../../utils/uiText';
 
-type BadgeVariant = 'default' | 'success' | 'error' | 'warning' | 'info' | 'outline';
+type BadgeVariant =
+  | 'default'
+  | 'success'
+  | 'error'
+  | 'warning'
+  | 'info'
+  | 'secondary'
+  | 'outline';
 
 interface BadgeProps {
   label: string;
@@ -43,6 +49,10 @@ export default function Badge({
       info: {
         bg: isDark ? 'rgba(59,130,246,0.15)' : '#DBEAFE',
         text: isDark ? '#60A5FA' : '#2563EB',
+      },
+      secondary: {
+        bg: isDark ? 'rgba(124,58,237,0.16)' : '#EDE9FE',
+        text: isDark ? '#C4B5FD' : '#7C3AED',
       },
       outline: {
         bg: 'transparent',

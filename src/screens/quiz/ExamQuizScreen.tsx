@@ -831,7 +831,6 @@ export default function ExamQuizScreen({navigation, route}: any) {
             onChangeTextAnswer={text =>
               handleChangeTextAnswer(currentQuestion.id, text)
             }
-            difficulty={currentQuestion.difficulty}
             isMultiChoice={isMultipleChoiceQuestion(currentQuestion)}
             matchedPairs={matchingPairsByQuestion[currentQuestion.id] || []}
             onMatchingPairChange={pairs =>
