@@ -8,7 +8,6 @@ import {
   OutputFormatAndroidType,
   type AudioSet,
 } from 'react-native-audio-recorder-player';
-import {Audio as AudioCompressor} from 'react-native-compressor';
 
 export const VOICE_SILENCE_THRESHOLD_DB = Platform.OS === 'ios' ? -45 : -40;
 export const VOICE_SILENCE_DURATION_MS = 1400;
@@ -394,24 +393,6 @@ export const computeDbFromPcm16 = (base64Data: string): number => {
     return -160;
   }
   return Math.max(-160, 20 * Math.log10(rms / 32768));
-};
-
-// AAC m4a at "low" preset is ~32-64kbps voice-grade — 4-8x smaller than the
-// 16kHz/16-bit WAV emitted by AudioRecord, so upload time on 4G drops the most.
-// Falls back to the original uri on encoder failure to avoid blocking the user.
-export const compressRecordedAudio = async (wavUri: string): Promise<string> => {
-  if (!wavUri) {
-    return wavUri;
-  }
-  try {
-    const compressedUri = await AudioCompressor.compress(wavUri, {
-      quality: 'low',
-    });
-    return compressedUri || wavUri;
-  } catch (error) {
-    console.warn('[voice] audio compression failed, uploading original WAV', error);
-    return wavUri;
-  }
 };
 
 export const normalizeRecordedFileUri = (uri: string) => {
