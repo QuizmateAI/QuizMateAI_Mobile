@@ -937,52 +937,6 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
     await startVoiceAttempt(true);
   }, [startVoiceAttempt]);
 
-  const handleRepeatPrompt = useCallback(async () => {
-    if (!started || !currentQuestion) {
-      return;
-    }
-    if (isCurrentSubmitted || isCurrentSkipped) {
-      await cancelVoiceFlow();
-      setVoiceState('reading_question');
-      await speakTextAsync(buildVoiceQuestionPrompt(currentQuestion, currentIndex));
-      if (currentFeedback) {
-        setVoiceState('reading_feedback');
-      await speakTextAsync(buildVoiceFeedbackPrompt(currentFeedback));
-      }
-      setVoiceState('idle');
-      setStatusMessage('Chế độ luyện giọng nói đã sẵn sàng.');
-      return;
-    }
-    await runCurrentQuestionFlow(currentQuestion);
-  }, [
-    cancelVoiceFlow,
-    currentFeedback,
-    currentIndex,
-    currentQuestion,
-    isCurrentSkipped,
-    isCurrentSubmitted,
-    runCurrentQuestionFlow,
-    speakTextAsync,
-    started,
-  ]);
-
-  const handleRetryListening = useCallback(async () => {
-    if (!started || !currentQuestion || !currentQuestionId || isCurrentSubmitted || isCurrentSkipped) {
-      return;
-    }
-    activeQuestionIdRef.current = currentQuestionId;
-    const token = await cancelVoiceFlow();
-    await startListening(currentQuestion, token);
-  }, [
-    cancelVoiceFlow,
-    currentQuestion,
-    currentQuestionId,
-    isCurrentSkipped,
-    isCurrentSubmitted,
-    startListening,
-    started,
-  ]);
-
   const handlePrev = useCallback(async () => {
     if (currentIndex <= 0) {
       return;
@@ -1400,15 +1354,6 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
             voiceState === 'processing' ||
             voiceState === 'submitting'
           }
-          fullWidth={false}
-          style={{flex: 1}}
-        />
-        <Button
-          title={isCurrentSubmitted || isCurrentSkipped ? 'Nghe lại' : 'Nghe lại câu hỏi'}
-          variant="secondary"
-          size="md"
-          onPress={isCurrentSubmitted || isCurrentSkipped ? handleRepeatPrompt : handleRetryListening}
-          disabled={voiceState === 'processing' || voiceState === 'submitting'}
           fullWidth={false}
           style={{flex: 1}}
         />
