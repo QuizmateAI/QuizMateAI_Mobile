@@ -24,7 +24,6 @@ import {
   buildRecordedAudioFile,
   buildVoiceFeedbackPrompt,
   buildVoiceQuestionPrompt,
-  compressRecordedAudio,
   computeDbFromPcm16,
   ensureVoiceRecordingPermission,
   findFirstPendingQuestionIndex,
@@ -585,17 +584,6 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
 
         if (token !== flowTokenRef.current || !isMountedRef.current) {
           return;
-        }
-
-        if (recordedUri) {
-          const compressedUri = await compressRecordedAudio(recordedUri);
-          if (token !== flowTokenRef.current || !isMountedRef.current) {
-            return;
-          }
-          if (compressedUri && compressedUri !== recordedUri) {
-            recordedUri = compressedUri;
-            recordingSessionRef.current.uri = recordedUri;
-          }
         }
 
         const audioFile = buildRecordedAudioFile(questionId, recordedUri);
