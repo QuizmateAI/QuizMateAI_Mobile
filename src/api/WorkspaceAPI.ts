@@ -64,7 +64,7 @@ const WorkspaceAPI = {
       params.append('search', search.trim());
     }
 
-    return api.get(`/api/workspace/getByUser?${params.toString()}`).then(res => {
+    return api.get(`/workspaces/getByUser?${params.toString()}`).then(res => {
       const pageData = res.data?.data;
 
       return {
@@ -75,34 +75,34 @@ const WorkspaceAPI = {
     });
   },
   getById: (id: number) =>
-    api.get(`/api/workspace/${id}`).then(res => ({
+    api.get(`/workspaces/${id}`).then(res => ({
       ...res,
       data: mapWorkspace(res.data?.data),
     })),
   getCurrentPlan: (workspaceId: number) =>
-    api.get(`/api/workspace/${workspaceId}/current-plan`).then(res => ({
+    api.get(`/workspaces/${workspaceId}/current-plan`).then(res => ({
       ...res,
       data: normalizeCurrentPlan(res.data?.data),
     })),
   create: (data: {name: string; description?: string}) =>
-    api.post('/api/workspace/create/individual', {
+    api.post('/workspaces/create/individual', {
       name: data.name,
       description: data.description,
     }),
   update: (id: number, data: {name?: string; description?: string}) =>
-    api.put(`/api/workspace/${id}`, {
+    api.put(`/workspaces/${id}`, {
       name: data.name,
       description: data.description,
     }),
   getQuestionStats: (workspaceId: number, attemptMode = 'OFFICIAL') =>
-    api.get(`/api/workspace/${workspaceId}/question-stats`, {
+    api.get(`/workspaces/${workspaceId}/question-stats`, {
       params: {attemptMode},
     }),
   getQuizStats: (workspaceId: number, attemptMode = 'OFFICIAL') =>
-    api.get(`/api/workspace/${workspaceId}/quiz-stats`, {
+    api.get(`/workspaces/${workspaceId}/quiz-stats`, {
       params: {attemptMode},
     }),
-  delete: (id: number) => api.delete(`/api/workspace/individual/${id}`),
+  delete: (id: number) => api.delete(`/workspaces/individual/${id}`),
 };
 
 export default WorkspaceAPI;

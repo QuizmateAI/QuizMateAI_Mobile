@@ -22,7 +22,7 @@ function normalizeMessages(payload: any) {
 }
 
 function discussionPath(workspaceId: number, quizId: number, suffix = '') {
-  return `/api/group/${workspaceId}/quizzes/${quizId}/discussion${suffix}`;
+  return `/groups/${workspaceId}/quizzes/${quizId}/discussion${suffix}`;
 }
 
 const GroupDiscussionAPI = {
