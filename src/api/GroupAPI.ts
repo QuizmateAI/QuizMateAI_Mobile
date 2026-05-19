@@ -33,12 +33,12 @@ const unwrapMembersPayload = (res: any) => normalizeMembers(res?.data?.data ?? r
 
 const GroupAPI = {
   getJoined: () =>
-    api.get('/api/group/me/joined').then(res => ({
+    api.get('/groups/me/joined').then(res => ({
       ...res,
       data: (res.data?.data || []).map(mapGroup),
     })),
   getPublicGroups: (search?: string) =>
-    api.get('/api/group/public', {
+    api.get('/groups/public', {
       params: search?.trim() ? {search: search.trim()} : undefined,
     }).then(res => {
       const payload = res.data?.data ?? res.data;
@@ -55,12 +55,12 @@ const GroupAPI = {
       };
     }),
   joinPublicGroup: (groupId: number) =>
-    api.post(`/api/group/${groupId}/join`).then(res => ({
+    api.post(`/groups/${groupId}/join`).then(res => ({
       ...res,
       data: res.data?.data || res.data,
     })),
   create: (data: {name: string; description?: string; fieldId?: number}) =>
-    api.post('/api/workspace/create/group', {
+    api.post('/workspaces/create/group', {
       name: data.name,
       description: data.description,
       fieldId: data.fieldId ?? 1,
@@ -69,75 +69,75 @@ const GroupAPI = {
       data: res.data?.data || res.data,
     })),
   getMembers: (groupId: number) =>
-    api.get(`/api/group/${groupId}/members`, {
+    api.get(`/groups/${groupId}/members`, {
       params: {page: 0, size: 100},
     }).then(res => ({
       ...res,
       data: unwrapMembersPayload(res),
     })).catch(() =>
-      api.get(`/api/group/${groupId}/members`).then(res => ({
+      api.get(`/groups/${groupId}/members`).then(res => ({
         ...res,
         data: unwrapMembersPayload(res),
       }))
     ),
   getDashboardSummary: (groupId: number) =>
-    api.get(`/api/group/${groupId}/dashboard/summary`).then(res => ({
+    api.get(`/groups/${groupId}/dashboard/summary`).then(res => ({
       ...res,
       data: res.data?.data || null,
     })),
   getWorkspaceDetail: (groupId: number) =>
-    api.get(`/api/workspace/${groupId}`).then(res => ({
+    api.get(`/workspaces/${groupId}`).then(res => ({
       ...res,
       data: res.data?.data || res.data || null,
     })),
   toggleVisibility: (groupId: number) =>
-    api.put(`/api/group/${groupId}/visibility`).then(res => ({
+    api.put(`/groups/${groupId}/visibility`).then(res => ({
       ...res,
       data: res.data?.data || null,
     })),
   deleteGroup: (groupId: number, confirmText = 'delete group') =>
-    api.delete(`/api/group/${groupId}`, {
+    api.delete(`/groups/${groupId}`, {
       data: {confirmText},
     }),
   sendInvitation: (groupId: number, data: {email: string}) =>
-    api.post(`/api/group/${groupId}/invitation`, data),
+    api.post(`/groups/${groupId}/invitation`, data),
   getPendingInvitations: (groupId: number) =>
-    api.get(`/api/group/${groupId}/invitations`).then(res => ({
+    api.get(`/groups/${groupId}/invitations`).then(res => ({
       ...res,
       data: res.data?.data?.invitations || [],
       count: Number(res.data?.data?.count || 0),
     })),
   cancelInvitation: (groupId: number, invitationId: number | string) =>
-    api.delete(`/api/group/${groupId}/invitations/${encodeURIComponent(String(invitationId))}`),
+    api.delete(`/groups/${groupId}/invitations/${encodeURIComponent(String(invitationId))}`),
   resendInvitation: (groupId: number, invitationId: number | string, email?: string) => {
     const id = encodeURIComponent(String(invitationId));
     if (String(email || '').trim().length > 0) {
-      return api.post(`/api/group/${groupId}/invitations/${id}/resend`, {
+      return api.post(`/groups/${groupId}/invitations/${id}/resend`, {
         email: String(email || '').trim(),
       });
     }
-    return api.post(`/api/group/${groupId}/invitations/${id}/resend`);
+    return api.post(`/groups/${groupId}/invitations/${id}/resend`);
   },
   grantUpload: (groupId: number, memberId: number) =>
-    api.post(`/api/group/${groupId}/members/${memberId}/grant-upload`),
+    api.post(`/groups/${groupId}/members/${memberId}/grant-upload`),
   revokeUpload: (groupId: number, memberId: number) =>
-    api.delete(`/api/group/${groupId}/members/${memberId}/grant-upload`),
+    api.delete(`/groups/${groupId}/members/${memberId}/grant-upload`),
   updateRole: (groupId: number, memberId: number, role: string) =>
-    api.put(`/api/group/${groupId}/members/${memberId}/role?roleName=${role}`),
+    api.put(`/groups/${groupId}/members/${memberId}/role?roleName=${role}`),
   removeMember: (groupId: number, memberId: number) =>
-    api.delete(`/api/group/${groupId}/members/${memberId}`),
+    api.delete(`/groups/${groupId}/members/${memberId}`),
   getOverallRanking: (groupId: number) =>
-    api.get(`/api/group/${groupId}/ranking/overall`).then(res => ({
+    api.get(`/groups/${groupId}/ranking/overall`).then(res => ({
       ...res,
       data: res.data?.data || null,
     })),
   getRankingMemberDetail: (groupId: number, userId: number) =>
-    api.get(`/api/group/${groupId}/ranking/overall/members/${userId}`).then(res => ({
+    api.get(`/groups/${groupId}/ranking/overall/members/${userId}`).then(res => ({
       ...res,
       data: res.data?.data || null,
     })),
   getMemberDashboardCards: (groupId: number, page = 0, size = 20) =>
-    api.get(`/api/group/${groupId}/dashboard/members`, {
+    api.get(`/groups/${groupId}/dashboard/members`, {
       params: {page, size},
     }).then(res => ({
       ...res,
@@ -147,17 +147,17 @@ const GroupAPI = {
       })),
     })),
   getMemberDashboardDetail: (groupId: number, memberId: number) =>
-    api.get(`/api/group/${groupId}/dashboard/members/${memberId}`).then(res => ({
+    api.get(`/groups/${groupId}/dashboard/members/${memberId}`).then(res => ({
       ...res,
       data: res.data?.data || null,
     })),
   getGroupLogs: (groupId: number) =>
-    api.get(`/api/group/${groupId}/logs`).then(res => ({
+    api.get(`/groups/${groupId}/logs`).then(res => ({
       ...res,
       data: res.data?.data || [],
     })),
   getMyPermissions: (groupId: number) =>
-    api.get(`/api/group/${groupId}/me/permissions`).then(res => ({
+    api.get(`/groups/${groupId}/me/permissions`).then(res => ({
       ...res,
       data: res.data?.data || null,
     })),

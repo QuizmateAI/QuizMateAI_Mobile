@@ -6,7 +6,7 @@ const RoadmapPhaseAPI = {
   getCurrentPhaseProgress: (roadmapId?: number | null) => {
     const normalizedRoadmapId = Number(roadmapId);
     return api
-      .get('/api/roadmap-phases/current', {
+      .get('/roadmap-phases/current', {
         params:
           Number.isInteger(normalizedRoadmapId) && normalizedRoadmapId > 0
             ? {roadmapId: normalizedRoadmapId}
@@ -21,7 +21,7 @@ const RoadmapPhaseAPI = {
   submitSkipDecision: (phaseId: number, skipped: boolean) => {
     const normalizedPhaseId = Number(phaseId);
     return api
-      .patch(`/api/roadmap-phases/${normalizedPhaseId}/skip-decision`, {
+      .patch(`/roadmap-phases/${normalizedPhaseId}/skip-decision`, {
         skipped: Boolean(skipped),
       })
       .then(res => ({
@@ -33,7 +33,7 @@ const RoadmapPhaseAPI = {
   submitRemedialDecision: (phaseId: number, option: string) => {
     const normalizedPhaseId = Number(phaseId);
     return api
-      .post(`/api/roadmap-phases/${normalizedPhaseId}/remedial-decision`, {
+      .post(`/roadmap-phases/${normalizedPhaseId}/remedial-decision`, {
         option: String(option || '').toUpperCase(),
       })
       .then(res => ({
@@ -45,7 +45,7 @@ const RoadmapPhaseAPI = {
   createProgressReview: (phaseProgressId: number) => {
     const normalizedPhaseProgressId = Number(phaseProgressId);
     return api
-      .post(`/api/roadmap-phases/progress/${normalizedPhaseProgressId}/review`, null)
+      .post(`/roadmap-phases/progress/${normalizedPhaseProgressId}/review`, null)
       .then(res => ({
         ...res,
         data: unwrapData(res),
@@ -54,7 +54,7 @@ const RoadmapPhaseAPI = {
 
   getPhaseReview: (phaseId: number) => {
     const normalizedPhaseId = Number(phaseId);
-    return api.get(`/api/roadmap-phases/${normalizedPhaseId}/review`).then(res => ({
+    return api.get(`/roadmap-phases/${normalizedPhaseId}/review`).then(res => ({
       ...res,
       data: unwrapData(res),
     }));

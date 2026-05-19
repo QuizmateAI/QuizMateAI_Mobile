@@ -6,7 +6,7 @@ const SubTopicAPI = {
       return Promise.resolve({data: []});
     }
 
-    return api.get('/api/sub-topics/by-materials', {
+    return api.get('/sub-topics/by-materials', {
       params: {
         materialIds: materialIds.join(','),
         workspaceId,

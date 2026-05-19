@@ -24,7 +24,7 @@ const normalizeList = (payload: any) => {
 const ChallengeAPI = {
   list: (workspaceId: number, status?: string) =>
     api
-      .get(`/api/group/${workspaceId}/challenges`, {
+      .get(`/groups/${workspaceId}/challenges`, {
         params: status ? {status} : undefined,
       })
       .then(res => ({
@@ -32,23 +32,23 @@ const ChallengeAPI = {
         data: normalizeList(unwrapData(res)),
       })),
   detail: (workspaceId: number, eventId: number) =>
-    api.get(`/api/group/${workspaceId}/challenges/${eventId}`).then(res => ({
+    api.get(`/groups/${workspaceId}/challenges/${eventId}`).then(res => ({
       ...res,
       data: unwrapData(res),
     })),
   register: (workspaceId: number, eventId: number) =>
-    api.post(`/api/group/${workspaceId}/challenges/${eventId}/register`),
+    api.post(`/groups/${workspaceId}/challenges/${eventId}/register`),
   acceptInvitation: (workspaceId: number, eventId: number) =>
-    api.post(`/api/group/${workspaceId}/challenges/${eventId}/accept-invite`),
+    api.post(`/groups/${workspaceId}/challenges/${eventId}/accept-invite`),
   startAttempt: (workspaceId: number, eventId: number) =>
     api
-      .post(`/api/group/${workspaceId}/challenges/${eventId}/start-attempt`)
+      .post(`/groups/${workspaceId}/challenges/${eventId}/start-attempt`)
       .then(res => ({
         ...res,
         data: unwrapData(res),
       })),
   leaderboard: (workspaceId: number, eventId: number) =>
-    api.get(`/api/group/${workspaceId}/challenges/${eventId}/leaderboard`).then(res => ({
+    api.get(`/groups/${workspaceId}/challenges/${eventId}/leaderboard`).then(res => ({
       ...res,
       data: normalizeList(unwrapData(res)),
     })),

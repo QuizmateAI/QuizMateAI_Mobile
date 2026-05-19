@@ -28,27 +28,27 @@ const normalizeMaterials = (payload: any) => {
 
 const MaterialAPI = {
   getByWorkspace: (workspaceId: number) =>
-    api.get(`/api/materials/workspace/${workspaceId}`).then(res => ({
+    api.get(`/materials/workspace/${workspaceId}`).then(res => ({
       ...res,
       data: normalizeMaterials(res.data),
     })),
   getPendingGroupMaterials: (workspaceId: number) =>
-    api.get(`/api/materials/workspace/${workspaceId}/pending-review`).then(res => ({
+    api.get(`/materials/workspace/${workspaceId}/pending-review`).then(res => ({
       ...res,
       data: normalizeMaterials(res.data),
     })),
   getExtractedText: (materialId: number) =>
-    api.get(`/api/materials/${materialId}/extracted-text`).then(res => ({
+    api.get(`/materials/${materialId}/extracted-text`).then(res => ({
       ...res,
       data: res.data?.data || res.data || '',
     })),
   getModerationReportDetail: (materialId: number) =>
-    api.get(`/api/materials/${materialId}/moderation-report/detail`).then(res => ({
+    api.get(`/materials/${materialId}/moderation-report/detail`).then(res => ({
       ...res,
       data: res.data?.data || res.data || null,
     })),
   reviewMaterial: (materialId: number, isApproved: boolean) =>
-    api.post(`/api/materials/${materialId}/review`, null, {
+    api.post(`/materials/${materialId}/review`, null, {
       params: {isApproved},
       timeout: 60000,
     }).then(res => ({
@@ -56,7 +56,7 @@ const MaterialAPI = {
       data: res.data?.data || res.data || null,
     })),
   reviewGroupMaterial: (materialId: number, isApproved: boolean) =>
-    api.post(`/api/materials/${materialId}/group-review`, null, {
+    api.post(`/materials/${materialId}/group-review`, null, {
       params: {isApproved},
       timeout: 60000,
     }).then(res => ({
@@ -64,15 +64,15 @@ const MaterialAPI = {
       data: res.data?.data || res.data || null,
     })),
   upload: (formData: FormData) =>
-    api.post('/api/materials/upload', formData, {
+    api.post('/materials/upload', formData, {
       headers: {'Content-Type': 'multipart/form-data'},
     }),
   uploadGroupPending: (formData: FormData) =>
-    api.post('/api/materials/upload/group-pending', formData, {
+    api.post('/materials/upload/group-pending', formData, {
       headers: {'Content-Type': 'multipart/form-data'},
     }),
   delete: (id: number, contextType: 'WORKSPACE' | 'GROUP' = 'WORKSPACE') =>
-    api.delete(`/api/materials/${id}?contextType=${contextType}`),
+    api.delete(`/materials/${id}?contextType=${contextType}`),
 };
 
 export default MaterialAPI;

@@ -30,17 +30,17 @@ const mapCollection = (item: any) => ({
 
 const QuizCollectionAPI = {
   getByWorkspace: (workspaceId: number) =>
-    api.get(`/api/quiz-collections/byWorkspace/${workspaceId}`).then(res => ({
+    api.get(`/quiz-collections/byWorkspace/${workspaceId}`).then(res => ({
       ...res,
       data: unwrapList(res.data).map(mapCollection),
     })),
   getById: (collectionId: number) =>
-    api.get(`/api/quiz-collections/${collectionId}`).then(res => ({
+    api.get(`/quiz-collections/${collectionId}`).then(res => ({
       ...res,
       data: mapCollection(unwrapData(res.data)),
     })),
   create: (payload: {workspaceId: number; title: string; description?: string}) =>
-    api.post('/api/quiz-collections', payload).then(res => ({
+    api.post('/quiz-collections', payload).then(res => ({
       ...res,
       data: mapCollection(unwrapData(res.data)),
     })),
@@ -48,22 +48,22 @@ const QuizCollectionAPI = {
     collectionId: number,
     payload: {title?: string; description?: string; status?: string},
   ) =>
-    api.put(`/api/quiz-collections/${collectionId}`, payload).then(res => ({
+    api.put(`/quiz-collections/${collectionId}`, payload).then(res => ({
       ...res,
       data: mapCollection(unwrapData(res.data)),
     })),
   delete: (collectionId: number) =>
-    api.delete(`/api/quiz-collections/${collectionId}`),
+    api.delete(`/quiz-collections/${collectionId}`),
   getQuestions: (collectionId: number) =>
-    api.get(`/api/quiz-collections/${collectionId}/questions`).then(res => ({
+    api.get(`/quiz-collections/${collectionId}/questions`).then(res => ({
       ...res,
       data: unwrapList(res.data),
     })),
   deleteQuestion: (collectionId: number, questionId: number) =>
-    api.delete(`/api/quiz-collections/${collectionId}/questions/${questionId}`),
+    api.delete(`/quiz-collections/${collectionId}/questions/${questionId}`),
   importQuizzes: (collectionId: number, sourceQuizIds: number[]) =>
     api
-      .post(`/api/quiz-collections/${collectionId}/quizzes:import`, {
+      .post(`/quiz-collections/${collectionId}/quizzes:import`, {
         sourceQuizIds,
       })
       .then(res => ({
@@ -72,7 +72,7 @@ const QuizCollectionAPI = {
       })),
   importQuestions: (collectionId: number, sourceQuestionIds: number[]) =>
     api
-      .post(`/api/quiz-collections/${collectionId}/questions:import`, {
+      .post(`/quiz-collections/${collectionId}/questions:import`, {
         sourceQuestionIds,
       })
       .then(res => ({
@@ -80,7 +80,7 @@ const QuizCollectionAPI = {
         data: mapCollection(unwrapData(res.data)),
       })),
   getPracticeFull: (collectionId: number) =>
-    api.get(`/api/quiz-collections/${collectionId}/practice/full`).then(res => ({
+    api.get(`/quiz-collections/${collectionId}/practice/full`).then(res => ({
       ...res,
       data: unwrapData(res.data),
     })),
@@ -89,7 +89,7 @@ const QuizCollectionAPI = {
     options?: {isCompanionMode?: boolean; isPracticeMode?: boolean},
   ) =>
     api
-      .post(`/api/quiz-collections/${collectionId}/practice/start`, null, {
+      .post(`/quiz-collections/${collectionId}/practice/start`, null, {
         params: {
           isCompanionMode: Boolean(options?.isCompanionMode),
           isPracticeMode: options?.isPracticeMode !== false,
@@ -105,7 +105,7 @@ const QuizCollectionAPI = {
     options?: {isCompanionMode?: boolean; isPracticeMode?: boolean},
   ) =>
     api
-      .post(`/api/quiz-collections/${collectionId}/practice/random`, null, {
+      .post(`/quiz-collections/${collectionId}/practice/random`, null, {
         params: {
           count,
           isCompanionMode: Boolean(options?.isCompanionMode),

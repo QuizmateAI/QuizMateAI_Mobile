@@ -109,7 +109,7 @@ const mapQuizFull = (raw: any) => ({
 
 const QuizAPI = {
   getByUser: () =>
-    api.get('/api/quiz/getByUser').then(res => ({
+    api.get('/quizzes/getByUser').then(res => ({
       ...res,
       data: filterQuizListForContext(getQuizList(res.data), 'WORKSPACE').map(mapQuiz),
     })),
@@ -129,14 +129,14 @@ const QuizAPI = {
 
       if (normalized === 'WORKSPACE' || normalized === 'GROUP') {
         path = quizIntent
-          ? `/api/quiz/getByWorkspace/${contextId}/intent/${quizIntent}`
-          : `/api/quiz/getByWorkspace/${contextId}`;
+          ? `/quizzes/getByWorkspace/${contextId}/intent/${quizIntent}`
+          : `/quizzes/getByWorkspace/${contextId}`;
       } else if (normalized === 'ROADMAP') {
-        path = `/api/quiz/getByRoadmap/${contextId}`;
+        path = `/quizzes/getByRoadmap/${contextId}`;
       } else if (normalized === 'PHASE') {
-        path = `/api/quiz/getByPhase/${contextId}`;
+        path = `/quizzes/getByPhase/${contextId}`;
       } else if (normalized === 'KNOWLEDGE') {
-        path = `/api/quiz/getByKnowledge/${contextId}`;
+        path = `/quizzes/getByKnowledge/${contextId}`;
       }
 
       if (!path) {
@@ -163,14 +163,14 @@ const QuizAPI = {
 
     if (normalized === 'WORKSPACE' || normalized === 'GROUP') {
       path = quizIntent
-        ? `/api/quiz/getByWorkspace/${scopeId}/intent/${quizIntent}`
-        : `/api/quiz/getByWorkspace/${scopeId}`;
+        ? `/quizzes/getByWorkspace/${scopeId}/intent/${quizIntent}`
+        : `/quizzes/getByWorkspace/${scopeId}`;
     } else if (normalized === 'ROADMAP') {
-      path = `/api/quiz/getByRoadmap/${scopeId}`;
+      path = `/quizzes/getByRoadmap/${scopeId}`;
     } else if (normalized === 'PHASE') {
-      path = `/api/quiz/getByPhase/${scopeId}`;
+      path = `/quizzes/getByPhase/${scopeId}`;
     } else {
-      path = `/api/quiz/getByKnowledge/${scopeId}`;
+      path = `/quizzes/getByKnowledge/${scopeId}`;
     }
 
     return api.get(path).then(res => ({
@@ -184,20 +184,20 @@ const QuizAPI = {
     if (options?.attemptView) params.attemptView = true;
     const hasParams = Object.keys(params).length > 0;
     return api
-      .get(`/api/quiz/${quizId}/full`, hasParams ? {params} : undefined)
+      .get(`/quizzes/${quizId}/full`, hasParams ? {params} : undefined)
       .then(res => ({
         ...res,
         data: mapQuizFull(res.data?.data ?? res.data),
       }));
   },
   updateShuffleEnabled: (quizId: number, enabled: boolean) =>
-    api.patch(`/api/quiz/${quizId}/shuffle`, {enabled}).then(res => ({
+    api.patch(`/quizzes/${quizId}/shuffle`, {enabled}).then(res => ({
       ...res,
       data: res.data?.data ?? res.data,
     })),
   getAttemptHistory: (quizId: number) =>
     api
-      .get('/api/quiz-attempts/history', {
+      .get('/quiz-attempts/history', {
         params: {quizId},
       })
       .then(res => ({
@@ -206,26 +206,26 @@ const QuizAPI = {
       })),
   getGroupAttemptHistory: (workspaceId: number, quizId: number) =>
     api
-      .get(`/api/group/${workspaceId}/quiz-attempts/history`, {
+      .get(`/groups/${workspaceId}/quiz-attempts/history`, {
         params: {quizId},
       })
       .then(res => ({
         ...res,
         data: getQuizList(res.data).map(mapAttemptHistory),
       })),
-  create: (data: any) => api.post('/api/quiz/create', data),
-  update: (quizId: number, data: any) => api.put(`/api/quiz/${quizId}`, data),
+  create: (data: any) => api.post('/quizzes', data),
+  update: (quizId: number, data: any) => api.put(`/quizzes/${quizId}`, data),
   shareToCommunity: (quizId: number, shared = true) =>
-    api.post(`/api/quiz/${quizId}/community-share?shared=${shared}`),
+    api.post(`/quizzes/${quizId}/community-share?shared=${shared}`),
   toggleStatus: (quizId: number) =>
-    api.patch(`/api/quiz/${quizId}/toggle-status`),
-  delete: (quizId: number) => api.delete(`/api/quiz/${quizId}`),
+    api.patch(`/quizzes/${quizId}/toggle-status`),
+  delete: (quizId: number) => api.delete(`/quizzes/${quizId}`),
   startAttempt: (
     quizId: number,
     options?: {isCompanionMode?: boolean; isPracticeMode?: boolean},
   ) =>
     api
-      .post(`/api/quiz-attempts/start/${quizId}`, null, {
+      .post(`/quiz-attempts/start/${quizId}`, null, {
         params: {
           isCompanionMode: Boolean(options?.isCompanionMode),
           isPracticeMode: Boolean(options?.isPracticeMode),
@@ -248,7 +248,7 @@ const QuizAPI = {
       matchingPairs?: Array<{leftKey: string; rightKey: string}> | null;
     },
   ) =>
-    api.put(`/api/quiz-attempts/${attemptId}/saveAnswer`, [
+    api.put(`/quiz-attempts/${attemptId}/saveAnswer`, [
       {
         questionId: data.questionId,
         selectedAnswerIds:
@@ -274,7 +274,7 @@ const QuizAPI = {
     },
   ) =>
     api
-      .post(`/api/quiz-attempts/${attemptId}/practice/submit-question`, {
+      .post(`/quiz-attempts/${attemptId}/practice/submit-question`, {
         questionId: data.questionId,
         selectedAnswerIds: Array.isArray(data.selectedAnswerIds)
           ? data.selectedAnswerIds
@@ -305,7 +305,7 @@ const QuizAPI = {
     formData.append('audioFile', data.audioFile as any);
 
     return api
-      .post(`/api/quiz-attempts/${attemptId}/companion-answer`, formData, {
+      .post(`/quiz-attempts/${attemptId}/companion-answer`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -317,7 +317,7 @@ const QuizAPI = {
   },
   createCompanionSpeech: (text: string, attemptId?: number | null) =>
     api
-      .post('/api/quiz-attempts/companion-speech', {
+      .post('/quiz-attempts/companion-speech', {
         text,
         attemptId: attemptId ?? undefined,
       })
@@ -330,14 +330,14 @@ const QuizAPI = {
     const baseUrl = String(API_URL || '').replace(/\/+$/, '');
 
     return {
-      url: `${baseUrl}/api/quiz-attempts/companion-speech/${speechId}`,
+      url: `${baseUrl}/quiz-attempts/companion-speech/${speechId}`,
       headers: token ? {Authorization: `Bearer ${token}`} : {},
     };
   },
   submitAttempt: (attemptId: number) =>
-    api.post(`/api/quiz-attempts/${attemptId}/submit`),
+    api.post(`/quiz-attempts/${attemptId}/submit`),
   createManualQuizBulk: (data: any) =>
-    api.post('/api/quiz/manual:create-bulk', data),
+    api.post('/quizzes/manual:create-bulk', data),
   getWorkspaceQuestionsCatalog: (
     workspaceId: number,
     params?: {
@@ -349,33 +349,33 @@ const QuizAPI = {
     },
   ) =>
     api
-      .get(`/api/quiz/workspace/${workspaceId}/questions-catalog`, {params})
+      .get(`/quizzes/workspace/${workspaceId}/questions-catalog`, {params})
       .then(res => ({
         ...res,
         data: getQuizList(res.data),
       })),
   getAttemptAssessment: (attemptId: number) =>
-    api.get(`/api/quiz-attempts/${attemptId}/assessment`).then(res => ({
+    api.get(`/quiz-attempts/${attemptId}/assessment`).then(res => ({
       ...res,
       data: res.data?.data,
     })),
   refreshAttemptAssessment: (attemptId: number) =>
-    api.post(`/api/quiz-attempts/${attemptId}/assessment/refresh`).then(res => ({
+    api.post(`/quiz-attempts/${attemptId}/assessment/refresh`).then(res => ({
       ...res,
       data: res.data?.data,
     })),
   getAttemptAssessmentWarning: (attemptId: number) =>
-    api.get(`/api/quiz-attempts/${attemptId}/assessment-warning`).then(res => ({
+    api.get(`/quiz-attempts/${attemptId}/assessment-warning`).then(res => ({
       ...res,
       data: res.data?.data,
     })),
   getVoiceEligibility: (quizId: number) =>
-    api.get(`/api/quiz/${quizId}/voice-eligibility`).then(res => ({
+    api.get(`/quizzes/${quizId}/voice-eligibility`).then(res => ({
       ...res,
       data: res.data?.data,
     })),
   getResult: (attemptId: number) =>
-    api.get(`/api/quiz-attempts/${attemptId}/result`).then(res => {
+    api.get(`/quiz-attempts/${attemptId}/result`).then(res => {
       const raw = res.data?.data || {};
       const maxScore = raw.maxScore || 0;
       const score = raw.score || 0;
