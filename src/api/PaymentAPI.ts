@@ -132,15 +132,15 @@ const applyRecommendedFlag = (items: any[]) => {
 
 const PaymentAPI = {
   getPlan: (id: number) =>
-    api.get(`/api/plan-catalog/${id}`).then(res => ({
+    api.get(`/plan-catalog/${id}`).then(res => ({
       ...unwrapApiData(res),
       data: mapPlan(res.data?.data),
     })),
 
   getPurchasablePlans: (type: 'INDIVIDUAL' | 'GROUP') =>
     (type === 'GROUP'
-      ? api.get('/api/plan-catalog/active/group')
-      : api.get('/api/plan-catalog/active/user')
+      ? api.get('/plan-catalog/active/group')
+      : api.get('/plan-catalog/active/user')
     ).then(res => {
       const raw = res.data?.data;
       const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
@@ -161,14 +161,14 @@ const PaymentAPI = {
     extraSlotCount = 0,
   ) =>
     (workspaceId
-      ? api.post(`/api/momo/create-workspace/${workspaceId}`, null, {
+      ? api.post(`/momo/create-workspace/${workspaceId}`, null, {
           params: {
             planId,
             clientType: CLIENT_TYPE,
             ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
           },
         })
-      : api.post(`/api/momo/create/${planId}`, null, {
+      : api.post(`/momo/create/${planId}`, null, {
           params: {clientType: CLIENT_TYPE},
         })
     ).then(unwrapApiData),
@@ -179,14 +179,14 @@ const PaymentAPI = {
     extraSlotCount = 0,
   ) =>
     (workspaceId
-      ? api.post(`/api/vnpay/create-workspace/${workspaceId}`, null, {
+      ? api.post(`/vnpay/create-workspace/${workspaceId}`, null, {
           params: {
             planId,
             clientType: CLIENT_TYPE,
             ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
           },
         })
-      : api.post(`/api/vnpay/create/${planId}`, null, {
+      : api.post(`/vnpay/create/${planId}`, null, {
           params: {clientType: CLIENT_TYPE},
         })
     ).then(unwrapApiData),
@@ -197,21 +197,21 @@ const PaymentAPI = {
     extraSlotCount = 0,
   ) =>
     (workspaceId
-      ? api.post(`/api/stripe/create-workspace/${workspaceId}`, null, {
+      ? api.post(`/stripe/create-workspace/${workspaceId}`, null, {
           params: {
             planId,
             clientType: CLIENT_TYPE,
             ...(extraSlotCount > 0 ? {extraSlotCount} : {}),
           },
         })
-      : api.post(`/api/stripe/create/${planId}`, null, {
+      : api.post(`/stripe/create/${planId}`, null, {
           params: {clientType: CLIENT_TYPE},
         })
     ).then(unwrapApiData),
 
   createMomoCreditPayment: (creditPackageId: number, workspaceId?: number) =>
     api
-      .post(`/api/momo/create-credit/${creditPackageId}`, null, {
+      .post(`/momo/create-credit/${creditPackageId}`, null, {
         params: {
           clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
@@ -221,7 +221,7 @@ const PaymentAPI = {
 
   createVnpayCreditPayment: (creditPackageId: number, workspaceId?: number) =>
     api
-      .post(`/api/vnpay/create-credit/${creditPackageId}`, null, {
+      .post(`/vnpay/create-credit/${creditPackageId}`, null, {
         params: {
           clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
@@ -231,7 +231,7 @@ const PaymentAPI = {
 
   createStripeCreditPayment: (creditPackageId: number, workspaceId?: number) =>
     api
-      .post(`/api/stripe/create-credit/${creditPackageId}`, null, {
+      .post(`/stripe/create-credit/${creditPackageId}`, null, {
         params: {
           clientType: CLIENT_TYPE,
           ...(workspaceId ? {workspaceId} : {}),
@@ -241,7 +241,7 @@ const PaymentAPI = {
 
   createMomoCustomCreditPayment: (creditUnits: number, workspaceId?: number) =>
     api
-      .post('/api/momo/create-custom-credit', null, {
+      .post('/momo/create-custom-credit', null, {
         params: {
           creditUnits,
           clientType: CLIENT_TYPE,
@@ -252,7 +252,7 @@ const PaymentAPI = {
 
   createVnPayCustomCreditPayment: (creditUnits: number, workspaceId?: number) =>
     api
-      .post('/api/vnpay/create-custom-credit', null, {
+      .post('/vnpay/create-custom-credit', null, {
         params: {
           creditUnits,
           clientType: CLIENT_TYPE,
@@ -263,7 +263,7 @@ const PaymentAPI = {
 
   createStripeCustomCreditPayment: (creditUnits: number, workspaceId?: number) =>
     api
-      .post('/api/stripe/create-custom-credit', null, {
+      .post('/stripe/create-custom-credit', null, {
         params: {
           creditUnits,
           clientType: CLIENT_TYPE,

@@ -136,37 +136,37 @@ const buildRoadmapConfigStepRequest = (payload: ProfilePayload) => {
 
 const WorkspaceProfileAPI = {
   getProfile: (workspaceId: number) =>
-    api.get(`/api/workspace-profile/individual/${workspaceId}`),
+    api.get(`/workspace-profiles/individual/${workspaceId}`),
 
   saveBasicStep: (workspaceId: number, payload: ProfilePayload) =>
     api.put(
-      `/api/workspace-profile/individual/${workspaceId}/steps/basic`,
+      `/workspace-profiles/individual/${workspaceId}/steps/basic`,
       buildBasicStepRequest(payload),
     ),
 
   savePersonalInfoStep: (workspaceId: number, payload: ProfilePayload) =>
     api.put(
-      `/api/workspace-profile/individual/${workspaceId}/steps/personal-info`,
+      `/workspace-profiles/individual/${workspaceId}/steps/personal-info`,
       buildPersonalInfoStepRequest(payload),
     ),
 
   startMockTestPersonalInfoStep: (workspaceId: number, payload: ProfilePayload) =>
     api.post(
-      `/api/workspace-profile/individual/${workspaceId}/steps/personal-info/mock-test`,
+      `/workspace-profiles/individual/${workspaceId}/steps/personal-info/mock-test`,
       buildMockTestPersonalInfoRequest(payload),
     ),
 
   saveRoadmapConfigStep: (workspaceId: number, payload: ProfilePayload) =>
     api.put(
-      `/api/workspace-profile/individual/${workspaceId}/steps/roadmap-config`,
+      `/workspace-profiles/individual/${workspaceId}/steps/roadmap-config`,
       buildRoadmapConfigStepRequest(payload),
     ),
 
   suggestRoadmapConfig: (workspaceId: number) =>
-    api.post(`/api/workspace-profile/individual/${workspaceId}/roadmap-config/suggest`),
+    api.post(`/workspace-profiles/individual/${workspaceId}/roadmap-config/suggest`),
 
   confirm: (workspaceId: number) =>
-    api.post(`/api/workspace-profile/individual/${workspaceId}/steps/confirm`),
+    api.post(`/workspace-profiles/individual/${workspaceId}/steps/confirm`),
 
   waitForMockTestPersonalInfoDone: async (workspaceId: number) => {
     for (let attempt = 0; attempt < MOCK_TEST_POLL_ATTEMPTS; attempt += 1) {

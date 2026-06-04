@@ -104,82 +104,82 @@ const ManagementSystemAPI = {
 
   getGroupLogs: (groupId: number) => api.get(`/management/groups/${groupId}/logs`),
 
-  getAllPlans: () => api.get('/api/plan-catalog/all'),
+  getAllPlans: () => api.get('/plan-catalog/all'),
 
-  getPlanById: (planId: number) => api.get(`/api/plan-catalog/${planId}`),
+  getPlanById: (planId: number) => api.get(`/plan-catalog/${planId}`),
 
-  createPlan: (data: any) => api.post('/api/plan-catalog/create', data),
+  createPlan: (data: any) => api.post('/plan-catalog/create', data),
 
-  updatePlan: (planId: number, data: any) => api.put(`/api/plan-catalog/${planId}`, data),
+  updatePlan: (planId: number, data: any) => api.put(`/plan-catalog/${planId}`, data),
 
-  deletePlan: (planId: number) => api.delete(`/api/plan-catalog/${planId}`),
+  deletePlan: (planId: number) => api.delete(`/plan-catalog/${planId}`),
 
   updatePlanStatus: (planId: number, status: string) =>
-    api.patch(`/api/plan-catalog/${planId}/status`, {status}),
+    api.patch(`/plan-catalog/${planId}/status`, {status}),
 
-  getActiveUserPlans: () => api.get('/api/plan-catalog/active/user'),
+  getActiveUserPlans: () => api.get('/plan-catalog/active/user'),
 
-  getActiveGroupPlan: () => api.get('/api/plan-catalog/active/group'),
+  getActiveGroupPlan: () => api.get('/plan-catalog/active/group'),
 
   getPurchasablePlans: (type: string) =>
     api.get(
       type === 'GROUP'
-        ? '/api/plan-catalog/active/group'
-        : '/api/plan-catalog/active/user',
+        ? '/plan-catalog/active/group'
+        : '/plan-catalog/active/user',
     ),
 
   getCurrentUserPlan: () =>
-    api.get('/api/user/current-plan').then(res => ({
+    api.get('/users/current-plan').then(res => ({
       ...res,
       data: normalizeCurrentPlan(res.data?.data),
     })),
 
-  getAllCreditPackages: () => api.get('/api/credit-package/all'),
+  getAllCreditPackages: () => api.get('/credit-packages/all'),
 
-  getCreditPackageById: (id: number) => api.get(`/api/credit-package/${id}`),
+  getCreditPackageById: (id: number) => api.get(`/credit-packages/${id}`),
 
   createCreditPackage: (data: any) =>
-    api.post('/api/credit-package/create', data),
+    api.post('/credit-packages/create', data),
 
   updateCreditPackage: (id: number, data: any) =>
-    api.put(`/api/credit-package/${id}`, data),
+    api.put(`/credit-packages/${id}`, data),
 
   updateCreditPackageStatus: (id: number, data: any) =>
-    api.patch(`/api/credit-package/${id}/status`, data),
+    api.patch(`/credit-packages/${id}/status`, data),
 
-  deleteCreditPackage: (id: number) => api.delete(`/api/credit-package/${id}`),
+  deleteCreditPackage: (id: number) => api.delete(`/credit-packages/${id}`),
 
   getPurchaseableCreditPackages: () =>
-    api.get('/api/credit-package/purchaseable'),
+    api.get('/credit-packages/purchaseable'),
 
   getCustomCreditConfig: () =>
-    api.get('/api/credit-package/custom-config').then(res => ({
+    api.get('/credit-packages/custom-config').then(res => ({
       ...res,
       data: normalizeCustomCreditConfig(res.data?.data),
     })),
 
   getUserPayments: (page = 0, size = 10) =>
-    api.get(`/api/payment/user?page=${page}&size=${size}`),
+    api.get(`/payments/user?page=${page}&size=${size}`),
 
   getPaymentByOrderId: (orderId: string) =>
-    api.get(`/api/payment/order/${encodeURIComponent(orderId)}`),
+    api.get(`/payments/order/${encodeURIComponent(orderId)}`),
 
   getMyWallet: () =>
-    api.get('/api/credit-wallet/me').then(res => ({
+    api.get('/credit-wallets/me').then(res => ({
       ...res,
       data: normalizeCreditSummary(res.data?.data),
     })),
 
   getMyWalletTransactions: (page = 0, size = 10) =>
     api
-      .get(`/api/credit-wallet/me/transactions?page=${page}&size=${size}`)
+      .get(`/credit-wallets/me/transactions?page=${page}&size=${size}`)
       .then(res => ({
         ...res,
         data: normalizeCreditTransactions(res.data?.data),
       })),
 
   getGroupWorkspaceWallet: (workspaceId: number) =>
-    api.get(`/api/credit-wallet/group-workspace/${workspaceId}`).then(res => ({
+    api.get(`/credit-wallets/group-workspace/${workspaceId}`).then(res => ({
       ...res,
       data: normalizeCreditSummary(res.data?.data),
     })),
@@ -191,7 +191,7 @@ const ManagementSystemAPI = {
   ) =>
     api
       .get(
-        `/api/credit-wallet/group-workspace/${workspaceId}/transactions?page=${page}&size=${size}`,
+        `/credit-wallets/group-workspace/${workspaceId}/transactions?page=${page}&size=${size}`,
       )
       .then(res => ({
         ...res,
@@ -199,7 +199,7 @@ const ManagementSystemAPI = {
       })),
 
   getWorkspacePayments: (workspaceId: number, page = 0, size = 10) =>
-    api.get(`/api/payment/workspace/${workspaceId}?page=${page}&size=${size}`),
+    api.get(`/payments/workspace/${workspaceId}?page=${page}&size=${size}`),
 };
 
 export default ManagementSystemAPI;

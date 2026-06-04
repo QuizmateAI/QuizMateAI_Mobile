@@ -42,7 +42,7 @@ const buildRoadmapConfigPayload = (data: any = {}) => ({
 });
 
 const getWorkspaceRoadmapId = async (workspaceId: number) => {
-  const workspaceRes = await api.get(`/api/workspace/${workspaceId}`);
+  const workspaceRes = await api.get(`/workspaces/${workspaceId}`);
   const workspace = unwrapData(workspaceRes) || {};
   return {
     response: workspaceRes,
@@ -54,7 +54,7 @@ const getWorkspaceRoadmapId = async (workspaceId: number) => {
 const RoadmapAPI = {
   getForWorkspace: async (workspaceId: number) => {
     try {
-      const profileRes = await api.get(`/api/workspace-profile/individual/${workspaceId}`);
+      const profileRes = await api.get(`/workspace-profiles/individual/${workspaceId}`);
       const profile = unwrapData(profileRes) || {};
       const roadmapId = profile?.roadmapId ?? profile?.roadmap_id;
 
@@ -67,7 +67,7 @@ const RoadmapAPI = {
 
       // BE currently exposes roadmap structure by roadmapId, not list by workspaceId.
       try {
-        const structureRes = await api.get(`/api/roadmaps/${roadmapId}/structure`);
+        const structureRes = await api.get(`/roadmaps/${roadmapId}/structure`);
         const structure = unwrapData(structureRes) || {};
         return {
           ...structureRes,
@@ -116,7 +116,7 @@ const RoadmapAPI = {
       }
 
       try {
-        const structureRes = await api.get(`/api/roadmaps/${roadmapId}/structure`);
+        const structureRes = await api.get(`/roadmaps/${roadmapId}/structure`);
         const structure = unwrapData(structureRes) || {};
         return {
           ...structureRes,
@@ -150,17 +150,17 @@ const RoadmapAPI = {
     }
   },
   getById: (id: number) =>
-    api.get(`/api/roadmaps/${id}/structure`).then(res => ({
+    api.get(`/roadmaps/${id}/structure`).then(res => ({
       ...res,
       data: mapRoadmap(unwrapData(res)),
     })),
   getStructure: (roadmapId: number) =>
-    api.get(`/api/roadmaps/${roadmapId}/structure`).then(res => ({
+    api.get(`/roadmaps/${roadmapId}/structure`).then(res => ({
       ...res,
       data: unwrapData(res),
     })),
   getCurrentRoadmapKnowledgeProgress: (roadmapId: number) =>
-    api.get('/api/roadmap-knowledges/current', {
+    api.get('/roadmap-knowledges/current', {
       params: {
         roadmapId,
       },
@@ -169,15 +169,15 @@ const RoadmapAPI = {
       data: unwrapData(res),
     })),
   create: (data: any) =>
-    api.post('/api/ai/roadmap:generated', data),
+    api.post('/ai/roadmap:generated', data),
   createPhase: (roadmapId: number, data: any) =>
-    api.post(`/api/roadmap-phases?roadmapId=${roadmapId}`, data),
+    api.post(`/roadmap-phases?roadmapId=${roadmapId}`, data),
   updateConfig: (roadmapId: number, data: any) =>
-    api.put(`/api/roadmaps/${roadmapId}/config`, buildRoadmapConfigPayload(data)),
+    api.put(`/roadmaps/${roadmapId}/config`, buildRoadmapConfigPayload(data)),
   deletePhase: (roadmapId: number, phaseId: number) =>
-    api.delete(`/api/roadmap-phases/${phaseId}?roadmapId=${roadmapId}`),
+    api.delete(`/roadmap-phases/${phaseId}?roadmapId=${roadmapId}`),
   deleteKnowledge: (knowledgeId: number, phaseId: number) =>
-    api.delete(`/api/roadmap-knowledges/${knowledgeId}?phaseId=${phaseId}`),
+    api.delete(`/roadmap-knowledges/${knowledgeId}?phaseId=${phaseId}`),
 };
 
 export default RoadmapAPI;

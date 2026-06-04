@@ -17,14 +17,14 @@ type SuggestProfileInput = {
 const StudyProfileAPI = {
   analyzeKnowledge: (knowledge: string, signal?: AbortSignal) =>
     api.post(
-      '/api/ai/study-profile/knowledge:analyze',
+      '/ai/study-profile/knowledge:analyze',
       {knowledge},
       {timeout: AI_TIMEOUT, signal},
     ),
 
   suggestProfileFields: (data: SuggestProfileInput, signal?: AbortSignal) =>
     api.post(
-      '/api/ai/study-profile/fields:suggest',
+      '/ai/study-profile/fields:suggest',
       {
         knowledge: data.knowledge,
         domain: data.domain,
@@ -41,7 +41,7 @@ const StudyProfileAPI = {
     signal?: AbortSignal,
   ) =>
     api.post(
-      '/api/ai/study-profile/exam-templates:suggest',
+      '/ai/study-profile/exam-templates:suggest',
       {
         knowledge: data.knowledge,
         domain: data.domain,
@@ -50,7 +50,7 @@ const StudyProfileAPI = {
     ),
 
   validateProfileConsistency: (data: any, signal?: AbortSignal) =>
-    api.post('/api/ai/study-profile/consistency:validate', data, {
+    api.post('/ai/study-profile/consistency:validate', data, {
       timeout: AI_TIMEOUT,
       signal,
     }),

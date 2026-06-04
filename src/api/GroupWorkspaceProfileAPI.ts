@@ -64,34 +64,34 @@ const buildRoadmapConfigStepRequest = (payload: GroupProfilePayload) => ({
 
 const GroupWorkspaceProfileAPI = {
   getProfile: (workspaceId: number) =>
-    api.get(`/api/workspace-profile/group/${workspaceId}`),
+    api.get(`/workspace-profiles/group/${workspaceId}`),
 
   saveBasicStep: (workspaceId: number, payload: {groupName: string; rules?: string}) =>
-    api.put(`/api/workspace-profile/group/${workspaceId}/steps/basic`, {
+    api.put(`/workspace-profiles/group/${workspaceId}/steps/basic`, {
       groupName: payload.groupName,
       rules: trimToNull(payload.rules),
     }),
 
   saveConfigStep: (workspaceId: number, payload: GroupProfilePayload) =>
     api.put(
-      `/api/workspace-profile/group/${workspaceId}/steps/config`,
+      `/workspace-profiles/group/${workspaceId}/steps/config`,
       buildConfigStepRequest(payload),
     ),
 
   updateConfig: (workspaceId: number, payload: GroupProfilePayload) =>
     api.put(
-      `/api/workspace-profile/group/${workspaceId}/config`,
+      `/workspace-profiles/group/${workspaceId}/config`,
       buildConfigStepRequest(payload),
     ),
 
   saveRoadmapConfigStep: (workspaceId: number, payload: GroupProfilePayload) =>
     api.put(
-      `/api/workspace-profile/group/${workspaceId}/steps/roadmap-config`,
+      `/workspace-profiles/group/${workspaceId}/steps/roadmap-config`,
       buildRoadmapConfigStepRequest(payload),
     ),
 
   confirm: (workspaceId: number) =>
-    api.post(`/api/workspace-profile/group/${workspaceId}/steps/confirm`),
+    api.post(`/workspace-profiles/group/${workspaceId}/steps/confirm`),
 
   configureProfileDraft: async (workspaceId: number, payload: GroupProfilePayload) => {
     await GroupWorkspaceProfileAPI.saveConfigStep(workspaceId, payload);

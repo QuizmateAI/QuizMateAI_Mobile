@@ -2,7 +2,7 @@ import api from './api';
 
 const ProfileAPI = {
   getProfile: () =>
-    api.get('/api/user/profile').then(res => ({
+    api.get('/users/profile').then(res => ({
       ...res,
       data: {
         ...res.data?.data,
@@ -11,16 +11,16 @@ const ProfileAPI = {
     })),
 
   updateProfile: (data: {fullName?: string; email?: string; birthday?: string}) =>
-    api.put('/api/user/profile', data),
+    api.put('/users/profile', data),
 
   changePassword: (data: {oldPassword: string; newPassword: string}) =>
-    api.put('/api/user/password', {
+    api.put('/users/password', {
       ...data,
       confirmNewPassword: data.newPassword,
     }),
 
   uploadAvatar: (formData: FormData) =>
-    api.post('/api/user/avatar', formData, {
+    api.post('/users/avatar', formData, {
       headers: {'Content-Type': 'multipart/form-data'},
     }).then(res => ({
       ...res,

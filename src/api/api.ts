@@ -48,11 +48,11 @@ const api = axios.create({
 let refreshPromise: Promise<string> | null = null;
 
 function isRefreshRequest(url?: string) {
-  return String(url || '').includes('/api/auth/refresh');
+  return String(url || '').includes('/auth/refresh');
 }
 
 function isAuthRequest(url?: string) {
-  return String(url || '').includes('/api/auth/');
+  return String(url || '').includes('/auth/');
 }
 
 function buildAbsoluteApiUrl(path: string) {
@@ -72,7 +72,7 @@ async function refreshAccessToken() {
   }
 
   const response = await axios.post(
-    buildAbsoluteApiUrl('/api/auth/refresh'),
+    buildAbsoluteApiUrl('/auth/refresh'),
     {refreshToken},
     {
       timeout: 30000,
