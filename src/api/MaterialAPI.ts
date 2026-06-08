@@ -42,6 +42,41 @@ const MaterialAPI = {
       ...res,
       data: res.data?.data || res.data || '',
     })),
+  getExtractedSummary: (materialId: number) =>
+    api.get(`/materials/${materialId}/extracted-summary`).then(res => ({
+      ...res,
+      data: res.data?.data || res.data || '',
+    })),
+  getRAGChunks: (materialId: number, limit = 500) =>
+    api.get(`/materials/${materialId}/rag-chunks`, {
+      params: {limit},
+    }).then(res => ({
+      ...res,
+      data: res.data?.data || res.data || null,
+    })),
+  getChunkById: (chunkId: string) =>
+    api.get(`/materials/chunks/${encodeURIComponent(chunkId)}`).then(res => ({
+      ...res,
+      data: res.data?.data || res.data || null,
+    })),
+  getDocumentSections: (materialId: number) =>
+    api.get(`/materials/${materialId}/document-sections`).then(res => ({
+      ...res,
+      data: Array.isArray(res.data) ? res.data : res.data?.data || [],
+    })),
+  setDocumentSectionActive: (
+    materialId: number,
+    sectionId: string,
+    isActive: boolean,
+  ) =>
+    api
+      .put(`/materials/${materialId}/document-sections/${sectionId}/active`, null, {
+        params: {isActive},
+      })
+      .then(res => ({
+        ...res,
+        data: Array.isArray(res.data) ? res.data : res.data?.data || [],
+      })),
   getModerationReportDetail: (materialId: number) =>
     api.get(`/materials/${materialId}/moderation-report/detail`).then(res => ({
       ...res,
@@ -71,6 +106,20 @@ const MaterialAPI = {
     api.post('/materials/upload/group-pending', formData, {
       headers: {'Content-Type': 'multipart/form-data'},
     }),
+  askMaterial: (payload: {
+    question: string;
+    workspaceId: number;
+    materialId?: number | null;
+    topK?: number | null;
+    maxContextChars?: number | null;
+    workspaceProfile?: any;
+  }) =>
+    api.post('/materials/ask', payload, {
+      timeout: 130000,
+    }).then(res => ({
+      ...res,
+      data: res.data?.data || res.data || null,
+    })),
   delete: (id: number, contextType: 'WORKSPACE' | 'GROUP' = 'WORKSPACE') =>
     api.delete(`/materials/${id}?contextType=${contextType}`),
 };

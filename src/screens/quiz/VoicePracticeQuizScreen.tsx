@@ -316,7 +316,11 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
                 return;
               }
 
-              const playbackSource = await QuizAPI.getCompanionSpeechPlaybackSource(speechId);
+              const audioUrl = String(res.data?.audioUrl || '').trim();
+              const playbackSource = await QuizAPI.getCompanionSpeechPlaybackSource(
+                speechId,
+                audioUrl,
+              );
               if (activeSpeechSessionRef.current !== activeSession || settled) {
                 return;
               }
@@ -371,7 +375,7 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
         }
       });
     },
-    [showToast, stopSpeaking],
+    [attemptId, showToast, stopSpeaking],
   );
 
   const updateQuestionWithFeedback = useCallback((questionId: number, feedback: any) => {
@@ -693,7 +697,6 @@ export default function VoicePracticeQuizScreen({navigation, route}: any) {
           wavFile: `voice-answer-${questionId}.wav`,
         });
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const sub = (AudioRecord.on as any)('data', (data: string) => {
           if (token !== flowTokenRef.current || recordingSessionRef.current.stopRequested) {
             return;

@@ -1,8 +1,10 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {
+  ActivityIndicator,
   Alert,
   findNodeHandle,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -19,6 +21,7 @@ import {useToast} from '../../context/ToastContext';
 import {useAuth} from '../../context/AuthContext';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import QuizAPI from '../../api/QuizAPI';
+import MaterialAPI from '../../api/MaterialAPI';
 import GroupDiscussionAPI from '../../api/GroupDiscussionAPI';
 import {Colors} from '../../theme/colors';
 import {BorderRadius, Spacing} from '../../theme/spacing';
@@ -403,6 +406,157 @@ function getQuestionId(question: any) {
   return toPositiveNumber(question?.questionId || question?.id);
 }
 
+function getQuestionSourceChunkId(question: any) {
+  return firstText(
+    question?.sourceChunkId,
+    question?.source_chunk_id,
+    question?.source?.chunkId,
+    question?.source?.chunk_id,
+    question?.sourceChunk?.chunkId,
+    question?.sourceChunk?.chunk_id,
+    question?.metadata?.sourceChunkId,
+    question?.metadata?.source_chunk_id,
+  );
+}
+
+function getQuestionSourceSpan(question: any) {
+  return firstText(
+    question?.sourceSpan,
+    question?.source_span,
+    question?.sourceText,
+    question?.source_text,
+    question?.evidence,
+    question?.source?.span,
+    question?.source?.sourceSpan,
+    question?.metadata?.sourceSpan,
+    question?.metadata?.source_span,
+  );
+}
+
+function normalizeSourceToken(value: any) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function buildSourceTokens(value: any) {
+  const text = String(value || '');
+  const tokens: Array<{value: string; start: number; end: number}> = [];
+  const pattern = /[\p{L}\p{N}]+/gu;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    tokens.push({
+      value: normalizeSourceToken(match[0]),
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+
+  return tokens;
+}
+
+function findFlexibleSourceRange(content: string, span: string) {
+  const contentTokens = buildSourceTokens(content);
+  const spanTokens = buildSourceTokens(span).map(token => token.value);
+  if (contentTokens.length === 0 || spanTokens.length < 3) {
+    return null;
+  }
+
+  const minimumLength =
+    spanTokens.length >= 40 ? 12 : spanTokens.length >= 20 ? 8 : spanTokens.length >= 6 ? 6 : spanTokens.length;
+  const candidateLengths = [spanTokens.length, 120, 80, 40, 20, 12, 8, 6]
+    .map(length => Math.min(length, spanTokens.length))
+    .filter((length, index, list) => length >= minimumLength && list.indexOf(length) === index);
+
+  for (const length of candidateLengths) {
+    const needle = spanTokens.slice(0, length);
+    for (let index = 0; index <= contentTokens.length - length; index += 1) {
+      let matched = true;
+      for (let offset = 0; offset < length; offset += 1) {
+        if (contentTokens[index + offset].value !== needle[offset]) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) {
+        return {
+          start: contentTokens[index].start,
+          end: contentTokens[index + length - 1].end,
+          partial: length < spanTokens.length,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function getHighlightedContentSegments(content: any, span: any) {
+  const safeContent = String(content || '');
+  const trimmedSpan = String(span || '').trim();
+  if (!trimmedSpan) {
+    return [{text: safeContent, highlight: false, partial: false}];
+  }
+
+  const lowerContent = safeContent.toLowerCase();
+  const lowerSpan = trimmedSpan.toLowerCase();
+  const exactIndex = lowerContent.indexOf(lowerSpan);
+  const range = exactIndex >= 0
+    ? {start: exactIndex, end: exactIndex + trimmedSpan.length, partial: false}
+    : findFlexibleSourceRange(safeContent, trimmedSpan);
+
+  if (!range) {
+    return [{text: safeContent, highlight: false, partial: false}];
+  }
+
+  return [
+    {text: safeContent.slice(0, range.start), highlight: false, partial: false},
+    {text: safeContent.slice(range.start, range.end), highlight: true, partial: Boolean(range.partial)},
+    {text: safeContent.slice(range.end), highlight: false, partial: false},
+  ].filter(segment => segment.text);
+}
+
+function pickFirstPage(value: any) {
+  if (Array.isArray(value)) {
+    return value.map(toPositiveNumber).find(Boolean) || 0;
+  }
+  return toPositiveNumber(value);
+}
+
+function resolveChunkPage(chunk: any) {
+  if (!chunk || typeof chunk !== 'object') {
+    return 0;
+  }
+  return (
+    pickFirstPage(chunk.pages) ||
+    pickFirstPage(chunk.page) ||
+    pickFirstPage(chunk.page_number) ||
+    pickFirstPage(chunk.pageNumber) ||
+    pickFirstPage(chunk.page_start) ||
+    pickFirstPage(chunk.pageStart) ||
+    pickFirstPage(chunk.start_page) ||
+    pickFirstPage(chunk.startPage) ||
+    pickFirstPage(chunk.metadata?.page_start) ||
+    pickFirstPage(chunk.metadata?.pageStart)
+  );
+}
+
+function extractChunks(payload: any) {
+  const data = payload?.data ?? payload;
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (Array.isArray(data?.chunks)) {
+    return data.chunks;
+  }
+  return [];
+}
+
+function normalizeChunkId(value: any) {
+  return String(value || '').trim();
+}
+
 function normalizeDiscussionMessageId(value: any) {
   if (value == null) {
     return '';
@@ -707,6 +861,10 @@ export default function QuizDetailScreen({navigation, route}: any) {
     questionId: number;
     label: string;
   } | null>(null);
+  const [sourceDialogQuestion, setSourceDialogQuestion] = useState<{
+    chunkId: string;
+    sourceSpan?: string;
+  } | null>(null);
 
   const scrollRef = useRef<ScrollView | null>(null);
   const scrollContentRef = useRef<View | null>(null);
@@ -727,7 +885,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
   const shuffleEnabled = Boolean(effectiveQuiz?.shuffleEnabled);
 
   const handleToggleShuffle = useCallback(async (next: boolean) => {
-    if (!quizId || shuffleSaving) return;
+    if (!quizId || shuffleSaving) {return;}
     setShuffleSaving(true);
     setQuiz((prev: any) => ({...(prev || {}), shuffleEnabled: next}));
     try {
@@ -1453,6 +1611,34 @@ export default function QuizDetailScreen({navigation, route}: any) {
     [backContext, navigation, showToast],
   );
 
+  const handleOpenSourceMaterial = useCallback(
+    (materialId: number, chunk: any, sourceChunkId: string, targetPage = 0) => {
+      if (!materialId) {
+        showToast('Khong tim thay tai lieu goc', 'error');
+        return;
+      }
+      setSourceDialogQuestion(null);
+      navigation.navigate('Home', {
+        screen: 'MaterialDetail',
+        params: {
+          material: {
+            materialId,
+            id: materialId,
+            title: firstText(
+              chunk?.material_title,
+              chunk?.materialTitle,
+              chunk?.fileName,
+              `Tai lieu #${materialId}`,
+            ),
+          },
+          sourceChunkId,
+          sourcePage: targetPage || undefined,
+        },
+      });
+    },
+    [navigation, showToast],
+  );
+
   const toggleQuestion = useCallback((question: any, fallbackIndex: number) => {
     const key = String(question?.id || question?.questionId || fallbackIndex);
     setExpandedQuestions(prev => ({...prev, [key]: !prev[key]}));
@@ -1802,7 +1988,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
                                 ]}>
                                 <Icon name="reply" size={14} color={Colors.primary} />
                                 <View style={styles.discussionReplyPreviewBody}>
-                                  <Text style={[styles.discussionReplyPreviewTitle, {color: colors.heading}]}> 
+                                  <Text style={[styles.discussionReplyPreviewTitle, {color: colors.heading}]}>
                                     {replyPreview.missing
                                       ? 'Bình luận gốc không còn tồn tại'
                                       : `Đang trả lời ${replyPreview.authorName || 'User'}`}
@@ -1846,7 +2032,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
                                       <Text
                                         style={[styles.discussionTagChipText, {color: Colors.primary}]}
                                         numberOfLines={1}
-                                        ellipsizeMode="tail"> 
+                                        ellipsizeMode="tail">
                                         {taggedQuestion
                                           ? `Câu ${taggedQuestionIndex}: ${taggedQuestionText || `Câu ${taggedQuestionIndex}`}`
                                           : `#${taggedQuestionIndex}`}
@@ -1860,7 +2046,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
                                 }
 
                                 return (
-                                  <Text key={`${messageId}-text-${partIndex}`} style={[styles.discussionBodyText, {color: colors.text}]}> 
+                                  <Text key={`${messageId}-text-${partIndex}`} style={[styles.discussionBodyText, {color: colors.text}]}>
                                     {part}
                                   </Text>
                                 );
@@ -1900,7 +2086,7 @@ export default function QuizDetailScreen({navigation, route}: any) {
                             {backgroundColor: colors.backgroundSecondary, borderColor: colors.border},
                           ]}>
                           <View style={styles.discussionReplyBannerBody}>
-                            <Text style={[styles.discussionReplyBannerTitle, {color: colors.heading}]}> 
+                            <Text style={[styles.discussionReplyBannerTitle, {color: colors.heading}]}>
                               Đang trả lời {discussionReplyTarget.authorName || 'User'}
                             </Text>
                             <Text style={[styles.discussionReplyBannerText, {color: colors.textSecondary}]} numberOfLines={2}>
@@ -1924,10 +2110,10 @@ export default function QuizDetailScreen({navigation, route}: any) {
                               {backgroundColor: colors.surfaceVariant, borderColor: colors.border},
                             ]}>
                             <View style={styles.discussionSuggestionsHeader}>
-                              <Text style={[styles.discussionSuggestionsTitle, {color: colors.heading}]}> 
+                              <Text style={[styles.discussionSuggestionsTitle, {color: colors.heading}]}>
                                 Chọn câu hỏi
                               </Text>
-                              <Text style={[styles.discussionSuggestionsHint, {color: colors.textTertiary}]}> 
+                              <Text style={[styles.discussionSuggestionsHint, {color: colors.textTertiary}]}>
                                 Gõ / để lọc và chạm để chèn tag
                               </Text>
                             </View>
@@ -2054,6 +2240,8 @@ export default function QuizDetailScreen({navigation, route}: any) {
                         const answers = toArray(question?.answers);
                         const explanation = getExplanationText(question, answers);
                         const fallbackCorrectAnswers = getFallbackCorrectAnswers(question, answers);
+                        const sourceChunkId = getQuestionSourceChunkId(question);
+                        const sourceSpan = getQuestionSourceSpan(question);
                         return (
                           <View
                             key={questionKey}
@@ -2232,6 +2420,58 @@ export default function QuizDetailScreen({navigation, route}: any) {
                                     </Text>
                                   </View>
                                 ) : null}
+                                {sourceChunkId ? (
+                                  <TouchableOpacity
+                                    activeOpacity={0.78}
+                                    onPress={() =>
+                                      setSourceDialogQuestion({
+                                        chunkId: sourceChunkId,
+                                        sourceSpan,
+                                      })
+                                    }
+                                    style={[
+                                      styles.questionSourceButton,
+                                      {
+                                        backgroundColor: isDark
+                                          ? 'rgba(37,99,235,0.16)'
+                                          : '#EFF6FF',
+                                        borderColor: isDark
+                                          ? 'rgba(96,165,250,0.34)'
+                                          : '#BFDBFE',
+                                      },
+                                    ]}>
+                                    <Icon name="file-search-outline" size={16} color={Colors.primary} />
+                                    <Text style={[styles.questionSourceText, {color: Colors.primary}]}>
+                                      Xem nguon
+                                    </Text>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <View
+                                    style={[
+                                      styles.questionSourceWarning,
+                                      {
+                                        backgroundColor: isDark
+                                          ? 'rgba(245,158,11,0.12)'
+                                          : '#FFFBEB',
+                                        borderColor: isDark
+                                          ? 'rgba(251,191,36,0.3)'
+                                          : '#FDE68A',
+                                      },
+                                    ]}>
+                                    <Icon
+                                      name="alert-outline"
+                                      size={16}
+                                      color={isDark ? '#FBBF24' : '#D97706'}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.questionSourceWarningText,
+                                        {color: isDark ? '#FDE68A' : '#92400E'},
+                                      ]}>
+                                      Can kiem tra nguon
+                                    </Text>
+                                  </View>
+                                )}
                                 {isGroupContext ? (
                                   <TouchableOpacity
                                     activeOpacity={0.78}
@@ -2354,6 +2594,16 @@ export default function QuizDetailScreen({navigation, route}: any) {
         </View>
       </ScrollView>
 
+      <QuestionSourceDialog
+        visible={Boolean(sourceDialogQuestion?.chunkId)}
+        chunkId={sourceDialogQuestion?.chunkId || ''}
+        sourceSpan={sourceDialogQuestion?.sourceSpan || ''}
+        colors={colors}
+        isDark={isDark}
+        onClose={() => setSourceDialogQuestion(null)}
+        onOpenMaterial={handleOpenSourceMaterial}
+      />
+
       <View
         style={[
           styles.footer,
@@ -2388,6 +2638,244 @@ export default function QuizDetailScreen({navigation, route}: any) {
         </TouchableOpacity>
       </View>
     </SafeAreaView>
+  );
+}
+
+function QuestionSourceDialog({
+  visible,
+  chunkId,
+  sourceSpan,
+  colors,
+  isDark,
+  onClose,
+  onOpenMaterial,
+}: {
+  visible: boolean;
+  chunkId: string;
+  sourceSpan: string;
+  colors: any;
+  isDark: boolean;
+  onClose: () => void;
+  onOpenMaterial: (materialId: number, chunk: any, sourceChunkId: string, targetPage?: number) => void;
+}) {
+  const [chunk, setChunk] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [openingDocument, setOpeningDocument] = useState(false);
+  const [errorState, setErrorState] = useState<{status?: number; message: string} | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (!visible || !chunkId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setChunk(null);
+    setErrorState(null);
+
+    (async () => {
+      try {
+        const response = await MaterialAPI.getChunkById(chunkId);
+        if (!cancelled) {
+          setChunk(response?.data || null);
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          const status = error?.response?.status;
+          setErrorState({
+            status,
+            message:
+              status === 404
+                ? 'Khong co nguon cho cau hoi nay.'
+                : error?.response?.data?.message ||
+                  error?.message ||
+                  'Khong tai duoc noi dung nguon.',
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chunkId, reloadKey, visible]);
+
+  const sectionTitle = firstText(chunk?.chunk_section_title, chunk?.chunkSectionTitle);
+  const topic = firstText(chunk?.chunk_topic, chunk?.chunkTopic);
+  const sequence = firstText(chunk?.chunk_sequence, chunk?.chunkSequence);
+  const content = firstText(chunk?.content);
+  const materialId = toPositiveNumber(chunk?.material_id ?? chunk?.materialId);
+  const segments = useMemo(
+    () => getHighlightedContentSegments(content, sourceSpan),
+    [content, sourceSpan],
+  );
+
+  const handleOpenDocument = useCallback(async () => {
+    if (!materialId || openingDocument) {
+      return;
+    }
+    setOpeningDocument(true);
+    try {
+      let targetPage = resolveChunkPage(chunk);
+      if (!targetPage) {
+        try {
+          const response = await MaterialAPI.getRAGChunks(materialId, 500);
+          const chunks = extractChunks(response);
+          const normalizedChunkId = normalizeChunkId(chunkId);
+          const matchedChunk = chunks.find((item: any) => {
+            const itemChunkId = normalizeChunkId(item?.chunk_id ?? item?.chunkId);
+            if (normalizedChunkId && itemChunkId === normalizedChunkId) {
+              return true;
+            }
+            const itemSequence = Number(
+              item?.chunk_sequence ??
+                item?.chunkSequence ??
+                item?.chunk_index ??
+                item?.chunkIndex,
+            );
+            return Number.isFinite(itemSequence) && itemSequence === Number(sequence);
+          });
+          targetPage = resolveChunkPage(matchedChunk);
+        } catch {
+          targetPage = 0;
+        }
+      }
+      onOpenMaterial(materialId, chunk, chunkId, targetPage);
+    } finally {
+      setOpeningDocument(false);
+    }
+  }, [chunk, chunkId, materialId, onOpenMaterial, openingDocument, sequence]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.sourceModalOverlay}>
+        <TouchableOpacity
+          activeOpacity={1}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+        />
+        <View
+          style={[
+            styles.sourceDialog,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}>
+          <View
+            style={[
+              styles.sourceDialogHeader,
+              {borderBottomColor: colors.border, backgroundColor: isDark ? '#0F172A' : '#F8FAFC'},
+            ]}>
+            <View style={styles.sourceDialogIcon}>
+              <Icon name="file-search-outline" size={20} color={Colors.primary} />
+            </View>
+            <View style={styles.sourceDialogTitleWrap}>
+              <Text style={[styles.sourceDialogTitle, {color: colors.heading}]}>
+                Nguon cua cau hoi
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={[styles.sourceDialogMeta, {color: colors.textSecondary}]}>
+                {[sectionTitle, topic, sequence ? `#${sequence}` : ''].filter(Boolean).join(' · ') || chunkId}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.sourceCloseButton}>
+              <Icon name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.sourceDialogBody}>
+            {loading ? (
+              <View style={styles.sourceLoading}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={[styles.sourceStatusText, {color: colors.textSecondary}]}>
+                  Dang tai nguon...
+                </Text>
+              </View>
+            ) : null}
+
+            {!loading && errorState ? (
+              <View
+                style={[
+                  styles.sourceErrorBox,
+                  {
+                    backgroundColor: isDark ? '#111827' : '#F8FAFC',
+                    borderColor: colors.border,
+                  },
+                ]}>
+                <Icon name="alert-circle-outline" size={26} color={Colors.error} />
+                <Text style={[styles.sourceStatusText, {color: colors.textSecondary}]}>
+                  {errorState.message}
+                </Text>
+                {errorState.status !== 404 ? (
+                  <TouchableOpacity
+                    onPress={() => setReloadKey(value => value + 1)}
+                    style={styles.sourceRetryButton}>
+                    <Icon name="refresh" size={15} color="#FFFFFF" />
+                    <Text style={styles.sourceRetryText}>Thu lai</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
+
+            {!loading && !errorState && chunk && content ? (
+              <Text style={[styles.sourceContentText, {color: colors.text}]}>
+                {segments.map((segment, index) => (
+                  <Text
+                    key={`${index}-${segment.text.slice(0, 8)}`}
+                    style={segment.highlight ? styles.sourceHighlightText : undefined}>
+                    {segment.text}
+                  </Text>
+                ))}
+              </Text>
+            ) : null}
+
+            {!loading && !errorState && chunk && !content ? (
+              <Text style={[styles.sourceStatusText, {color: colors.textSecondary}]}>
+                Chunk khong co noi dung van ban.
+              </Text>
+            ) : null}
+          </ScrollView>
+
+          {!loading && !errorState && chunk ? (
+            <View
+              style={[
+                styles.sourceDialogFooter,
+                {
+                  borderTopColor: colors.border,
+                  backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
+                },
+              ]}>
+              <Text style={[styles.sourceFooterHint, {color: isDark ? '#FDE68A' : '#92400E'}]}>
+                {sourceSpan
+                  ? 'Doan to vang la phan AI dung lam bang chung.'
+                  : 'Mo tai lieu goc de doi chieu noi dung chunk nay.'}
+              </Text>
+              <TouchableOpacity
+                disabled={!materialId || openingDocument}
+                onPress={handleOpenDocument}
+                style={[
+                  styles.sourceOpenDocumentButton,
+                  (!materialId || openingDocument) && styles.disabledButton,
+                ]}>
+                {openingDocument ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Icon name="open-in-new" size={15} color="#FFFFFF" />
+                )}
+                <Text style={styles.sourceOpenDocumentText}>Mo tai lieu</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -2813,6 +3301,30 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   questionDiscussionText: {fontSize: 12, fontWeight: '800'},
+  questionSourceButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    marginTop: Spacing.sm,
+    gap: 6,
+  },
+  questionSourceText: {fontSize: 12, fontWeight: '900'},
+  questionSourceWarning: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    marginTop: Spacing.sm,
+    gap: 6,
+  },
+  questionSourceWarningText: {fontSize: 12, fontWeight: '800'},
   questionSection: {gap: Spacing.sm},
   questionSectionHeader: {
     flexDirection: 'row',
@@ -2893,6 +3405,104 @@ const styles = StyleSheet.create({
   },
   explanationText: {flex: 1, fontSize: 12, lineHeight: 18},
   explanationLabel: {fontWeight: '800'},
+  sourceModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  sourceDialog: {
+    width: '100%',
+    maxHeight: '82%',
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+  sourceDialogHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    borderBottomWidth: 1,
+    padding: Spacing.md,
+  },
+  sourceDialogIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: BorderRadius.md,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sourceDialogTitleWrap: {flex: 1, minWidth: 0, gap: 4},
+  sourceDialogTitle: {fontSize: 16, fontWeight: '900'},
+  sourceDialogMeta: {fontSize: 11, fontWeight: '700'},
+  sourceCloseButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sourceDialogBody: {
+    maxHeight: 420,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+  },
+  sourceLoading: {
+    minHeight: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  sourceStatusText: {
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  sourceErrorBox: {
+    minHeight: 150,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+  },
+  sourceRetryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+  },
+  sourceRetryText: {color: '#FFFFFF', fontSize: 12, fontWeight: '900'},
+  sourceContentText: {
+    fontSize: 14,
+    lineHeight: 24,
+  },
+  sourceHighlightText: {
+    backgroundColor: '#FDE68A',
+    color: '#111827',
+    fontWeight: '800',
+  },
+  sourceDialogFooter: {
+    borderTopWidth: 1,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  sourceFooterHint: {fontSize: 11, lineHeight: 16, fontWeight: '800'},
+  sourceOpenDocumentButton: {
+    minHeight: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: '#D97706',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  sourceOpenDocumentText: {color: '#FFFFFF', fontSize: 13, fontWeight: '900'},
   historyCard: {
     borderWidth: 1,
     borderRadius: BorderRadius.md,

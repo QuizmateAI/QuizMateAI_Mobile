@@ -4,6 +4,19 @@ import api from './api';
 
 const TOKEN_KEY = '@quizmate_token';
 
+function buildAbsoluteUrl(value: string | null | undefined) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized;
+  }
+  const baseUrl = String(API_URL || '').replace(/\/+$/, '');
+  const path = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  return `${baseUrl}${path}`;
+}
+
 const mapQuiz = (item: any) => ({
   ...item,
   id: item?.quizId ?? item?.id,
@@ -180,8 +193,12 @@ const QuizAPI = {
   },
   getFull: (quizId: number, options?: {attemptId?: number; attemptView?: boolean}) => {
     const params: Record<string, any> = {};
-    if (options?.attemptId != null) params.attemptId = options.attemptId;
-    if (options?.attemptView) params.attemptView = true;
+    if (options?.attemptId != null) {
+      params.attemptId = options.attemptId;
+    }
+    if (options?.attemptView) {
+      params.attemptView = true;
+    }
     const hasParams = Object.keys(params).length > 0;
     return api
       .get(`/quizzes/${quizId}/full`, hasParams ? {params} : undefined)
@@ -325,12 +342,14 @@ const QuizAPI = {
       ...res,
       data: res.data?.data,
     })),
-  getCompanionSpeechPlaybackSource: async (speechId: string) => {
+  getCompanionSpeechPlaybackSource: async (speechId: string, audioUrl?: string | null) => {
     const token = await AsyncStorage.getItem(TOKEN_KEY);
-    const baseUrl = String(API_URL || '').replace(/\/+$/, '');
+    const playbackUrl = String(audioUrl || '').trim()
+      ? buildAbsoluteUrl(audioUrl)
+      : buildAbsoluteUrl(`/api/quiz-attempts/companion-speech/${encodeURIComponent(speechId)}`);
 
     return {
-      url: `${baseUrl}/quiz-attempts/companion-speech/${speechId}`,
+      url: playbackUrl,
       headers: token ? {Authorization: `Bearer ${token}`} : {},
     };
   },

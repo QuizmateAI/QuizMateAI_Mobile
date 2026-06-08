@@ -8,6 +8,24 @@ import {
   updateStoredTokens,
 } from '../utils/authStorage';
 
+function normalizeApiUrl(url?: string) {
+  const trimmed = String(url || '').trim().replace(/\/+$/, '');
+
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/\/api\/v1$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/\/api$/i.test(trimmed)) {
+    return `${trimmed}/v1`;
+  }
+
+  return `${trimmed}/api/v1`;
+}
+
 function classifyApiUrl(url?: string) {
   const normalized = String(url || '').trim().toLowerCase();
   if (!normalized) {
@@ -32,13 +50,15 @@ function classifyApiUrl(url?: string) {
   return 'REMOTE';
 }
 
-const API_TARGET = classifyApiUrl(API_URL);
+const NORMALIZED_API_URL = normalizeApiUrl(API_URL);
+const API_TARGET = classifyApiUrl(NORMALIZED_API_URL);
 
 console.log('[API CONFIG] API_URL =', API_URL || '(empty)');
+console.log('[API CONFIG] Normalized API_URL =', NORMALIZED_API_URL || '(empty)');
 console.log('[API CONFIG] Target =', API_TARGET);
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: NORMALIZED_API_URL,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
@@ -56,7 +76,7 @@ function isAuthRequest(url?: string) {
 }
 
 function buildAbsoluteApiUrl(path: string) {
-  return `${String(API_URL || '').replace(/\/+$/, '')}${path}`;
+  return `${NORMALIZED_API_URL}${path}`;
 }
 
 async function readAccessToken() {
@@ -121,7 +141,9 @@ api.interceptors.request.use(async config => {
 
   config.headers = headers;
 
-  const requestBaseUrl = String(config.baseURL || API_URL || '').replace(/\/+$/, '');
+  const requestBaseUrl = String(
+    config.baseURL || NORMALIZED_API_URL || '',
+  ).replace(/\/+$/, '');
   const requestPath = String(config.url || '').replace(/^\/+/, '');
   const requestUrl = requestPath ? `${requestBaseUrl}/${requestPath}` : requestBaseUrl;
 
