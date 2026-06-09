@@ -17,6 +17,30 @@ function buildAbsoluteUrl(value: string | null | undefined) {
   return `${baseUrl}${path}`;
 }
 
+function normalizeApiUrl(url?: string) {
+  const trimmed = String(url || '').trim().replace(/\/+$/, '');
+
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/\/api\/v1$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/\/api$/i.test(trimmed)) {
+    return `${trimmed}/v1`;
+  }
+
+  return `${trimmed}/api/v1`;
+}
+
+function buildCompanionSpeechPlaybackUrl(speechId: string) {
+  const apiBaseUrl = normalizeApiUrl(API_URL);
+  const path = `/quiz-attempts/companion-speech/${encodeURIComponent(speechId)}`;
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : buildAbsoluteUrl(`/api/v1${path}`);
+}
+
 const mapQuiz = (item: any) => ({
   ...item,
   id: item?.quizId ?? item?.id,
@@ -207,6 +231,11 @@ const QuizAPI = {
         data: mapQuizFull(res.data?.data ?? res.data),
       }));
   },
+  getQuestionById: (questionId: number) =>
+    api.get(`/questions/${questionId}`).then(res => ({
+      ...res,
+      data: res.data?.data ?? res.data,
+    })),
   updateShuffleEnabled: (quizId: number, enabled: boolean) =>
     api.patch(`/quizzes/${quizId}/shuffle`, {enabled}).then(res => ({
       ...res,
@@ -342,11 +371,9 @@ const QuizAPI = {
       ...res,
       data: res.data?.data,
     })),
-  getCompanionSpeechPlaybackSource: async (speechId: string, audioUrl?: string | null) => {
+  getCompanionSpeechPlaybackSource: async (speechId: string, _audioUrl?: string | null) => {
     const token = await AsyncStorage.getItem(TOKEN_KEY);
-    const playbackUrl = String(audioUrl || '').trim()
-      ? buildAbsoluteUrl(audioUrl)
-      : buildAbsoluteUrl(`/api/quiz-attempts/companion-speech/${encodeURIComponent(speechId)}`);
+    const playbackUrl = buildCompanionSpeechPlaybackUrl(speechId);
 
     return {
       url: playbackUrl,

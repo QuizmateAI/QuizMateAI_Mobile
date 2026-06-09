@@ -146,7 +146,7 @@ function pickMaterialUrl(source: any): string | null {
 }
 
 function getMaterialTitle(material: any) {
-  return material?.title || material?.fileName || material?.name || 'Tai lieu';
+  return material?.title || material?.fileName || material?.name || 'Tài liệu';
 }
 
 function getCoverInitial(title?: string) {
@@ -577,7 +577,7 @@ export default function MaterialDetailScreen({navigation, route}: any) {
 
   const handleOpenSource = useCallback(async () => {
     if (!sourceUrl) {
-      showToast('Tai lieu nay chua co duong dan nguon', 'info');
+      showToast('Tài liệu này chưa có đường dẫn nguồn', 'info');
       return;
     }
     try {
@@ -1208,7 +1208,7 @@ function ModerationBanner({
   reviewLoading,
   reviewMessage,
   reviewError,
-  formatSuitablePercent,
+  formatSuitablePercent: _formatSuitablePercent,
   onReview,
 }: any) {
   const isRejected =
@@ -1274,10 +1274,10 @@ function ModerationBanner({
                 </Text>
               ) : null}
               {moderationInfo.type === 'WARN' &&
-              formatSuitablePercent(moderationInfo.suitablePercent) ? (
+              _formatSuitablePercent(moderationInfo.suitablePercent) ? (
                 <Text style={[styles.reviewDetailText, {color: colors.textSecondary}]}>
                   <Text style={styles.reviewDetailStrong}>Tỉ lệ phù hợp: </Text>
-                  {formatSuitablePercent(moderationInfo.suitablePercent)}
+                  {_formatSuitablePercent(moderationInfo.suitablePercent)}
                 </Text>
               ) : null}
             </View>
