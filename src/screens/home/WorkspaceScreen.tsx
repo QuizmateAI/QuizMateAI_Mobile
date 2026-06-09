@@ -859,7 +859,7 @@ export default function WorkspaceScreen({navigation, route}: any) {
         return {variant: 'warning' as const, label: 'Đang xử lý'};
       case 'REJECT':
       case 'REJECTED':
-        return {variant: 'error' as const, label: 'Bị từ chối'};
+        return {variant: 'error' as const, label: 'Không liên quan'};
       case 'WARN':
       case 'WARNED':
         return {variant: 'warning' as const, label: 'Cảnh báo'};

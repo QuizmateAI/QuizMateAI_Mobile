@@ -231,6 +231,11 @@ const QuizAPI = {
         data: mapQuizFull(res.data?.data ?? res.data),
       }));
   },
+  getQuestionById: (questionId: number) =>
+    api.get(`/questions/${questionId}`).then(res => ({
+      ...res,
+      data: res.data?.data ?? res.data,
+    })),
   updateShuffleEnabled: (quizId: number, enabled: boolean) =>
     api.patch(`/quizzes/${quizId}/shuffle`, {enabled}).then(res => ({
       ...res,
