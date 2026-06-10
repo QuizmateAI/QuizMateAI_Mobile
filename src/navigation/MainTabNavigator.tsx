@@ -42,6 +42,7 @@ export default function MainTabNavigator() {
     if (
       focusedRoute === 'Workspace' ||
       focusedRoute === 'GroupWorkspace' ||
+      focusedRoute === 'MaterialDetail' ||
       focusedRoute === 'RoadmapJourney' ||
       focusedRoute === 'QuizCollection' ||
       focusedRoute === 'QuizDetail' ||

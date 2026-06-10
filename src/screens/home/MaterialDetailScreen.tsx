@@ -321,12 +321,18 @@ function mapAskSources(payload: any) {
 }
 
 export default function MaterialDetailScreen({navigation, route}: any) {
-  const {material, contextType = 'WORKSPACE'} = route.params || {};
+  const {
+    material,
+    contextType = 'WORKSPACE',
+    workspaceId: routeWorkspaceId,
+    groupId: routeGroupId,
+    backContext,
+  } = route.params || {};
   const {isDark, colors} = useTheme();
   const {showToast} = useToast();
 
   const materialId = Number(material?.materialId || material?.id || 0);
-  const workspaceId = inferWorkspaceId(material);
+  const workspaceId = Number(routeWorkspaceId || routeGroupId || inferWorkspaceId(material));
   const sourceUrl = pickMaterialUrl(material);
   const materialTitle = getMaterialTitle(material);
   const materialTypeLabel = getMaterialTypeLabel(material);
@@ -340,10 +346,10 @@ export default function MaterialDetailScreen({navigation, route}: any) {
   );
   const normalizedStatus = currentStatus;
   const needsReview =
-    Boolean(material?.needReview) || ['WARN', 'WARNED'].includes(normalizedStatus);
+    Boolean(material?.needReview) ||
+    ['WARN', 'WARNED', 'PENDING', 'PROCESSING', 'PROCECCSING'].includes(normalizedStatus);
 
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState('');
   const [extractedText, setExtractedText] = useState('');
   const [contentBlocks, setContentBlocks] = useState<any[]>([]);
   const [fallbackImageUrls, setFallbackImageUrls] = useState<string[]>([]);
@@ -383,10 +389,66 @@ export default function MaterialDetailScreen({navigation, route}: any) {
   const [viewerFailed, setViewerFailed] = useState(false);
 
   useEffect(() => {
-    if (normalizedStatus === 'DELETED') {
-      navigation.goBack();
+    // Reset viewer state when switching materials so the WebView refreshes
+    setViewerLoading(Boolean(viewerUrl));
+    setViewerFailed(false);
+  }, [viewerUrl, sourceUrl, materialId]);
+
+  useEffect(() => {
+    const nextStatus = String(
+      material?.status || material?.final_status || 'UNKNOWN',
+    ).toUpperCase();
+    setCurrentStatus(nextStatus);
+    setModerationReport(null);
+    setModerationDetailOpen(false);
+    setReviewLoading(false);
+    setReviewError('');
+    setReviewMessage('');
+  }, [material?.final_status, material?.status, materialId]);
+
+  const handleBack = useCallback(() => {
+    if (backContext?.type === 'group' && Number(backContext?.groupId) > 0) {
+      navigation.navigate('GroupWorkspace', {
+        groupId: Number(backContext.groupId),
+        title: backContext.title,
+        initialTab: backContext.initialTab || 'sources',
+      });
+      return;
     }
-  }, [navigation, normalizedStatus]);
+
+    if (backContext?.type === 'workspace' && Number(backContext?.workspaceId) > 0) {
+      navigation.navigate('Workspace', {
+        workspaceId: Number(backContext.workspaceId),
+        title: backContext.title,
+        initialTab: backContext.initialTab || 'sources',
+      });
+      return;
+    }
+
+    if (contextType === 'GROUP' && workspaceId > 0) {
+      navigation.navigate('GroupWorkspace', {
+        groupId: workspaceId,
+        initialTab: 'sources',
+      });
+      return;
+    }
+
+    if (contextType === 'WORKSPACE' && workspaceId > 0) {
+      navigation.navigate('Workspace', {
+        workspaceId,
+        initialTab: 'sources',
+      });
+      return;
+    }
+
+    navigation.goBack();
+  }, [backContext, contextType, navigation, workspaceId]);
+
+  useEffect(() => {
+    if (normalizedStatus === 'DELETED') {
+      handleBack();
+    }
+  }, [handleBack, normalizedStatus]);
 
   const totalSectionCount = useMemo(() => countSections(sections), [sections]);
   const activeSectionCount = useMemo(
@@ -438,7 +500,8 @@ export default function MaterialDetailScreen({navigation, route}: any) {
   }, [moderationReport, normalizedStatus]);
 
   const reviewButtonVisible =
-    needsReview && ['WARN', 'WARNED'].includes(normalizedStatus);
+    needsReview &&
+    ['WARN', 'WARNED', 'PENDING', 'PROCESSING', 'PROCECCSING'].includes(normalizedStatus);
 
   const formatSuitablePercent = useCallback((value: any) => {
     if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -560,7 +623,7 @@ export default function MaterialDetailScreen({navigation, route}: any) {
           setReviewMessage(isApproved ? 'Da duyet tai lieu.' : 'Da tu choi tai lieu.');
         }
         if (!isApproved) {
-          navigation.goBack();
+          handleBack();
         }
       } catch (error: any) {
         setReviewError(
@@ -572,7 +635,7 @@ export default function MaterialDetailScreen({navigation, route}: any) {
         setReviewLoading(false);
       }
     },
-    [contextType, materialId, navigation, reviewLoading],
+    [contextType, handleBack, materialId, reviewLoading],
   );
 
   const handleOpenSource = useCallback(async () => {
@@ -747,29 +810,12 @@ export default function MaterialDetailScreen({navigation, route}: any) {
         return;
       }
       try {
-        const [textRes, summaryRes] = await Promise.allSettled([
-          MaterialAPI.getExtractedText(materialId),
-          MaterialAPI.getExtractedSummary(materialId),
-        ]);
+        const textRes = await MaterialAPI.getExtractedText(materialId);
         if (!mounted) {
           return;
         }
-        const nextText =
-          textRes.status === 'fulfilled'
-            ? resolveTextPayload(textRes.value?.data, '')
-            : '';
-        const nextSummary =
-          summaryRes.status === 'fulfilled'
-            ? resolveTextPayload(summaryRes.value?.data, '')
-            : resolveTextPayload(
-                material?.summary ||
-                  material?.extractedSummary ||
-                  material?.extracted_summary ||
-                  '',
-                '',
-              );
+        const nextText = resolveTextPayload(textRes?.data, '');
         const blocks = buildContentBlocks(nextText);
-        setSummary(nextSummary || 'Ban tom tat chua san sang.');
         setExtractedText(nextText || '');
         setContentBlocks(blocks);
         setFallbackImageUrls(getSourceImageUrls(material, blocks));
@@ -800,7 +846,7 @@ export default function MaterialDetailScreen({navigation, route}: any) {
           styles.topBar,
           {backgroundColor: colors.surface, borderBottomColor: colors.border},
         ]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
           <Icon name="arrow-left" size={21} color={colors.text} />
         </TouchableOpacity>
 
@@ -891,6 +937,7 @@ export default function MaterialDetailScreen({navigation, route}: any) {
               },
             ]}>
             <DocumentViewer
+              key={viewerUrl || sourceUrl || `m-${materialId}`}
               viewerUrl={viewerUrl}
               sourceUrl={sourceUrl}
               materialTitle={materialTitle}
@@ -1098,7 +1145,7 @@ export default function MaterialDetailScreen({navigation, route}: any) {
             <ContentRenderer blocks={contentBlocks} />
           ) : (
             <Text style={[styles.bodyText, {color: colors.textSecondary}]}>
-              {summary || 'Tài liệu này chưa có nội dung trích xuất.'}
+              Tài liệu này chưa có nội dung trích xuất.
             </Text>
           )}
         </ScrollView>
@@ -1265,19 +1312,6 @@ function ModerationBanner({
                 <Text style={[styles.reviewDetailText, {color: colors.textSecondary}]}>
                   <Text style={styles.reviewDetailStrong}>Gợi ý: </Text>
                   {moderationInfo.suggestion}
-                </Text>
-              ) : null}
-              {moderationInfo.type === 'REJECT' && moderationInfo.detectedTopic ? (
-                <Text style={[styles.reviewDetailText, {color: colors.textSecondary}]}>
-                  <Text style={styles.reviewDetailStrong}>Chủ đề phát hiện: </Text>
-                  {moderationInfo.detectedTopic}
-                </Text>
-              ) : null}
-              {moderationInfo.type === 'WARN' &&
-              _formatSuitablePercent(moderationInfo.suitablePercent) ? (
-                <Text style={[styles.reviewDetailText, {color: colors.textSecondary}]}>
-                  <Text style={styles.reviewDetailStrong}>Tỉ lệ phù hợp: </Text>
-                  {_formatSuitablePercent(moderationInfo.suitablePercent)}
                 </Text>
               ) : null}
             </View>

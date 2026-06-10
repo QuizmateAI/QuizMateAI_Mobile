@@ -22,10 +22,11 @@ import {type VoicePracticeConfig} from '../utils/voicePractice';
 
 export type HomeStackParamList = {
   HomeMain: undefined;
-  Workspace: {workspaceId: number; title?: string};
+  Workspace: {workspaceId: number; title?: string; initialTab?: 'chat' | 'sources' | 'stats' | 'studio'};
   GroupWorkspace: {
     groupId: number;
     title?: string;
+    initialTab?: 'chat' | 'sources' | 'studio' | 'challenge' | 'ranking' | 'notifications';
     detailKey?: 'challenge' | 'ranking' | 'notifications';
   };
   GroupManagement: {
@@ -72,7 +73,19 @@ export type HomeStackParamList = {
     roadmapId?: number;
     phaseId?: number;
   };
-  MaterialDetail: {material: any};
+  MaterialDetail: {
+    material: any;
+    contextType?: 'WORKSPACE' | 'GROUP';
+    workspaceId?: number;
+    groupId?: number;
+    backContext?: {
+      type: 'workspace' | 'group';
+      workspaceId?: number;
+      groupId?: number;
+      title?: string;
+      initialTab?: 'sources';
+    };
+  };
   WorkspaceProfileWizard: {
     workspaceId: number;
     title?: string;

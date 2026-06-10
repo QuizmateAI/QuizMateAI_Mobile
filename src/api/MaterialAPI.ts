@@ -42,11 +42,6 @@ const MaterialAPI = {
       ...res,
       data: res.data?.data || res.data || '',
     })),
-  getExtractedSummary: (materialId: number) =>
-    api.get(`/materials/${materialId}/extracted-summary`).then(res => ({
-      ...res,
-      data: res.data?.data || res.data || '',
-    })),
   getRAGChunks: (materialId: number, limit = 500) =>
     api.get(`/materials/${materialId}/rag-chunks`, {
       params: {limit},

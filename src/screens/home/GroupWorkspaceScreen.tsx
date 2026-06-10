@@ -211,13 +211,44 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     if (detailKey === 'challenge' || detailKey === 'ranking' || detailKey === 'notifications') {
       return detailKey;
     }
+    const initialTab = route?.params?.initialTab;
+    if (
+      initialTab === 'chat' ||
+      initialTab === 'sources' ||
+      initialTab === 'studio' ||
+      initialTab === 'challenge' ||
+      initialTab === 'ranking' ||
+      initialTab === 'notifications'
+    ) {
+      return initialTab;
+    }
     return 'chat';
   });
+
+  const handleBackToWorkspaceList = useCallback(() => {
+    const routeNames = navigation.getState?.()?.routeNames || [];
+    const targetRoute = routeNames.includes('GroupList')
+      ? 'GroupList'
+      : routeNames.includes('CommunityGroup')
+      ? 'CommunityGroup'
+      : routeNames.includes('HomeMain')
+      ? 'HomeMain'
+      : '';
+
+    if (targetRoute) {
+      navigation.reset({
+        index: 0,
+        routes: [{name: targetRoute}],
+      });
+      return;
+    }
+
+    navigation.goBack();
+  }, [navigation]);
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
   const [uploadDialogVisible, setUploadDialogVisible] = useState(false);
   const [selectedUploadFile, setSelectedUploadFile] = useState<any | null>(null);
   const [uploadValidationError, setUploadValidationError] = useState('');
-  const [reviewingMaterialId, setReviewingMaterialId] = useState<number | null>(null);
   const latestFetchRequestIdRef = useRef(0);
   const hasAutoOpenedWizardRef = useRef(false);
   const refreshRetryTimer1Ref = useRef<ReturnType<typeof setTimeout> | null>(
@@ -363,6 +394,37 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
         contextId: normalizedGroupId,
         groupId: normalizedGroupId,
         backTitle: title,
+      });
+    },
+    [navigation, normalizedGroupId, showToast, title],
+  );
+
+  const openMaterialDetail = useCallback(
+    (material: any) => {
+      const materialId = Number(material?.materialId || material?.id || 0);
+      if (!materialId) {
+        showToast('Thiếu Material ID', 'error');
+        return;
+      }
+
+      navigation.navigate('MaterialDetail', {
+        material: {
+          ...material,
+          workspaceId: normalizedGroupId,
+          workspace: {
+            ...(material?.workspace || {}),
+            workspaceId: normalizedGroupId,
+            id: normalizedGroupId,
+          },
+        },
+        contextType: 'GROUP',
+        groupId: normalizedGroupId,
+        backContext: {
+          type: 'group',
+          groupId: normalizedGroupId,
+          title,
+          initialTab: 'sources',
+        },
       });
     },
     [navigation, normalizedGroupId, showToast, title],
@@ -1074,34 +1136,6 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     setUploadDialogVisible(true);
   }, [groupProfileCompleted, isLeader, showToast]);
 
-  const handleReviewMaterial = async (material: any, isApproved: boolean) => {
-    if (groupProfileCompleted === false) {
-      showToast(getSetupLockMessage('GROUP', isLeader), 'info');
-      return;
-    }
-    const materialId = Number(material?.materialId || material?.id || 0);
-    if (!materialId) {
-      return;
-    }
-
-    if (isDeletedMaterial(material)) {
-      showToast('Tài liệu đã bị xóa', 'error');
-      triggerMaterialRefresh();
-      return;
-    }
-
-    setReviewingMaterialId(materialId);
-    try {
-      await MaterialAPI.reviewGroupMaterial(materialId, isApproved);
-      showToast(isApproved ? 'Đã duyệt tài liệu' : 'Đã từ chối tài liệu', 'success');
-      fetchData();
-    } catch {
-      showToast('Không thể xử lý duyệt tài liệu', 'error');
-    } finally {
-      setReviewingMaterialId(null);
-    }
-  };
-
   const handleQuickAction = (key: string) => {
     if (groupProfileCompleted === false) {
       showToast(getSetupLockMessage('GROUP', isLeader), 'info');
@@ -1159,6 +1193,85 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
     setActiveBottomTab('studio');
   };
 
+  const getStatusBadge = (status?: string) => {
+    switch (status?.toUpperCase()) {
+      case 'ACTIVE':
+      case 'READY':
+      case 'COMPLETED':
+        return {variant: 'success' as const, label: 'Sẵn sàng'};
+      case 'PROCESSING':
+      case 'PROCECCSING':
+      case 'PENDING':
+        return {variant: 'warning' as const, label: 'Đang xử lý'};
+      case 'REJECT':
+      case 'REJECTED':
+        return {variant: 'error' as const, label: 'Không liên quan'};
+      case 'WARN':
+      case 'WARNED':
+        return {variant: 'warning' as const, label: 'Cảnh báo'};
+      case 'FAILED':
+      case 'ERROR':
+        return {variant: 'error' as const, label: 'Thất bại'};
+      default:
+        return {variant: 'default' as const, label: status || 'Không xác định'};
+    }
+  };
+
+  const renderMaterialCard = (mat: any, options?: {pendingReview?: boolean}) => {
+    const matId = Number(mat?.materialId || mat?.id || 0);
+    const status = getStatusBadge(mat?.final_status || mat?.status);
+    const processing = isMaterialProcessing(mat);
+    const uploadedAt = mat?.uploadedAt || mat?.createdAt || mat?.updatedAt;
+
+    return (
+      <TouchableOpacity
+        key={String(matId || mat?.title || mat?.fileName)}
+        activeOpacity={0.85}
+        onPress={() =>
+          openMaterialDetail({
+            ...mat,
+            needReview: options?.pendingReview ? true : mat?.needReview,
+          })
+        }
+        style={[
+          styles.sourceItem,
+          {backgroundColor: colors.surface, borderColor: colors.border},
+        ]}>
+        <View
+          style={[
+            styles.sourceIcon,
+            {
+              backgroundColor: processing
+                ? '#F59E0B20'
+                : isDark
+                ? `${Colors.primary}15`
+                : '#EFF6FF',
+            },
+          ]}>
+          {processing ? (
+            <ActivityIndicator size="small" color="#F59E0B" />
+          ) : (
+            <Icon name={getMaterialIconName(mat)} size={20} color={Colors.primary} />
+          )}
+        </View>
+        <View style={styles.sourceInfo}>
+          <Text style={[styles.sourceName, {color: colors.heading}]} numberOfLines={1}>
+            {mat?.title || mat?.fileName || mat?.name || `Material #${matId}`}
+          </Text>
+          <View style={styles.sourceMetaRow}>
+            <Badge label={status.label} variant={status.variant} size="sm" />
+            {uploadedAt ? (
+              <Text style={[styles.sourceDate, {color: colors.textTertiary}]}>
+                {new Date(uploadedAt).toLocaleDateString()}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        <Icon name="chevron-right" size={20} color={colors.textTertiary} />
+      </TouchableOpacity>
+    );
+  };
+
   useEffect(() => {
     if (!isDetailPage) {
       return;
@@ -1188,7 +1301,7 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
           {backgroundColor: colors.surface, borderBottomColor: colors.border},
         ]}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBackToWorkspaceList}
           style={styles.backBtn}>
           <Icon name="chevron-left" size={26} color={colors.text} />
         </TouchableOpacity>
@@ -1593,42 +1706,9 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 {pendingReviewMaterials.length === 0 ? (
                   <Text style={[styles.pendingReviewEmpty, {color: colors.textSecondary}]}>Không có tài liệu cần duyệt</Text>
                 ) : (
-                  pendingReviewMaterials.filter(mat => !isDeletedMaterial(mat)).map((mat: any) => {
-                    const matId = Number(mat?.materialId || mat?.id || 0);
-                    const isLoading = reviewingMaterialId === matId;
-                    return (
-                      <View key={String(matId || mat?.title)} style={[styles.pendingReviewItem, {borderBottomColor: colors.border}]}>
-                        <View style={[styles.pendingReviewIcon, {backgroundColor: '#F59E0B20'}]}>
-                          <Icon name="alert-circle-outline" size={16} color="#F59E0B" />
-                        </View>
-                        <View style={styles.pendingReviewInfo}>
-                          <Text style={[styles.pendingReviewName, {color: colors.heading}]} numberOfLines={1}>
-                            {mat?.title || mat?.fileName || `Material #${matId}`}
-                          </Text>
-                          <Text style={[styles.pendingReviewMeta, {color: colors.textSecondary}]}>Trạng thái: {String(mat?.status || 'PENDING')}</Text>
-                        </View>
-                        <View style={styles.pendingReviewActions}>
-                          <Button
-                            title="Duyệt"
-                            size="sm"
-                            fullWidth={false}
-                            loading={isLoading}
-                            onPress={() => handleReviewMaterial(mat, true)}
-                            style={styles.reviewActionBtn}
-                          />
-                          <Button
-                            title="Từ chối"
-                            variant="destructive"
-                            size="sm"
-                            fullWidth={false}
-                            loading={isLoading}
-                            onPress={() => handleReviewMaterial(mat, false)}
-                            style={styles.reviewActionBtn}
-                          />
-                        </View>
-                      </View>
-                    );
-                  })
+                  pendingReviewMaterials
+                    .filter(mat => !isDeletedMaterial(mat))
+                    .map((mat: any) => renderMaterialCard(mat, {pendingReview: true}))
                 )}
               </View>
             )}
@@ -1661,40 +1741,9 @@ export default function GroupWorkspaceScreen({navigation, route}: any) {
                 </TouchableOpacity>
               </View>
             ) : (
-              materials.filter(src => !isDeletedMaterial(src)).map((src: any, i: number) => (
-                <View
-                  key={src.id || i}
-                  style={[
-                    styles.sourceItem,
-                    {backgroundColor: colors.surface, borderColor: colors.border},
-                  ]}>
-                  <View
-                    style={[
-                      styles.sourceIcon,
-                      {
-                        backgroundColor: isMaterialProcessing(src)
-                          ? '#F59E0B20'
-                          : `${Colors.primary}15`,
-                      },
-                    ]}>
-                    {isMaterialProcessing(src) ? (
-                      <ActivityIndicator size="small" color="#F59E0B" />
-                    ) : (
-                      <Icon
-                        name={getMaterialIconName(src)}
-                        size={20}
-                        color={Colors.primary}
-                      />
-                    )}
-                  </View>
-                  <View style={styles.sourceInfo}>
-                    <Text style={[styles.sourceName, {color: colors.heading}]} numberOfLines={1}>
-                      {src.title || src.name}
-                    </Text>
-                    <Text style={[styles.sourceMeta, {color: colors.textSecondary}]}>Trạng thái: {String(src.status || 'N/A')}</Text>
-                  </View>
-                </View>
-              ))
+              materials
+                .filter(src => !isDeletedMaterial(src))
+                .map((src: any) => renderMaterialCard(src))
             )}
           </View>
         )}
@@ -3034,6 +3083,8 @@ const styles = StyleSheet.create({
   sourceInfo: {flex: 1},
   sourceName: {fontSize: 14, fontWeight: '500'},
   sourceMeta: {fontSize: 12, marginTop: 2},
+  sourceMetaRow: {flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4},
+  sourceDate: {fontSize: 11},
 
   pendingReviewCard: {
     borderRadius: BorderRadius.md,

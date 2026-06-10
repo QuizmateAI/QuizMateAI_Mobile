@@ -132,7 +132,15 @@ export default function WorkspaceScreen({navigation, route}: any) {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [workspaceSetupSummary, setWorkspaceSetupSummary] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('chat');
+  const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>(() => {
+    const initialTab = route?.params?.initialTab;
+    return initialTab === 'sources' ||
+      initialTab === 'stats' ||
+      initialTab === 'studio' ||
+      initialTab === 'chat'
+      ? initialTab
+      : 'chat';
+  });
   const [, setAccessHistory] = useState<WorkspaceActivity[]>([]);
   const [deletingMaterial, setDeletingMaterial] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -153,7 +161,10 @@ export default function WorkspaceScreen({navigation, route}: any) {
   );
 
   const handleBackToWorkspaceList = useCallback(() => {
-    navigation.navigate('HomeMain');
+    navigation.reset({
+      index: 0,
+      routes: [{name: 'HomeMain'}],
+    });
   }, [navigation]);
 
   const addAccessHistory = useCallback(
@@ -290,9 +301,17 @@ export default function WorkspaceScreen({navigation, route}: any) {
       );
       navigation.navigate('MaterialDetail', {
         material,
+        contextType: 'WORKSPACE',
+        workspaceId: Number(workspaceId),
+        backContext: {
+          type: 'workspace',
+          workspaceId: Number(workspaceId),
+          title,
+          initialTab: 'sources',
+        },
       });
     },
-    [addAccessHistory, navigation],
+    [addAccessHistory, navigation, title, workspaceId],
   );
 
   const fetchData = useCallback(async () => {
